@@ -17,7 +17,7 @@ from scipy.stats import mannwhitneyu, spearmanr, sem, f_oneway, rankdata, pearso
 from blechpy import load_project, load_dataset, load_experiment
 from blechpy.plotting import data_plot as dplt
 from copy import deepcopy
-from blechpy.analysis import spike_analysis as sas, poissonHMM as phmm
+from blechpy.analysis import spike_analysis as sas, poissonHMM as phmm 
 from blechpy.dio import h5io
 from scipy.stats import sem
 from blechpy.utils import write_tools as wt
@@ -207,11 +207,11 @@ class ProjectAnalysis(object):
             data = np.load(save_file)
             return data
         else:
-            rec_map = {'preCTA': 'postCTA', 'ctaTrain': 'ctaTest'}
+            #rec_map = {'preCTA': 'postCTA', 'ctaTrain': 'ctaTest'}
             all_units = all_units.dropna(subset=['held_unit_name'])
             all_units = all_units[all_units['area'] == 'GC']
-            learn_map = self.project._exp_info.set_index('exp_name')['CTA_learned']
-            learn_map = learn_map.apply(lambda x: 'CTA' if x else 'No CTA').to_dict()
+            # learn_map = self.project._exp_info.set_index('exp_name')['CTA_learned']
+            # learn_map = learn_map.apply(lambda x: 'CTA' if x else 'No CTA').to_dict()
 
             # Output structures
             alpha = params['response_comparison']['alpha']
@@ -224,68 +224,66 @@ class ProjectAnalysis(object):
             diff_time = None
 
             for held_unit_name, group in all_units.groupby('held_unit_name'):
-                if not any(group.time_group == 'Exposure_1') or not any(group.time_group == 'Exposure_3'):
-                    continue
-
-                pre_grp = group.query('time_group == "Exposure_1"')
-                for unit_id1, row in pre_grp.iterrows():
-                    post_row = group.loc[group.rec_group == rec_map[row['rec_group']]]
-                    if post_row.empty:
-                        continue
-                    else:
-                        unit_id2 = post_row.index[0]
-                        post_row = post_row.to_dict(orient='records')[0]
-
-                    rec1 = row['rec_dir']
-                    rec2 = post_row['rec_dir']
-                    unit1 = row['unit_num']
-                    unit2= post_row['unit_num']
-                    exp_group = row['exp_group']
-                    exp_name = row['exp_name']
-                    print('Comparing Held Unit %s, %s vs %s' % (held_unit_name, row['rec_name'], post_row['rec_name']))
-
-                    tastes, pvs, tstat, md, md_sem, ctime, dtime = \
-                            compare_taste_responses(rec1, unit1, rec2, unit2,
-                                                    params, method='anova')
-                    l = [(exp_group, exp_name, learn_map[exp_name],
-                          held_unit_name, t) for t in tastes]
-                    labels.extend(l)
-                    pvals.extend(pvs)
-                    test_stats.extend(tstat)
-                    differences.extend(md)
-                    sem_diffs.extend(md_sem)
-                    if comp_time is None:
-                        comp_time = ctime
-                    elif not np.array_equal(ctime, comp_time):
-                        raise ValueError('Times dont match')
-
-                    if diff_time is None:
-                        diff_time = dtime
-                    elif not np.array_equal(dtime, diff_time):
-                        raise ValueError('Times dont match')
-
-                    for i, tst in enumerate(tastes):
-                        plot_dir = os.path.join(save_dir, 'Held_Unit_Plots', tst)
-                        new_plot_dir = os.path.join(plot_dir, 'clean_plots')
-                        if not os.path.isdir(plot_dir):
-                            os.makedirs(plot_dir)
-
-                        if not os.path.isdir(new_plot_dir):
-                            os.makedirs(new_plot_dir)
-
-                        fig_file = os.path.join(plot_dir, 'Held_Unit_%s-%s.svg' % (held_unit_name, tst))
-                        new_fn = os.path.join(new_plot_dir,
-                                              'Held_Unit_%s-%s.svg' %
-                                              (held_unit_name, tst))
-
-                        plt.plot_held_unit_comparison(rec1, unit1, rec2, unit2,
-                                                      pvs[i], params, held_unit_name,
-                                                      exp_name, exp_group, tst,
-                                                      save_file=fig_file)
-                        nplt.plot_held_unit_comparison(rec1, unit1, rec2, unit2,
-                                                       pvs[i], params, held_unit_name,
-                                                       exp_name, exp_group, tst,
-                                                       save_file=new_fn)
+                if any(group.rec_num == 1):
+                    pre_grp = group.query('rec_num == 1')
+                    for unit_id1, row in pre_grp.iterrows():
+                        post_row = group.loc[group.time_group != "1"]
+                        if post_row.empty:
+                            continue
+                        else:
+                            unit_id2 = post_row.index[0]
+                            post_row = post_row.to_dict(orient='records')[0]
+    
+                        rec1 = row['rec_dir']
+                        rec2 = post_row['rec_dir']
+                        unit1 = row['unit_num']
+                        unit2= post_row['unit_num']
+                        exp_group = row['exp_group']
+                        exp_name = row['exp_name']
+                        print('Comparing Held Unit %s, %s vs %s' % (held_unit_name, row['rec_name'], post_row['rec_name']))
+    
+                        tastes, pvs, tstat, md, md_sem, ctime, dtime = \
+                                compare_taste_responses(rec1, unit1, rec2, unit2,
+                                                        params, method='anova')
+                        l = [(exp_group, exp_name,
+                              held_unit_name, t) for t in tastes]
+                        labels.extend(l)
+                        pvals.extend(pvs)
+                        test_stats.extend(tstat)
+                        differences.extend(md)
+                        sem_diffs.extend(md_sem)
+                        if comp_time is None:
+                            comp_time = ctime
+                        elif not np.array_equal(ctime, comp_time):
+                            raise ValueError('Times dont match')
+    
+                        if diff_time is None:
+                            diff_time = dtime
+                        elif not np.array_equal(dtime, diff_time):
+                            raise ValueError('Times dont match')
+    
+                        for i, tst in enumerate(tastes):
+                            plot_dir = os.path.join(save_dir, 'Held_Unit_Plots', tst)
+                            new_plot_dir = os.path.join(plot_dir, 'clean_plots')
+                            if not os.path.isdir(plot_dir):
+                                os.makedirs(plot_dir)
+    
+                            if not os.path.isdir(new_plot_dir):
+                                os.makedirs(new_plot_dir)
+    
+                            fig_file = os.path.join(plot_dir, 'Held_Unit_%s-%s.svg' % (held_unit_name, tst))
+                            new_fn = os.path.join(new_plot_dir,
+                                                  'Held_Unit_%s-%s.svg' %
+                                                  (held_unit_name, tst))
+    
+                            plt.plot_held_unit_comparison(rec1, unit1, rec2, unit2,
+                                                          pvs[i], params, held_unit_name,
+                                                          exp_name, exp_group, tst,
+                                                          save_file=fig_file)
+                            nplt.plot_held_unit_comparison(rec1, unit1, rec2, unit2,
+                                                           pvs[i], params, held_unit_name,
+                                                           exp_name, exp_group, tst,
+                                                           save_file=new_fn)
 
             labels = np.vstack(labels) # exp_group, exp_name, cta_group, held_unit_name, taste
             pvals = np.vstack(pvals)
@@ -455,7 +453,7 @@ class ProjectAnalysis(object):
         print('-' * 80)
         print('Processing taste discrimination and palatability')
         print('-' * 80)
-        pal_units = pal_units.apply(foo, axis=1)
+        pal_units = pal_units.apply(foo, axis=1) #causes problem
         pal_units['taste_discriminative'] = pal_units['taste_discriminative'].astype('bool')
         pal_units['exclude'] = pal_units.apply(agg.apply_exclude, axis=1)
         feather.write_dataframe(pal_units, pal_unit_file)
@@ -579,14 +577,14 @@ class ProjectAnalysis(object):
         nplt.plot_full_dim_MDS(pc_data, save_file=fn)
 
         # Change exp group to CTA learning and re-plot
-        learn_map = self.project._exp_info.set_index('exp_name')
-        def foo(x):
-            if learn_map.loc[x]['CTA_learned']:
-                return 'CTA'
-            else:
-                return 'No CTA'
+        # learn_map = self.project._exp_info.set_index('exp_name')
+        # def foo(x):
+        #     if learn_map.loc[x]['CTA_learned']:
+        #         return 'CTA'
+        #     else:
+        #         return 'No CTA'
 
-        metric_data['exp_group'] = metric_data['exp_name'].apply(foo)
+        # metric_data['exp_group'] = metric_data['exp_name'].apply(foo)
         plt.plot_pca_metric(metric_data, os.path.join(save_dir, 'relative_PCA_distances-CTA.svg'))
         plt.plot_mds_metric(metric_data, os.path.join(mds_dir, 'relative_MDS_distances-CTA.svg'))
 
@@ -611,7 +609,7 @@ class ProjectAnalysis(object):
         self.make_aggregate_single_unit_plots()
         self.pca_analysis(overwrite=overwrite)
         self.plot_pca_data()
-        self.plot_saccharin_consumption()
+        #self.plot_saccharin_consumption()
 
 
 def apply_info_from_rec_dir(row):
@@ -637,7 +635,8 @@ def apply_groups_from_proj(df,proj):
             df.pop(i)
         except:
             pass
-    sel = proj.rec_groups[['rec_dir','exp_name','exp_group','rec_num']]
+    rec_info = proj.get_rec_info()
+    sel = rec_info[['rec_dir','exp_name','exp_group','rec_num']]
     sel['time_group'] = sel['rec_num'].astype('str')
     sel['rec_group']=sel['exp_group']+'_'+sel['time_group']
     
@@ -804,7 +803,7 @@ def apply_discrim_and_pal(row, params, save_file, plot_dir):
         psth_fn = '%s_%s_psth.svg' % (rec_name, unit_name)
         psth_file = os.path.join(plot_dir, 'PSTHs', psth_fn)
         corr_file = os.path.join(plot_dir, 'Palatability', psth_fn.replace('psth', 'corr'))
-        nplt.plot_PSTHs(rec, unit, params, save_file=psth_file)
+        nplt.plot_PSTHs(rec, unit, params, save_file=psth_file) #causes problem
         plt.plot_palatability_correlation(rec_name, unit_name, time, s_rs, s_ps,
                                           p_rs, p_ps, corr_file)
 
@@ -1388,17 +1387,64 @@ class HmmAnalysis(object):
 
         #pbar.close()
         
-    def get_best_BIC(self, params):
+    def plot_grouped_BIC(self): #TODO: get rid of hard coding
         #params: list of params 
         srt_df = self.get_sorted_hmms()
-        srt_df = srt_df.query('time_start==-250 & threshold==1e-16')
-        best = srt_df.groupby(['taste','exp_group','time_group','sorting','n_states']).agg(['mean'])
+        srt_df = srt_df.query('time_start==-250')
+        srt_df = srt_df.loc[srt_df.groupby(['taste','exp_group','time_group','n_states','exp_name'])['threshold'].idxmin()]
+        
+        BIC_grp_file = os.path.join(self.save_dir, 'grouped_BIC_comparison.svg')
+        nplt.plot_grouped_BIC(srt_df, save_file = BIC_grp_file)
+        
+    def plot_best_BIC(self):
+        srt_df = self.get_sorted_hmms()
+        srt_df = srt_df.query('time_start==-250')
+        srt_df = srt_df.loc[srt_df.groupby(['taste','exp_group','time_group','n_states','exp_name'])['threshold'].idxmin()]
+        srt_df = srt_df.loc[srt_df.groupby(['taste','exp_group','time_group','exp_name'])['BIC'].idxmin()]
+        
+        file = os.path.join(self.save_dir, "best_BIC_comparison.svg")
+        nplt.plot_best_BIC(srt_df, save_file = file)
 
     def plot_BIC_comparison(self):
         ho = self.get_hmm_overview()
         BIC_file = os.path.join(self.save_dir, 'bic_comparison.svg')
         nplt.plot_BIC(ho, self.project, save_file=BIC_file)
 
+    def analyze_NB_ID(self, save = True):
+        best_hmms = self.get_best_hmms(sorting = "best_BIC")
+        all_units, _ = ProjectAnalysis(self.project).get_unit_info()
+        NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms, all_units, prestim = True)
+        decode_data = hmma.process_NB_classification(NB_meta,NB_res)
+        
+        best_cop = best_hmms
+        id_states = decode_data.reset_index()
+        id_states = id_states.loc[id_states.prestim_state != True]
+        id_states = id_states[['exp_name','time_group','trial_ID','hmm_state','hmm_id']].drop_duplicates()
+        id_states.time_group = id_states.time_group.astype(str)
+        id_states.hmm_id = id_states.hmm_id.astype(int)
+        id_states = id_states.rename(columns={"hmm_state":"ID_state"})
+        best_hmms = pd.merge(best_cop,id_states, on=["exp_name","time_group","hmm_id"])
+        
+        timings = hmma.analyze_hmm_state_timing(best_hmms, min_dur = 50)
+    
+        #TODO: use best_hmms to get correlation between state length etc and trial number
+        
+        if save is True:
+            save_dir = self.save_dir
+            ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')
+            NB_ID_meta_sf = os.path.join(save_dir,'NB_ID_meta.feather')
+            decode_sf = os.path.join(save_dir,'NB_ID_decodes.feather')
+            self.files['ID_timing'] = ID_timing_sf
+            self.files['NB_ID_meta'] = NB_ID_meta_sf
+            self.files['NB_ID_decodes'] = decode_sf
+            feather.write_dataframe(decode_data,decode_sf)
+            #feather.write_dataframe(NB_meta, NB_ID_meta_sf) ArrowInvalid: ('Could not convert taste\nSuc     1\nNaCl    1\nCA      1\nQHCl    1\nName: 0, dtype: int64 with type Series: did not recognize Python value type when inferring an Arrow data type', 'Conversion failed for column hmm_state with type object')
+            feather.write_dataframe(timings,ID_timing_sf)
+            
+        return NB_res,NB_meta,decode_data,best_hmms,timings
+            
+        
+        
     def analyze_hmms(self, overwrite=False, save_dir=None):
         all_units, _  = ProjectAnalysis(self.project).get_unit_info()
         coding_file = self.files['hmm_coding']
@@ -1868,7 +1914,8 @@ class HmmAnalysis(object):
 
         sorted_df['sorting'] = 'rejected'
         sorted_df['sort_method'] = 'auto'
-        met_params = sorted_df.query('taste != "Spont"')
+        met_params = sorted_df.query('time_start==-250')
+                                #'taste != "Spont"')
                                 #'(notes == "sequential - final") |' #required params must edit
                                #      ' (notes == "sequential - low thresh") |'
                                 #     ' (notes == "sequential - BIC test")')
@@ -1901,20 +1948,23 @@ class HmmAnalysis(object):
 
         self.write_sorted_hmms(sorted_df)
 
-    def sort_hmms_by_BIC(self):
+    def sort_hmms_by_BIC(self, overwrite = False):
         sorted_df = self.get_sorted_hmms()
-        if sorted_df is None:
+        if sorted_df is None or overwrite is True:
             sorted_df = self.get_hmm_overview()
             sorted_df['sorting'] = 'rejected'
             sorted_df['sort_method'] = 'auto'
 
-        df = sorted_df[sorted_df.notes.str.contains('BIC test')]
+        #df = sorted_df[sorted_df.notes.str.contains('BIC test')]
+        #df = sorted_df.query('time_start==-250')
+        df = sorted_df.query('n_states > 2')
         minima = []
         for name, group in df.groupby(['exp_name', 'rec_group', 'taste']):
             minima.append(group.BIC.idxmin())
 
         sorted_df.loc[minima, 'sorting'] = 'best_BIC'
         self.write_sorted_hmms(sorted_df)
+        
 
 def organize_hmms(sorted_df, plot_dir):
     req_params = {'dt': 0.001, 'unit_type': 'single', 'time_end': 2000}
@@ -1988,17 +2038,17 @@ def get_saccharin_consumption(anim_dir):
     return mean_sacc/mean_water
 
 
-def apply_consumption_to_project(proj):
-    #if 'saccharin_consumption' not in proj._exp_info.columns:
-    tmp = proj._exp_info['exp_dir'].apply(get_saccharin_consumption)
-    print(tmp)
-    proj._exp_info['saccharin_consumption'] = tmp
-    #else:
-    #    tmp = proj._exp_info['saccharin_consumption']
+# def apply_consumption_to_project(proj):
+#     #if 'saccharin_consumption' not in proj._exp_info.columns:
+#     tmp = proj._exp_info['exp_dir'].apply(get_saccharin_consumption)
+#     print(tmp)
+#     proj._exp_info['saccharin_consumption'] = tmp
+#     #else:
+#     #    tmp = proj._exp_info['saccharin_consumption']
 
-    proj._exp_info['CTA_learned'] = (tmp < 0.8)
-    proj._exp_info['cta_group'] = proj._exp_info.CTA_learned.map({True: 'CTA', False: 'No CTA'})
-    proj.save()
+#     proj._exp_info['CTA_learned'] = (tmp < 0.8)
+#     proj._exp_info['cta_group'] = proj._exp_info.CTA_learned.map({True: 'CTA', False: 'No CTA'})
+#     proj.save()
 
 
 class Analysis(object):
@@ -2019,7 +2069,7 @@ class Analysis(object):
 
     def run(self):
         pass
-
+ 
 
 def compare_taste_responses(rec1, unit1, rec2, unit2, params, method='bootstrap'):
     bin_size = params['response_comparison']['win_size']

@@ -10,6 +10,8 @@ from plotting import ORDERS, add_suplabels, change_hue
 import analysis_stats as stats
 from scipy.ndimage.filters import gaussian_filter1d
 from blechpy import load_dataset
+import seaborn as sns
+
 #I might need to replace a bunch of x['time_group'] under df['grouping']
 
 TASTE_COLORS = {'Suc': 'tab:blue', 'NaCl': 'tab:red', 'QHCl': 'tab:purple', 'CA': 'tab:yellow', 'Spont':'tab:green'}
@@ -18,7 +20,7 @@ ORDERS = {'exp_group': ['naive', 'suc_preexp'],
           #'cta_group': ['CTA', 'No CTA'],
           'taste': ['Suc', 'NaCl', 'CA', 'QHCl', 'Spont'],
           #'time_group': ['Exposure_1','Exposure_2','Exposure_3'],
-          'time_group': ['1','3'],
+          'time_group': ['1','2','3'],
           'state_group': ['early', 'late'],
           'MDS_time': ['Early (0-750ms)', 'Late (750-1500ms)'],
           'unit_type': ['pyramidal', 'interneuron'],
@@ -910,8 +912,48 @@ def plot_BIC(ho, proj, save_file=None):
         plt.close(fig)
     else:
         return fig, ax, statistics
+    
+def plot_best_BIC(srt_df, save_file = None):
+    sns.set(font_scale=1)
+    g = sns.FacetGrid(data = srt_df, row = "exp_group", height = 6, aspect = 1.25)
+    g.map_dataframe(sns.barplot, x = "taste", y = "n_states", hue = "time_group", order = (["Suc","NaCl","CA","QHCl","Spont"]), dodge = True, 
+                    palette = "Set2")   
+    g.map_dataframe(sns.swarmplot, x = "taste", y = "n_states", hue = "time_group",order = (["Suc","NaCl","CA","QHCl","Spont"]), dodge = True,
+                    palette = ["#404040"])
+    g.set_axis_labels("", "best # states")
+    plt.legend(title = "# session exposure", loc = "upper left")
+    
+    if save_file:
+        g.savefig(save_file)
+    else:
+        return g
 
+def plot_grouped_BIC(srt_df, save_file = None):
+    sns.set(font_scale = 1)
+    g = sns.catplot(data = srt_df, 
+                    kind = "bar",
+                    hue= "time_group", 
+                    col = "taste",
+                    row = 'exp_group',
+                    x = "n_states", 
+                    y = "BIC",
+                    col_order=(["Suc","NaCl","CA","QHCl","Spont"]),
+                    aspect = .7,
+                    margin_titles=True)
+    g.map_dataframe(sns.swarmplot, 
+                    x = "n_states", 
+                    y = "BIC",
+                    hue = "time_group",
+                    dodge = True,
+                    palette=["#404040"])
+    g.set_axis_labels("number of HMM states", "BIC")
+    if save_file and g.fig:
+        g.savefig(save_file)
+        g.fig.close()
+    else:
+        return g
 
+    
 def fix_hmm_overview(ho, proj):
     ho = ho.copy()
     df = proj._exp_info

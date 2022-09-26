@@ -193,54 +193,54 @@ def check_ll_asymptote(row):
     return 'flux'
 
 
-def ID_pal_hmm_analysis(best_df, plot_dir=None):
-    '''needs best_hmm dataframe from make_best_hmm_list
-    '''
-    # important columns: rec_dir, taste, exp_name, rec_group, time_group,
-    # cta_group, n_cells, best_hmm, early_state, late_state, exp_group, channel, palatability
-    #TODO: Add palatability to best_df
+# def ID_pal_hmm_analysis(best_df, plot_dir=None):
+#     '''needs best_hmm dataframe from make_best_hmm_list
+#     '''
+#     # important columns: rec_dir, taste, exp_name, rec_group, time_group,
+#     # cta_group, n_cells, best_hmm, early_state, late_state, exp_group, channel, palatability
+#     #TODO: Add palatability to best_df
 
-    # out columns: rec_dir, exp_name, exp_group, rec_group,
-    # time_group, cta_group, n_cells, n_tastes
-    # early_ID_acc, late_ID_acc, early_pal_acc, late_pal_acc
-    id_cols = ['rec_dir', 'exp_name', 'rec_group', 'time_group', 'cta_group', 'n_cells']
-    confusion_tastes = ['NaCl', 'Quinine', 'Saccharin']
-    out = []
-    for name, group in best_df.groupby(id_cols):
-        tmp = {k:v for k,v in zip(id_cols, name)}
-        eid, lid, epal, lpal, econ, lcon = [None]*6
-        tmp['n_tastes'] = len(group)
-        if len(group) >= 2:
-            eid = get_NB_classifier_accuracy(group, 'taste', 'early_state')
-            lid  = get_NB_classifier_accuracy(group, 'taste', 'late_state')
-            epal = get_LDA_classifier_accuracy(group, 'palatability',
-                                               'early_state')
-            lpal = get_LDA_classifier_accuracy(group, 'palatability',
-                                               'late_state')
+#     # out columns: rec_dir, exp_name, exp_group, rec_group,
+#     # time_group, cta_group, n_cells, n_tastes
+#     # early_ID_acc, late_ID_acc, early_pal_acc, late_pal_acc
+#     id_cols = ['rec_dir', 'exp_name', 'rec_group', 'time_group', 'cta_group', 'n_cells']
+#     confusion_tastes = ['NaCl', 'Quinine', 'Saccharin']
+#     out = []
+#     for name, group in best_df.groupby(id_cols):
+#         tmp = {k:v for k,v in zip(id_cols, name)}
+#         eid, lid, epal, lpal, econ, lcon = [None]*6
+#         tmp['n_tastes'] = len(group)
+#         if len(group) >= 2:
+#             eid = get_NB_classifier_accuracy(group, 'taste', 'early_state')
+#             lid  = get_NB_classifier_accuracy(group, 'taste', 'late_state')
+#             epal = get_LDA_classifier_accuracy(group, 'palatability',
+#                                                'early_state')
+#             lpal = get_LDA_classifier_accuracy(group, 'palatability',
+#                                                'late_state')
 
-            if plot_dir is None:
-                continue
+#             if plot_dir is None:
+#                 continue
 
-            if not os.path.isdir(plot_dir):
-                os.makedirs(plot_dir)
+#             if not os.path.isdir(plot_dir):
+#                 os.makedirs(plot_dir)
 
-            fn = os.path.join(plot_dir, '%s_%s-ID_Classifier.svg' % (exp_name, rec_group))
-            mplt.plot_classifier_results(group, early=eid, late=lid,
-                                         label=label, save_file=fn)
-            fn = fn.replace('ID_Classifier', 'Pal_Classifier')
-            mplt.plot_pal_classifier_results(group, early=eid, late=lid,
-                                             label=label, save_file=fn)
-            fn = fn.replace('Pal_Regression.svg', '.txt')
-            write_id_pal_to_text(fn, group, early_id=eid, late_id=lid,
-                                 early_pal=epal, late_pal=lpal, label=label)
+#             fn = os.path.join(plot_dir, '%s_%s-ID_Classifier.svg' % (exp_name, rec_group))
+#             mplt.plot_classifier_results(group, early=eid, late=lid,
+#                                          label=label, save_file=fn)
+#             fn = fn.replace('ID_Classifier', 'Pal_Classifier')
+#             mplt.plot_pal_classifier_results(group, early=eid, late=lid,
+#                                              label=label, save_file=fn)
+#             fn = fn.replace('Pal_Regression.svg', '.txt')
+#             write_id_pal_to_text(fn, group, early_id=eid, late_id=lid,
+#                                  early_pal=epal, late_pal=lpal, label=label)
 
-        tmp['early_ID_acc'] = eid.accuracy
-        tmp['late_ID_acc'] = lid.accuracy
-        tmp['early_pal_acc'] = epal
-        tmp['late_pal_acc'] = lpal
-        out.append(tmp)
+#         tmp['early_ID_acc'] = eid.accuracy
+#         tmp['late_ID_acc'] = lid.accuracy
+#         tmp['early_pal_acc'] = epal
+#         tmp['late_pal_acc'] = lpal
+#         out.append(tmp)
 
-    return pd.DataFrame(out)
+#     return pd.DataFrame(out)
 
 def get_early_and_late_firing_rates(rec_dir, hmm_id, early_state, late_state, units=None):
     '''Early state gives the firing rate during the first occurence of that
@@ -749,7 +749,7 @@ def make_best_hmm_list(all_units, sorted_hmms, min_cells=3, area='GC', sorting='
         if (exp, rec, tst) in hmm_df.index: #this condition failing
             print("good")
             hr = hmm_df.loc[exp, rec, tst]
-            hr = hr.iloc[0]
+            #hr = hr.iloc[0]
             hid, srt, ns, nt, es, ls, notes = hr[['hmm_id', 'sorting', 'n_states','n_trials','early_state', 'late_state', 'notes']]
         else:
             raise KeyError('missing data at', exp, ' ', rec, ' ', tst)
@@ -967,8 +967,8 @@ def analyze_NB_state_classification(best_hmms,all_units, prestim = True):
     metadict = []
     
     all_units = all_units.query('area == "GC" and single_unit == True')
-    best_hmms = best_hmms.dropna(subset=['hmm_id', 'early_state', 'late_state'])
-
+    #best_hmms = best_hmms.dropna(subset=['hmm_id', 'early_state', 'late_state'])
+    best_hmms = best_hmms.dropna(subset=['hmm_id'])
     
     for name, group in best_hmms.groupby(id_cols):
         id_tastes = group.taste
@@ -988,6 +988,13 @@ def analyze_NB_state_classification(best_hmms,all_units, prestim = True):
 
                 NB_res.append(res)  
                 n_trials_decoded = []
+                
+                res_frame = pd.DataFrame()
+                res_frame['X'] = list(res.X)
+                res_frame['Y'] = res.Y
+                res_frame['Y_pred'] = res.Y_predicted
+                res_frame['row_ID'] = list(res.row_id)
+                
                 for i in id_tastes:
                     n_dec = np.count_nonzero(res.Y==i)
                     n_trials_decoded.append(n_dec)
@@ -1071,6 +1078,7 @@ def process_NB_classification(NB_meta,NB_res):
 
     full_trials = pd.concat(full_trials)
     full_trials.pop('variable')
+    full_trials = full_trials[~full_trials.trial_num.isna()]
     full_trials.trial_num = full_trials.trial_num.astype(int)
     full_trials.time_group = full_trials.time_group.astype(int)
     
@@ -1101,6 +1109,7 @@ def process_NB_classification(NB_meta,NB_res):
     decode_data = full_trials.merge(decode_data, how = "outer").fillna(0)
     
     return decode_data
+
 
 
 #label_col is the heading of taste col
@@ -1462,16 +1471,19 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
                 'rec_group', 'rec_dir', 'n_cells', 'taste', 'hmm_id', 'trial',
                 'state_group', 'state_num', 't_start', 't_end', 'duration', 'pos_in_trial',
                 'unit_type', 'area', 'dt', 'n_states', 'notes', 'valid']
-    best_hmms = best_hmms.dropna(subset=['hmm_id', 'early_state', 'late_state']).copy() # 09/20/21 this line is causing error
+    
+    best_hmms = best_hmms.dropna(subset=['hmm_id', 'ID_state']).copy()
+    #best_hmms = best_hmms.dropna(subset=['hmm_id', 'early_state', 'late_state']).copy() # 09/20/21 this line is causing error
     # it throws away all of best_hmms because early/late state are empty, need to find proper origin of early/late state
     best_hmms.loc[:,'hmm_id'] = best_hmms['hmm_id'].astype('int')
+    best_hmms['ID_state'] = best_hmms['ID_state'].astype('int')
     id_cols = ['exp_name', 'exp_group', 'time_group', 'rec_group',
                'rec_dir', 'taste', 'hmm_id', 'palatability']
     param_cols = ['n_cells', 'n_states', 'dt', 'area', 'unit_type', 'notes']
     # State group is early or late
     out = []
     for i, row in best_hmms.iterrows():
-        template = dict.fromkeys(out_keys)
+        template = dict.fromkeys(out_keys)  
         for k in id_cols:
             template[k] = row[k]
 
@@ -1490,9 +1502,11 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
             tmp['trial_group'] = (lambda x: int(x/5)+1)(tmp['trial'])
 
             # Mark valid as whether both early and late state are present and longer than min_dur
-            e_valid = is_state_in_seq(path, row['early_state'], min_pts=min_pts, time=time)
-            l_valid = is_state_in_seq(path, row['late_state'], min_pts=min_pts, time=time)
-            tmp['valid'] = (e_valid and l_valid)
+            #e_valid = is_state_in_seq(path, row['early_state'], min_pts=min_pts, time=time)
+            #l_valid = is_state_in_seq(path, row['late_state'], min_pts=min_pts, time=time)
+            id_valid = is_state_in_seq(path, row['ID_state'], min_pts=min_pts, time=time)
+            #tmp['valid'] = (e_valid and l_valid)
+            tmp['valid'] = (id_valid)
 
             summary = summarize_sequence(path).astype('int')
             # summary = summary[np.where(summary[:,-1] >= min_dur/dt)[0], :]
@@ -1513,12 +1527,15 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
                 s_tmp['t_end'] = time[s_row[2]]
                 s_tmp['duration'] = s_row[3]/dt
                 # only first appearance of state is marked as early or late
-                if s_row[0] == row['early_state'] and not early_flag:
-                    s_tmp['state_group'] = 'early'
-                    early_flag = True
-                elif s_row[0] == row['late_state'] and not late_flag:
-                    s_tmp['state_group'] = 'late'
-                    late_flag = True
+                if s_row[0] == row['ID_state'] and not early_flag:
+                    s_tmp['state_group'] = 'ID'
+                    ID_flag = True
+                # if s_row[0] == row['early_state'] and not early_flag:
+                #     s_tmp['state_group'] = 'early'
+                #     early_flag = True
+                # elif s_row[0] == row['late_state'] and not late_flag:
+                #     s_tmp['state_group'] = 'late'
+                #     late_flag = True
 
                 s_tmp['pos_in_trial'] = j
                 out.append(s_tmp)

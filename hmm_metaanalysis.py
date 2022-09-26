@@ -996,7 +996,7 @@ def sort_hmms(df, required_params=None):
         df = df.query(qry)
 
     # One HMM for each animal rec and taste
-    df = df.query('n_states == 3 or n_states == 2')
+    #df = df.query('n_states == 3 or n_states == 2')
     met_params = np.array((df.index))
     out_df['sorting'] = 'rejected'
     out_df['sort_method'] = 'params'

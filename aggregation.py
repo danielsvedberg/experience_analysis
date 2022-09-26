@@ -88,7 +88,7 @@ def find_held_units(proj, percent_criterion=95, raw_waves=False):
     threshold = np.percentile(sing_units['intra_J3'], percent_criterion)
     rec_dirs = sing_units['rec_dir'].unique().tolist()
 
-    rec_order = [1, 3]
+    rec_order = [1, 2, 3]
 
     # Loop through animal, electrode, rec pairs
     # Store rec1, el1, unit1, rec2, el2, unit2, interJ3, held, held_unit_name
