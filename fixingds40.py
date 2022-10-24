@@ -9,10 +9,11 @@ import blechpy
 import pandas as pd
 import blechpy.dio.h5io as h5io
 import tables
+import numpy as np
 
-dat = blechpy.load_dataset('/media/dsvedberg/Ubuntu Disk/taste_experience_resorts/DS40/DS40_spont_taste_201103_150101')
+dat = blechpy.load_dataset('/media/dsvedberg/Ubuntu Disk/taste_experience_resorts/DS40/DS40_spont_taste_201104_150441')
 trials= dat.dig_in_trials
-badtrials = trials.loc[trials.channel == 1]
+badtrials =trials#trials.loc[trials.channel == 1]
 badidxs = badtrials['on_index'].array
 badidxs = badidxs[::-1]
 

@@ -1410,41 +1410,80 @@ class HmmAnalysis(object):
         BIC_file = os.path.join(self.save_dir, 'bic_comparison.svg')
         nplt.plot_BIC(ho, self.project, save_file=BIC_file)
 
-    def analyze_NB_ID(self, save = True):
-        best_hmms = self.get_best_hmms(sorting = "best_BIC")
-        all_units, _ = ProjectAnalysis(self.project).get_unit_info()
-        NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms, all_units, prestim = True)
-        decode_data = hmma.process_NB_classification(NB_meta,NB_res)
-        
-        best_cop = best_hmms
-        id_states = decode_data.reset_index()
-        id_states = id_states.loc[id_states.prestim_state != True]
-        id_states = id_states[['exp_name','time_group','trial_ID','hmm_state','hmm_id']].drop_duplicates()
-        id_states.time_group = id_states.time_group.astype(str)
-        id_states.hmm_id = id_states.hmm_id.astype(int)
-        id_states = id_states.rename(columns={"hmm_state":"ID_state"})
-        best_hmms = pd.merge(best_cop,id_states, on=["exp_name","time_group","hmm_id"])
-        
-        timings = hmma.analyze_hmm_state_timing(best_hmms, min_dur = 50)
-    
-        #TODO: use best_hmms to get correlation between state length etc and trial number
-        
-        if save is True:
+    def analyze_NB_ID(self, overwrite = True):
+
+        if overwrite is True:
+            best_hmms = self.get_best_hmms(sorting = "best_BIC")
+            all_units, _ = ProjectAnalysis(self.project).get_unit_info()
+            NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms, all_units, prestim = True)
+            decode_data = hmma.process_NB_classification(NB_meta,NB_res)
+            
+            best_cop = best_hmms
+            id_states = decode_data.reset_index()
+            id_states = id_states.loc[id_states.prestim_state != True]
+            id_states = id_states[['exp_name','time_group','trial_ID','hmm_state','hmm_id']].drop_duplicates()
+            id_states.time_group = id_states.time_group.astype(str)
+            id_states.hmm_id = id_states.hmm_id.astype(int)
+            id_states = id_states.rename(columns={"hmm_state":"ID_state"})
+            try:
+                best_cop = best_cop.drop(columns = ['ID_state','trial_ID'])
+            except:
+                print('good')
+                
+            best_hmms = pd.merge(best_cop,id_states, on=["exp_name","time_group","hmm_id"])
+            
+            timings = hmma.analyze_classified_hmm_state_timing(best_hmms,decode_data, 'ID_state', min_dur = 50)
             save_dir = self.save_dir
             ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')
-            NB_ID_meta_sf = os.path.join(save_dir,'NB_ID_meta.feather')
-            decode_sf = os.path.join(save_dir,'NB_ID_decodes.feather')
             self.files['ID_timing'] = ID_timing_sf
-            self.files['NB_ID_meta'] = NB_ID_meta_sf
-            self.files['NB_ID_decodes'] = decode_sf
-            feather.write_dataframe(decode_data,decode_sf)
-            #feather.write_dataframe(NB_meta, NB_ID_meta_sf) ArrowInvalid: ('Could not convert taste\nSuc     1\nNaCl    1\nCA      1\nQHCl    1\nName: 0, dtype: int64 with type Series: did not recognize Python value type when inferring an Arrow data type', 'Conversion failed for column hmm_state with type object')
-            feather.write_dataframe(timings,ID_timing_sf)
+            feather.write_dataframe(timings, ID_timing_sf)
             
-        return NB_res,NB_meta,decode_data,best_hmms,timings
+            best_file = self.files['best_hmms']
+            feather.write_dataframe(best_hmms, best_file)
             
+            return NB_res,NB_meta,decode_data,best_hmms,timings
         
+        else:
+            decode_data = feather.read_dataframe(self.files['NB_ID_decodes'])
+            timings = feather.read_dataframe(self.files['ID_timing'])
+            
+            return decode_data,timings
+
+    def analyze_pal_linear_regression(self):
+        best_hmms = self.get_best_hmms(sorting = 'best_BIC')
+        all_units, _ = ProjectAnalysis(self.project).get_unit_info()
+        pal_map = {'taste': ['QHCl', 'CA', 'NaCl', 'Suc'],
+                   'palatability':[1,2,3,4]}
+        pal_map = pd.DataFrame(pal_map)
+        best_hmms = best_hmms.drop(columns = ['palatability'])
+        best_hmms = best_hmms.merge(pal_map, on = 'taste')
         
+        results = hmma.LinReg_pal_classification(best_hmms,all_units)
+        linreg_meta, all_trls = hmma.process_LinReg_pal_classification(results)
+       
+        pal_states = all_trls
+        pal_states = pal_states[['rec_dir','Y','hmm_state','hmm_id']].drop_duplicates()
+        pal_states.hmm_id= pal_states.hmm_id.astype(int)
+        pal_states = pal_states.rename(columns = {"hmm_state":"pal_state"})
+        best_hmms = pd.merge(best_hmms,pal_states, on=["rec_dir","hmm_id"])
+        best_hmms = best_hmms.rename(columns = {"Y":"pal_rating"})
+        
+        all_trls['hmm_id'] = all_trls['hmm_id'].astype(int)
+        mod = best_hmms[['rec_dir','exp_name','exp_group','time_group','taste','hmm_id']].drop_duplicates()
+        all_trls = all_trls.merge(mod, on= ['rec_dir','hmm_id'])
+        
+        all_trls = all_trls.rename(columns = {'trial':'trial_num', 'Y':'trial_ID'})
+        all_trls['prestim_state'] = False
+        timings = hmma.analyze_classified_hmm_state_timing(best_hmms,all_trls,'pal_state',min_dur = 50)
+        timings = timings.loc[timings.state_group == 'pal_state']
+        
+        mf = all_trls[['rec_dir','trial_num','hmm_id', 'Y_pred']]
+        timings = timings.merge(mf, on = ['rec_dir', 'trial_num', 'hmm_id'])
+        timings = timings.loc[timings.pos_in_trial != 0]
+        timings = timings.loc[timings.t_start > 0]
+        
+        return timings, all_trls, results, linreg_meta
+       
     def analyze_hmms(self, overwrite=False, save_dir=None):
         all_units, _  = ProjectAnalysis(self.project).get_unit_info()
         coding_file = self.files['hmm_coding']
@@ -1475,7 +1514,6 @@ class HmmAnalysis(object):
         else:
             timings = hmma.analyze_hmm_state_timing(best_hmms)
             feather.write_dataframe(timings, timing_file)
-            #time savings comment
         # if os.path.isfile(confusion_file) and not overwrite:
         #     confusion = feather.read_dataframe(confusion_file)
         # else:
@@ -1955,9 +1993,12 @@ class HmmAnalysis(object):
             sorted_df['sorting'] = 'rejected'
             sorted_df['sort_method'] = 'auto'
 
-        #df = sorted_df[sorted_df.notes.str.contains('BIC test')]
-        #df = sorted_df.query('time_start==-250')
         df = sorted_df.query('n_states > 2')
+        df = df.loc[((df.exp_name != 'DS40') | (df.rec_num !=2) | (df.n_states != 3))] #TODO: get rid of this bullshit hardcoding 
+        df = df.loc[((df.exp_name != 'DS40') | (df.rec_num !=3) | (df.n_states != 3) | (df.taste != 'NaCl'))]
+        df = df.loc[((df.exp_name != 'DS36') | (df.rec_num !=1) | (df.n_states != 3))]
+        df = df.loc[((df.exp_name != 'DS36') | (df.rec_num !=2) | (df.n_states != 3))]
+        
         minima = []
         for name, group in df.groupby(['exp_name', 'rec_group', 'taste']):
             minima.append(group.BIC.idxmin())

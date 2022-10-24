@@ -2,11 +2,13 @@ import numpy as np
 import pandas as pd
 import itertools as it
 from joblib import Parallel, delayed, cpu_count
-from scipy.stats import t, fisher_exact, shapiro, levene, chisquare, kruskal, chi2_contingency
+from scipy.stats import t, fisher_exact, shapiro, levene, chisquare, kruskal, chi2_contingency 
 from scipy.optimize import curve_fit
 from sklearn.model_selection import LeavePOut
 from sklearn.naive_bayes import GaussianNB
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+from sklearn.linear_model import LinearRegression as LR
+from sklearn.metrics import mean_squared_error
 from statsmodels.formula.api import ols
 import statsmodels.api as sm
 import pingouin as pg
@@ -235,6 +237,54 @@ def bootstrap(data, n_boot=1000, alpha=0.05, n_cores=1, func=np.sum):
     upper = np.percentile(means, 100*(1-alpha/2), axis=0)
     return np.mean(means, axis=0), lower, upper
 
+class LinRegressor(object):
+    def __init__(self, y, X, row_id=None, n_features = 2):
+        self.Y = y
+        self.X = X
+        self.row_id = row_id
+        self.result = None
+        self.model = None
+        self.n_features = np.min([n_features, X.shape[1], len(np.unique(y))-1])
+        
+    def fit(self):
+        lr = LR()
+        lr.fit(self.X,self.Y)
+        self.model = lr
+        
+    def predict(self, X):
+        return self.model.predict(X)
+    
+    def leave1out_fit(self):
+        X = self.X
+        Y = self.Y
+        lpo = LeavePOut(1)
+        n_splits = lpo.get_n_splits(Y)
+        correct = 0
+        predictions = np.zeros((n_splits,), object)
+        
+        poss_states = np.unique(Y)
+        
+        for train_idx, test_idx in lpo.split(Y):
+            train_x = X[train_idx, :]
+            train_y = Y[train_idx]
+            test_x = X[test_idx, :]
+            test_y = Y[test_idx]
+            lr = LR()
+            y_pred = lr.fit(train_x, train_y).predict(test_x)
+            predictions[test_idx] = y_pred[0]
+            pred_err = abs(y_pred[0]-poss_states)
+            idx = np.where(pred_err == min(pred_err))
+            Y_match = poss_states[idx]
+            
+            correct += (test_y == Y_match)
+
+        full_model = LR()
+        full_model.fit(X,Y)
+        accuracy = 100* (correct/n_splits)
+        mse = mean_squared_error(Y,predictions)
+        self.model = full_model
+        self.result = ClassifierResult(accuracy, X, Y, predictions, row_id=self.row_id, model=full_model, loss = mse)
+        return self.result
 
 class NBClassifier(object):
     def __init__(self, y, X, row_id=None):
@@ -320,7 +370,7 @@ class LDAClassifier(object):
 
 
 class ClassifierResult(object):
-    def __init__(self, accuracy, x, y, y_pred, row_id=None, model=None):
+    def __init__(self, accuracy, x, y, y_pred, row_id=None, model=None, loss = None):
         # fully trained model, leave1out accuracy, leave1out predictions
         self.accuracy = accuracy
         self.X = x
@@ -328,6 +378,7 @@ class ClassifierResult(object):
         self.Y_predicted = y_pred
         self.model = model
         self.row_id = row_id
+        self.loss = loss
 
 
 def anova_3way(df, value_col, factor_cols, alpha=0.05):

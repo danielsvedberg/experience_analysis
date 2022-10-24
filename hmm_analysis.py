@@ -5,7 +5,7 @@ from blechpy.analysis import poissonHMM as ph
 from blechpy import load_dataset
 from blechpy.dio import hmmIO
 from blechpy.utils.particles import AnonHMMInfoParticle
-from scipy.stats import mode
+from scipy.stats import mode, spearmanr
 import numpy as np
 import pandas as pd
 from itertools import permutations, product
@@ -17,6 +17,7 @@ from joblib import Parallel, delayed, cpu_count
 from collections import Counter
 import aggregation as agg
 import itertools
+from statistics import median
 
 def deduce_state_order(best_paths):
     '''Looks at best paths and determines the most common ordering of states by
@@ -192,56 +193,6 @@ def check_ll_asymptote(row):
 
     return 'flux'
 
-
-# def ID_pal_hmm_analysis(best_df, plot_dir=None):
-#     '''needs best_hmm dataframe from make_best_hmm_list
-#     '''
-#     # important columns: rec_dir, taste, exp_name, rec_group, time_group,
-#     # cta_group, n_cells, best_hmm, early_state, late_state, exp_group, channel, palatability
-#     #TODO: Add palatability to best_df
-
-#     # out columns: rec_dir, exp_name, exp_group, rec_group,
-#     # time_group, cta_group, n_cells, n_tastes
-#     # early_ID_acc, late_ID_acc, early_pal_acc, late_pal_acc
-#     id_cols = ['rec_dir', 'exp_name', 'rec_group', 'time_group', 'cta_group', 'n_cells']
-#     confusion_tastes = ['NaCl', 'Quinine', 'Saccharin']
-#     out = []
-#     for name, group in best_df.groupby(id_cols):
-#         tmp = {k:v for k,v in zip(id_cols, name)}
-#         eid, lid, epal, lpal, econ, lcon = [None]*6
-#         tmp['n_tastes'] = len(group)
-#         if len(group) >= 2:
-#             eid = get_NB_classifier_accuracy(group, 'taste', 'early_state')
-#             lid  = get_NB_classifier_accuracy(group, 'taste', 'late_state')
-#             epal = get_LDA_classifier_accuracy(group, 'palatability',
-#                                                'early_state')
-#             lpal = get_LDA_classifier_accuracy(group, 'palatability',
-#                                                'late_state')
-
-#             if plot_dir is None:
-#                 continue
-
-#             if not os.path.isdir(plot_dir):
-#                 os.makedirs(plot_dir)
-
-#             fn = os.path.join(plot_dir, '%s_%s-ID_Classifier.svg' % (exp_name, rec_group))
-#             mplt.plot_classifier_results(group, early=eid, late=lid,
-#                                          label=label, save_file=fn)
-#             fn = fn.replace('ID_Classifier', 'Pal_Classifier')
-#             mplt.plot_pal_classifier_results(group, early=eid, late=lid,
-#                                              label=label, save_file=fn)
-#             fn = fn.replace('Pal_Regression.svg', '.txt')
-#             write_id_pal_to_text(fn, group, early_id=eid, late_id=lid,
-#                                  early_pal=epal, late_pal=lpal, label=label)
-
-#         tmp['early_ID_acc'] = eid.accuracy
-#         tmp['late_ID_acc'] = lid.accuracy
-#         tmp['early_pal_acc'] = epal
-#         tmp['late_pal_acc'] = lpal
-#         out.append(tmp)
-
-#     return pd.DataFrame(out)
-
 def get_early_and_late_firing_rates(rec_dir, hmm_id, early_state, late_state, units=None):
     '''Early state gives the firing rate during the first occurence of that
     state in each trial. Late state gives the instance of that state that
@@ -318,45 +269,6 @@ def get_early_and_late_firing_rates(rec_dir, hmm_id, early_state, late_state, un
     late_out = np.array(late_rates)
     return out_labels, early_out, late_out
 
-
-def run_pal_regression(group, states):
-    '''
-    
-    Parameters
-    ----------
-    group : pd.DataFrame, must have columns: rec_dir, hmm_id
-    states: list of int, which state (orderd state number) of each HMM to use for classification
-    
-    Returns
-    -------
-    statsmodels.regression.linear_model.ResgressionResults
-    '''
-    labels = []
-    rates = []
-    for (i, row), state in zip(group.iterrows(), states):
-        rec_dir = row['rec_dir']
-        hmm_id = row['hmm_id']
-        dim = load_dataset(rec_dir).dig_in_mapping.set_index('name')
-        pal = dim.loc[row['taste'], 'palatability_rank']
-        h5_file = get_hmm_h5(rec_dir)
-        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
-        state_map = deduce_state_order(hmm.stat_arrays['best_sequences'])
-        state_map = {v:k for k,v in state_map.items()}  # Now state_map maps from order -> state
-        tmp_r, tmp_ss = get_state_firing_rates(rec_dir, hmm_id, state_map[state])
-        keep_idx = np.where(tmp_ss == False)[0]
-        tmp_r = tmp_r[keep_idx]
-        tmp_l = np.repeat(pal, tmp_r.shape[0])
-        labels.append(tmp_l)
-        rates.append(tmp_r)
-
-    labels = np.concatenate(labels)
-    rates = np.vstack(rates)
-    rates = sm.add_constant(rates)
-    model = sm.OLS(labels, rates)
-    results = model.fit()
-    return results
-
-
 def write_id_pal_to_text(save_file, group, early_id=None,
                          late_id=None, early_pal=None, late_pal=None,
                          label=None):
@@ -411,7 +323,39 @@ def write_id_pal_to_text(save_file, group, early_id=None,
 
 ## Helper Functions ##
 
-def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50,
+def analyze_state_correlations(timings,groupings,xfeat,features):
+    timings = timings.loc[timings.single_state ==False]
+    df = pd.DataFrame()
+    feats = []
+    corrs = []
+    p_values = []
+    nms = []
+
+    grouped_timings = timings.groupby(groupings)
+
+    for nm, grp in grouped_timings:
+        print(grp)
+
+        grp = grp.loc[:,grp.columns != '']
+
+        for feat in grp.columns:
+                if feat in features:
+                    feats.append(feat)
+                    corr, p_value = spearmanr(grp[feat], grp[xfeat])
+                    corrs.append(corr)
+                    p_values.append(p_value)
+                    nms.append(nm)
+
+    df['Feature'] = feats
+    df['Correlation'] = corrs
+    df['p_value'] = p_values
+    df['bonf_pvalue'] = df.p_value*len(features)
+    df[groupings] = pd.DataFrame(nms)
+    
+    
+    return df
+
+def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_dur = 3000,
                            remove_baseline=False, other_state=None):
     '''returns an Trials x Neurons array of firing rates giving the mean firing
     rate of each neuron in the first instance of state in each trial
@@ -430,7 +374,6 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50,
     Returns
     -------
     np.ndarray : Trials x Neuron matrix of firing rates
-
 
     Raises
     ------
@@ -461,7 +404,6 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50,
     else:
         baseline = 0
 
-
     #state must be present for at least 50ms each post-stimulus
     check_states = [state, other_state] if other_state is not None else [state]
     #check_states = [state]
@@ -472,48 +414,60 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50,
     rates = []
     trial_nums = []
     for trial, (spikes, path) in enumerate(zip(spike_array, seqs)):
-        # Skip if state is not in trial
-        if trial not in valid_trials:
+        
+        if trial not in valid_trials: # Skip if state is not in trial
             continue
-
-        # Skip trial if there is only 1 state
-        # if len(np.unique(path)) == 1:
-        #     continue
-
-        # Skip trials with only 1 state longer than the min_dur
-        summary = summarize_sequence(path)
-        # if len(np.where(summary[:,-1] >= min_dur)[0]) < 2:
-        #     continue
 
         # only grab first instance of state
-        idx1 = np.where(path == state)[0][0]
-        idx2 = np.where(path != state)[0]
-        if len(idx2) == 0 or not any(idx2 > idx1):
-            idx2 = len(path)-1
-        else:
-            idx2 = idx2[idx2 > idx1][0]
+        instate = (path == state).astype(int)
+        lag = np.insert(instate,0,0)
+        lead = np.append(instate,0)
+        
+        edges = lead-lag
+        edgeons = np.where(edges==1)[0]
+        edgeoffs = np.where(edges==-1)[0]
+        
+        statelens = edgeoffs-edgeons
+        longest = np.where(statelens==max(statelens))[0][0]
+        onidx = edgeons[longest]
+        offidx = edgeoffs[longest] -1
 
-        t1 = time[idx1]
-        t2 = time[idx2]
-        # Skip trial if this particular state is shorter than min_dur
-        # This is because a state this short a) can't provide a good firing
-        # rate and b) is probably forced by the constraints and not real
-        if t2 - t1 < min_dur:
-            continue
+        t1 = time[onidx]
+        t2 = time[offidx]
 
         si = np.where((s_time >= t1) & (s_time < t2))[0]
         tmp = np.sum(spikes[:, si], axis=-1) / (dt*len(si))
         if remove_baseline and s_time[0] < 0:
             tmp = tmp - baseline
-
-        trial_nums.append(trial)
-        rates.append(tmp)
+            
+        # Skip trial if this particular state is shorter than min_dur
+        # This is because a state this short a) can't provide a good firing
+        # rate and b) is probably forced by the constraints and not real
+        duration = abs(t2-t1)
+        min_dur_check = (duration > min_dur)
+        max_dur_check = True#(duration < max_dur)
+        if state > 0:
+            med_check = median([t1,t2]) > 50
+            end_check = (t2 > 200)
+        else:
+            med_check = True
+            end_check = True
+        
+        if not all([min_dur_check, max_dur_check, end_check, med_check]):
+            continue
+        else:
+            trial_nums.append(trial)
+            rates.append(tmp)
+    
+        if any(np.isnan(rates[0])):
+            raise Exception("empty spike array")
 
     return np.array(rates), np.array(trial_nums)
 
 #group is the groupby df
 #label_col is the heading of the taste col
 #all_units is all_units_table
+#TODO: filter out trials that don't have more than n_states-1 states
 def get_classifier_data(group, states, label_col, all_units,
                         remove_baseline=False, other_state_col=None):
     units = get_common_units(group, all_units)
@@ -537,19 +491,16 @@ def get_classifier_data(group, states, label_col, all_units,
         un = units[rec_dir]
         h5_file = get_hmm_h5(rec_dir)
         hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
-
-        #if error is "selection lists cannot have repeated values"
-        #then you have repeated units in all_units, go fix PA.detect_held_units()
+        #if error is "selection lists cannot have repeated values" then you have repeated units in all_units, go fix PA.detect_held_units()
         tmp_r, tmp_trials = get_state_firing_rates(rec_dir, hmm_id, state,
                                                    units=un,
                                                    remove_baseline=remove_baseline,
-                                                   other_state=state2)
+                                                   other_state=None)
         
         tmp_l = np.repeat(row[label_col], tmp_r.shape[0])
         tmp_id = [(rec_dir, hmm_id, row[label_col], x, state, False) for x in tmp_trials]
         
-        if len(tmp_r) == 0:
-            # This should trigger when all trials are single state
+        if len(tmp_r) == 0: # This should trigger when all trials are single state
             continue
         
         labels.append(tmp_l)
@@ -560,12 +511,13 @@ def get_classifier_data(group, states, label_col, all_units,
             tmp_ps_r, tmp_ps_trials = get_state_firing_rates(rec_dir,hmm_id,state2, 
                                                         units = un,
                                                         remove_baseline = remove_baseline,
-                                                        other_state=False)
+                                                        other_state=None)
             tmp_ps_l = np.repeat('prestim', tmp_ps_r.shape[0])
-            tmp_id = [(rec_dir,hmm_id,row[label_col], x, state2, True) for x in tmp_ps_trials]
-            labels.append(tmp_ps_l)
-            rates.append(tmp_ps_r)
-            identifiers.extend(tmp_id)
+            tmp_ps_id = [(rec_dir,hmm_id,row[label_col], x, state2, True) for x in tmp_ps_trials]
+            if len(tmp_ps_r) != 0:
+                labels.append(tmp_ps_l)
+                rates.append(tmp_ps_r)
+                identifiers.extend(tmp_ps_id)
     # if no valid trials were found for any taste
     if len(rates) == 0:
         return None, None, None
@@ -601,6 +553,7 @@ def get_common_units(group, all_units):
     return out
 
 
+
 def check_single_state_trials(row, min_dur=1):
     '''takes a row from hmm_overview and determines the number of single state decoded paths
     min_dur signifies the minimum time in ms that a state must be present to
@@ -616,7 +569,7 @@ def check_single_state_trials(row, min_dur=1):
     single_state_trials = 0
     for path in paths:
         info = summarize_sequence(path)
-        idx = np.where(info[:,-1] >= min_dur)[0]
+        idx = np.where((info[:,-1] >= min_dur))[0]# & (info[:,-1]))[0]# < 3000))[0]
         if len(idx) < 2:
             single_state_trials += 1
 
@@ -936,25 +889,20 @@ def sequential_constrained(PI, A, B):
     A[-1, -1] = 1.0
 
     return PI, A, B
-
-## HMM decoding ##
+       
 #Rabbit hole: NB_classifier_accuracy>get_classifier_data>get_state_firing_rates
 def analyze_NB_state_classification(best_hmms,all_units, prestim = True):
     '''generates list of combinations (state_df) for every possible combination of HMM states 
     and then uses them as the prior for decoding
-
     Parameters
     ----------
     best_hmms : Produced by HA.get_best_hmms() 
     all_units : Produced by PA.get_unit_info()
-
     Returns
     -------
     NB_res : list with every single decode
     NB_meta : table with metadata to index NB_res and pull out best decodes from NB_res
-
     '''
-    
     if prestim == True:
         other_state = 0
     else:
@@ -962,30 +910,41 @@ def analyze_NB_state_classification(best_hmms,all_units, prestim = True):
     
     label_col = 'taste'
     id_cols = ['exp_name','exp_group','time_group']
-    #id_tastes = ['Suc', 'NaCl','CA', 'QHCl']
-    NB_res = []
-    metadict = []
-    
+    NB_res = []; metadict = []
     all_units = all_units.query('area == "GC" and single_unit == True')
-    #best_hmms = best_hmms.dropna(subset=['hmm_id', 'early_state', 'late_state'])
     best_hmms = best_hmms.dropna(subset=['hmm_id'])
+    best_hmms['single_state_trials'] = best_hmms.apply(lambda x: check_single_state_trials(x,min_dur = 50), axis = 1)
     
     for name, group in best_hmms.groupby(id_cols):
         id_tastes = group.taste
-        n_states = group.n_states.iloc[0]
-        #we are excluding state 0 (baseline) from this, if you don't have bsln in your HMM then change range(1,...) below to range(0,...) 
-        state_combos = itertools.product(range(1,n_states),repeat = len(id_tastes)) #we are excluding the first state since the HMM constraint is that first state must be baseline
+        state_list = []
+        for i in id_tastes:
+            n_states = group.n_states.loc[group.taste == i]
+            n_states = n_states.iloc[0]
+            sts = range(1,n_states-1) #exclue state 0 and last state
+            state_list.append(sts)
+        
+        state_combos = itertools.product(*state_list) #we are excluding the first state since the HMM constraint is that first state must be baseline
+        
         state_df = pd.DataFrame(state_combos,columns=id_tastes)
+        print(state_df)
+        
         n_trials = dict(zip(group.taste,group.n_trials))
+        n_single_state = dict(zip(group.taste,group.single_state_trials))
+        en = name[0]; eg = name[1]; tg = name[2]
         
-        en = group.exp_name.iloc[0]
-        tg = group.time_group.iloc[0]
-        eg = group.exp_group.iloc[0]
-        
-        for i, row in state_df.iterrows():
-            res = NB_classifier_accuracy(group,row,label_col,all_units, other_state)
-            if res is not None:
-
+        for i, states in state_df.iterrows():
+            #res = NB_classifier_accuracy(group,row,label_col,all_units, other_state)
+            
+            labels, rates, identifiers = get_classifier_data(group, states, label_col, all_units,
+                                                             remove_baseline=False,
+                                                             other_state_col=other_state)
+            
+            if (labels is not None) & (rates is not None):
+                model = stats.NBClassifier(labels, rates, row_id=identifiers)
+                res = model.leave1out_fit()
+            
+            if (res is not None) & (labels is not None):
                 NB_res.append(res)  
                 n_trials_decoded = []
                 
@@ -995,42 +954,50 @@ def analyze_NB_state_classification(best_hmms,all_units, prestim = True):
                 res_frame['Y_pred'] = res.Y_predicted
                 res_frame['row_ID'] = list(res.row_id)
                 
+                tasteidx = res.Y != 'prestim'
+                Y_taste = res.Y[tasteidx]
+                Y_pred_taste = res.Y_predicted[tasteidx]
+                
+                tasteacc = sum(Y_taste==Y_pred_taste)/len(Y_taste)
+                
                 for i in id_tastes:
                     n_dec = np.count_nonzero(res.Y==i)
                     n_trials_decoded.append(n_dec)
+                    
                 n_trials_missed = sum(group.n_trials)-sum(n_trials_decoded)
                 n_trials_decoded = dict(zip(id_tastes,n_trials_decoded))
                 
-
                 meta_row = {'exp_name':en,
                             'time_group':tg,
                             'exp_group':eg,
                             'accuracies':res.accuracy, 
-                            'hmm_state':row, 
+                            'taste_acc':tasteacc,
+                            'hmm_state':states, 
                             'n_trials': n_trials,
+                            'n_single_state': n_single_state,
                             'n_trials_dec': n_trials_decoded,
                             'n_trials_missed': n_trials_missed
                             }
-                meta_row.update(row)
+                
+                meta_row.update(states)
                 print('decode:', name,' ',i)
                 print(meta_row)
                 metadict.append(meta_row)
                 
     NB_meta = pd.DataFrame(metadict)
-    return NB_res, NB_meta
+    
+    NB_meta['earlyness'] = [x.sum() for x in NB_meta.hmm_state]
+    NB_meta['tot_trials'] = pd.DataFrame(list(NB_meta.n_trials)).sum(axis=1)
+    NB_meta['performance'] = (1-(NB_meta['n_trials_missed']/NB_meta['tot_trials']))*NB_meta['taste_acc'] #(NB_meta['accuracies']*1E-2)
+    
+    return NB_res, NB_meta #should do process_NB_classification next
 
 def process_NB_classification(NB_meta,NB_res):
-    best_NB = NB_meta
-    best_NB['earlyness'] = [x.sum() for x in best_NB.hmm_state]
-    best_NB['tot_trials'] = pd.DataFrame(list(best_NB.n_trials)).sum(axis=1)
-    best_NB['performance'] = (best_NB['tot_trials']-best_NB['n_trials_missed'])/(best_NB['tot_trials'])*(best_NB['accuracies']*1E-2)
     
-    #best_NB = best_NB[best_NB.groupby(['exp_name','time_group']).accuracies.transform('max')==best_NB.accuracies]
+    best_NB = NB_meta
     best_NB = best_NB[best_NB.groupby(['exp_name','time_group']).performance.transform('max') == best_NB.performance]
-    #best_NB = best_NB[best_NB.groupby(['exp_name','time_group']).n_trials_missed.transform('min')==best_NB.n_trials_missed]
     best_NB = best_NB[best_NB.groupby(['exp_name','time_group']).earlyness.transform('min')==best_NB.earlyness]
     best_NB = best_NB.loc[best_NB.groupby(['exp_name','time_group']).accuracies.idxmin()]
-    
     
     best_res = []
     for index, row in best_NB.iterrows():
@@ -1077,6 +1044,7 @@ def process_NB_classification(NB_meta,NB_res):
         full_trials.append(row_trials)
 
     full_trials = pd.concat(full_trials)
+    
     full_trials.pop('variable')
     full_trials = full_trials[~full_trials.trial_num.isna()]
     full_trials.trial_num = full_trials.trial_num.astype(int)
@@ -1108,130 +1076,185 @@ def process_NB_classification(NB_meta,NB_res):
     decode_data.pop('index')
     decode_data = full_trials.merge(decode_data, how = "outer").fillna(0)
     
+    ss_trials = []
+    rd_id = []
+    hid = []
+    trls = []
+    min_dur = 50
+    for nm, grp in decode_data.groupby(['rec_dir', 'hmm_id']):
+        rec_dir = nm[0]
+        hmm_id = nm[1]
+        h5_file = get_hmm_h5(rec_dir)
+        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
+        dt = params['dt'] * 1000
+        paths = hmm.stat_arrays['best_sequences']
+        for trial, path in enumerate(paths):
+            info = summarize_sequence(path)
+            idx = np.where((info[:,-1] >= min_dur))[0] # & (info[:,-1] < 3000))[0]
+            rd_id.append(rec_dir)
+            hid.append(hmm_id)
+            trls.append(trial)
+            if len(idx) < 2:
+                ss_trials.append(True)
+            else:
+                ss_trials.append(False)
+                
+    ss_dict = {'rec_dir':rd_id, 'hmm_id':hid, 'trial_num': trls, 'single_state': ss_trials}
+    ss_frame = pd.DataFrame(ss_dict)        
+    decode_data = decode_data.merge(ss_frame, on = ['rec_dir','hmm_id','trial_num'])
+    
     return decode_data
 
-
-
+def process_LinReg_pal_classification(results):
+    columns = ['rec_dir', 'hmm_id', 'Y', 'Y_pred', 'err', 'trial_num','hmm_state', 'iteration']
+    df = pd.DataFrame(columns = columns)
+    iteration = 0
+    idcols = ['rec_dir', 'hmm_id', 'Y', 'trial_num','hmm_state','trash']
+    
+    mse = []
+    accuracies = []
+    n_trials = []
+    for i in results:
+        df1 = pd.DataFrame(i.row_id, columns = idcols)
+        df1 = df1.drop(columns=['trash'])
+        df1['iteration'] = iteration
+        df1['Y_pred'] = i.Y_predicted
+        df1['err'] = i.Y_predicted - i.Y
+        
+        iteration = iteration+1
+        df = df.append(df1)
+        
+        mse.append(i.loss)
+        accuracies.append(i.accuracy)
+        n_trials.append(len(i.Y))
+    
+    groups = df.groupby(['iteration','rec_dir','Y','hmm_state']).groups.keys()
+    groups = pd.DataFrame(groups, columns = ['iteration','rec_dir','Y','hmm_state'])
+    groups.Y = 'pal_' + groups.Y
+    groups = groups.pivot(index = ['iteration','rec_dir'], columns = 'Y', values = 'hmm_state').reset_index()
+    
+    meta = pd.DataFrame(list(zip(mse,accuracies,n_trials)),columns =['mse','accuracies','n_trials'])
+    meta = pd.concat([meta,groups],axis=1)
+    max_trials = meta.n_trials.max()
+    meta['pct_trials'] = meta.n_trials/max_trials
+    meta['performance'] = meta.accuracies*(meta.pct_trials*1e-2)
+    meta['best_mse'] = meta.groupby(['rec_dir'])['mse'].transform(min)
+    meta['score'] = (meta.best_mse/meta.mse) * (meta.pct_trials*1e-2)
+    
+    best = meta
+    # best = best.loc[best.groupby(['rec_dir']).performance.transform('max') == best.performance]
+    # best = best.loc[best.groupby(['rec_dir']).mse.transform('min') == best.mse]
+    
+    best = best.loc[best.groupby(['rec_dir']).score.transform('max') == best.score]
+    
+    all_trls = df
+    all_trls.Y = pd.to_numeric(all_trls.Y)
+    all_trls.trial_num = pd.to_numeric(all_trls.trial_num)
+    all_trls.Y_pred = pd.to_numeric(all_trls.Y_pred)
+    
+    all_trls = all_trls.loc[all_trls.iteration.isin(best.iteration)]
+    
+    return meta, all_trls
 #label_col is the heading of taste col
 #group is the rows of sorted_hmms for the grouping
 #state_df is a df with different states and which state corresponds
-def analyze_hmm_state_coding(best_hmms, all_units):
-    '''create output dataframe with columns: exp_name, time_group, exp_group,
-    cta_group, early_ID_acc, early_pal_acc, early_ID_confusion,
-    early_pal_confusion, late_ID_acc, late_pal_acc, late_ID_confusion,
-    late_pal_confusion
-    '''
-    # TODO: Remove unit hard-coding
+
+#TODO: use spearaman state corr to identify most pal correlated state
+#test LDA classifier with 1 axis
+#test linear regression classifier with one axis
+
+def LinReg_pal_classification(best_hmms, all_units):
+    label_col = 'palatability'
+    id_cols = ['exp_name','exp_group','time_group']
+    linreg_res = []
+    
     all_units = all_units.query('area == "GC" and single_unit == True')
-
-    best_hmms = best_hmms.dropna(subset=['hmm_id', 'early_state', 'late_state'])
-    out_keys = ['exp_name', 'exp_group', 'time_group', 'cta_group',
-                'early_ID_acc', 'early_ID_confusion', 'early_pal_acc',
-                'early_pal_confusion', 'late_ID_acc', 'late_ID_confusion',
-                'late_pal_acc', 'late_pal_confusion', 'n_cells', 'n_held_cells']
-    template = dict.fromkeys(out_keys)
-    id_cols = ['exp_name', 'exp_group', 'time_group', 'cta_group']
-    id_tastes = ['Citric Acid', 'NaCl', 'Quinine']
-    pal_tastes = ['Citric Acid', 'NaCl', 'Quinine']
-    confusion_tastes = ['NaCl', 'Quinine', 'Saccharin']
-    confusion_pal = [3, 1, -1]
-    out = []
+    best_hmms = best_hmms.dropna(subset=['hmm_id'])
+    
     for name, group in best_hmms.groupby(id_cols):
-        tmp = template.copy()
-        for k,v in zip(id_cols, name):
-            tmp[k] = v
+        id_pal = group.palatability
+        
+        state_list = []
+        for i in id_pal:
+            n_states = group.n_states.loc[group.palatability == i]
+            n_states = n_states.iloc[0]
+            if n_states == 3:
+                sts = [2]
+            elif n_states == 4:
+                sts = range(2,n_states)
+            elif n_states == 5:
+                sts = range(3,n_states)
 
-        # ID Classification
-        if group.taste.isin(id_tastes).sum() == len(id_tastes):
-            eia = NB_classifier_accuracy(group[group.taste.isin(id_tastes)],
-                                         'taste', 'early_state', all_units,
-                                         other_state_col='late_state')
-            lia = NB_classifier_accuracy(group[group.taste.isin(id_tastes)],
-                                         'taste', 'late_state', all_units,
-                                         other_state_col='early_state')
-            if eia is not None:
-                tmp['early_ID_acc'] = eia.accuracy
+            state_list.append(sts)
+        
+        state_combos = itertools.product(*state_list) #we are excluding the first state since the HMM constraint is that first state must be baseline
+        state_df = pd.DataFrame(state_combos,columns=id_pal)
+        n_trials = dict(zip(group.taste,group.n_trials))
+        
+        en = name[0]; eg = name[1]; tg = name[2]
+        
+        for i, states in state_df.iterrows():
 
-            if lia is not None:
-                tmp['late_ID_acc'] = lia.accuracy
+            labels,rates,identifiers = get_classifier_data(group,states,label_col,all_units,
+                                                          remove_baseline = False, other_state_col = None)
+            if labels is None: continue
+            n_cells = rates.shape[1]
+            if n_cells <2: continue
+            
+            model = stats.LinRegressor(labels,rates,row_id = identifiers)
+            results = model.leave1out_fit()
+            if results is not None:
+                print('success')
+                linreg_res.append(results)
+                
+    return linreg_res
 
-        # Palatability Classification
-        if group.taste.isin(pal_tastes).sum() == len(pal_tastes):
-            epa = LDA_classifier_accuracy(group[group.taste.isin(pal_tastes)],
-                                          'palatability', 'early_state', all_units,
-                                          other_state_col='late_state')
-            lpa = LDA_classifier_accuracy(group[group.taste.isin(pal_tastes)],
-                                          'palatability', 'late_state', all_units,
-                                          other_state_col='early_state')
-            if epa is not None:
-                tmp['early_pal_acc'] = epa.accuracy
+def Spearman_state_corr(best_hmms, all_units):
+    label_col = 'palatability'
+    id_cols = ['exp_name','exp_group','time_group']
+    
+    all_units = all_units.query('area == "GC" and single_unit == True')
+    best_hmms = best_hmms.dropna(subset=['hmm_id'])
+    
+    for name, group in best_hmms.groupby(id_cols):
+        id_pal = group.palatability
+        
+        state_list = []
+        for i in id_pal:
+            n_states = group.n_states.loc[group.palatability == i]
+            n_states = n_states.iloc[0]
+            if n_states == 3:
+                sts = [2]
+            elif n_states == 4:
+                sts = range(2,n_states)
+            elif n_states == 5:
+                sts = range(3,n_states)
 
-            if lpa is not None:
-                tmp['late_pal_acc'] = lpa.accuracy
+            state_list.append(sts)
+        
+        state_combos = itertools.product(*state_list) #we are excluding the first state since the HMM constraint is that first state must be baseline
+        state_df = pd.DataFrame(state_combos,columns=id_pal)
+        n_trials = dict(zip(group.taste,group.n_trials))
+        
+        en = name[0]; eg = name[1]; tg = name[2]
+        
+        rhos = []; ps = []; sts = []
+        for i, states in state_df.iterrows():
 
-        # ID Confusion
-        if group.taste.isin(confusion_tastes).sum() == len(confusion_tastes):
-            j = group.taste.isin(confusion_tastes)
-            eic = NB_classifier_confusion(group[j], 'taste', 'early_state', all_units,
-                                          train_labels=confusion_tastes[:-1],
-                                          test_labels=[confusion_tastes[-1]],
-                                          other_state_col='late_state')
-            lic = NB_classifier_confusion(group[j], 'taste', 'late_state', all_units,
-                                          train_labels=confusion_tastes[:-1],
-                                          test_labels=[confusion_tastes[-1]],
-                                          other_state_col='early_state')
-            # output is a tuple with (n_nacl, n_quinine), that is number of
-            # saccharin trials classified as each
-            # UPDATE: now just returns % nacl
-            if eic is not None:
-                tmp['early_ID_confusion'] = eic
+            labels,rates,identifiers = get_classifier_data(group,states,label_col,all_units,
+                                                          remove_baseline = True, other_state_col = None)
+            
+            for i in rates.transpose():
+                rho, p = spearmanr(labels,i)
+                rhos.append(rho)
+                ps.append(p)
+                sts.append(states.transpose())
+                
+                
+    return rhos, ps        
+    
 
-            if lic is not None:
-                tmp['late_ID_confusion'] = lic
-
-        # Pal Confusion
-        if group.taste.isin(confusion_tastes).sum() == len(confusion_tastes):
-            j = group.taste.isin(confusion_tastes)
-            epc, eps = LDA_classifier_confusion(group[j], 'palatability',
-                                                'early_state', all_units,
-                                                train_labels=confusion_pal[:-1],
-                                                test_labels=[confusion_pal[-1]],
-                                                other_state_col='late_state')
-            lpc, lps = LDA_classifier_confusion(group[j], 'palatability',
-                                                'late_state', all_units,
-                                                train_labels=confusion_pal[:-1],
-                                                test_labels=[confusion_pal[-1]],
-                                                other_state_col='early_state')
-            if epc is not None:
-                tmp['early_pal_confusion'] = epc
-
-            if lpc is not None:
-                tmp['late_pal_confusion'] = lpc
-
-        # n_cells in 4taste rec (single units in GC, which are used for classfier, not for HMM fitting
-        # therefore if HMM fitted with pyrmadial this will use all single units
-        rec_dirs = group.rec_dir.unique()
-        rd = [x for x in rec_dirs if '4taste' in x]
-        if len(rd) != 0:
-            rd = rd[0]
-            tmp_units = all_units.query('rec_dir == @rd')
-            n_cells = len(tmp_units)
-            tmp['n_cells'] = n_cells
-
-        # n_held_cells, number of common units between 2 recordings used for confusion computation
-        if len(rec_dirs) > 1:
-            j = group.taste.isin(confusion_tastes)
-            units = get_common_units(group[j], all_units)
-            if units == {}:
-                tmp['n_held_cells'] = 0
-            else:
-                tmp['n_held_cells'] = len(list(units.values())[0])
-
-        out.append(tmp)
-
-    return pd.DataFrame(out)
-
-def NB_classifier_accuracy(group, states, label_col, all_units, other_state_col=None):
+def LDA_classifier_accuracy(group, states, label_col, all_units, other_state_col=None):
     '''uses rec_dir and hmm_id to creating firing rate array (trials x cells)
     label_col is the column used to label trials, state_col is used to identify
     which hmm state to use for classification
@@ -1250,60 +1273,50 @@ def NB_classifier_accuracy(group, states, label_col, all_units, other_state_col=
     -------
     float : accuracy [0,1]
     '''
-    #"remove_baseline" subtracts the mean firing rate from the firing rate
-    labels, rates, identifiers = get_classifier_data(group, states, label_col, all_units,
+    
+    def analyze_pal_corr(best_hmms,all_units):
+        label_col = 'palatability'
+        id_cols = ['exp_name','exp_group','time_group']
+        NB_res = []
+        metadict = []
+        
+        all_units = all_units.query('area == "GC" and single_unit == True')
+        best_hmms = best_hmms.dropna(subset=['hmm_id'])
+        
+        for name, group in best_hmms.groupby(id_cols):
+            id_pal = group.palatability
+            
+            state_list = []
+            for i in id_pal:
+                n_states = group.n_states.loc[group.palatability == i]
+                n_states = n_states.iloc[0]
+                sts = range(1,n_states)
+                state_list.append(sts)
+            
+            state_combos = itertools.product(*state_list) #we are excluding the first state since the HMM constraint is that first state must be baseline
+            state_df = pd.DataFrame(state_combos,columns=id_pal)
+            n_trials = dict(zip(group.taste,group.n_trials))
+            
+            en = name[0]
+            eg = name[1]
+            tg = name[2]
+            
+            for i, states in state_df.iterrows():
+                #res = Spearman_state_corr(group,states,all_units)
+                LDA_classifier_accuracy(group,label_col, states,)
+            eg = group.exp_group.iloc[0]
+
+    labels, rates, identifiers = get_classifier_data(group, states, label_col,all_units,
                                                      remove_baseline=True,
                                                      other_state_col=other_state_col)
     if labels is None:
         return None
-
+    
     n_cells = rates.shape[1]
     if n_cells < 2:
         return None
-
-    # Check to make sure all expected tastes are present in the acquired data,
-    # since trials are dropped if the first appearance of the state in the
-    # trial is less than min_dur (50 ms)
-    expected_tastes = group.taste.to_list()
-    if not all([x in labels for x in expected_tastes]):
-        return None
-
-    model = stats.NBClassifier(labels, rates, row_id=identifiers)
-    results = model.leave1out_fit()
-    return results
-
-
-def LDA_classifier_accuracy(group, label_col, state_col, all_units, other_state_col=None):
-    '''uses rec_dir and hmm_id to creating firing rate array (trials x cells)
-    label_col is the column used to label trials, state_col is used to identify
-    which hmm state to use for classification
-
-    Parameters
-    ----------
-    group : pd.DataFrame
-        must have columns: rec_dir, hmm_id and columns that provide the labels
-        for classification and the hmm state to be used
-    label_col: str, column of dataframe that provides the classification labels
-    state_col: str, column of dataframe that provides the hmm state to use
-    all_units: pd.DataFrame
-        dataframe of all units with columns rec_dir, area, single_unit, held_unit_name
-
-    Returns
-    -------
-    float : accuracy [0,1]
-    '''
-    labels, rates, identifiers = get_classifier_data(group, label_col,
-                                                     state_col, all_units,
-                                                     remove_baseline=True,
-                                                     other_state_col=other_state_col)
-    if labels is None:
-        return None
-
-    n_cells = rates.shape[1]
-    if n_cells < 2:
-        return None
-
-    model = stats.LDAClassifier(labels, rates, row_id=identifiers)
+    
+    model = stats.LDAClassifier(labels, rates,n_components=1, row_id=identifiers)
     results = model.leave1out_fit()
     return results
 
@@ -1469,12 +1482,11 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
     '''
     out_keys = ['exp_name', 'exp_group', 'time_group', 'palatability',
                 'rec_group', 'rec_dir', 'n_cells', 'taste', 'hmm_id', 'trial',
-                'state_group', 'state_num', 't_start', 't_end', 'duration', 'pos_in_trial',
+                'state_group', 'state_num', 't_start', 't_end', 't_med','duration', 'pos_in_trial',
                 'unit_type', 'area', 'dt', 'n_states', 'notes', 'valid']
     
     best_hmms = best_hmms.dropna(subset=['hmm_id', 'ID_state']).copy()
-    #best_hmms = best_hmms.dropna(subset=['hmm_id', 'early_state', 'late_state']).copy() # 09/20/21 this line is causing error
-    # it throws away all of best_hmms because early/late state are empty, need to find proper origin of early/late state
+
     best_hmms.loc[:,'hmm_id'] = best_hmms['hmm_id'].astype('int')
     best_hmms['ID_state'] = best_hmms['ID_state'].astype('int')
     id_cols = ['exp_name', 'exp_group', 'time_group', 'rec_group',
@@ -1500,19 +1512,14 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
             tmp = template.copy()
             tmp['trial'] = int(ids[-1])
             tmp['trial_group'] = (lambda x: int(x/5)+1)(tmp['trial'])
-
-            # Mark valid as whether both early and late state are present and longer than min_dur
-            #e_valid = is_state_in_seq(path, row['early_state'], min_pts=min_pts, time=time)
-            #l_valid = is_state_in_seq(path, row['late_state'], min_pts=min_pts, time=time)
+            
             id_valid = is_state_in_seq(path, row['ID_state'], min_pts=min_pts, time=time)
             #tmp['valid'] = (e_valid and l_valid)
             tmp['valid'] = (id_valid)
 
             summary = summarize_sequence(path).astype('int')
-            # summary = summary[np.where(summary[:,-1] >= min_dur/dt)[0], :]
             # Skip single state trials
             if summary.shape[0] < 2:
-                #continue
                 # Instead mark single state trials
                 tmp['single_state'] = True
             else:
@@ -1525,24 +1532,102 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
                 s_tmp['state_num'] = s_row[0]
                 s_tmp['t_start'] = time[s_row[1]]
                 s_tmp['t_end'] = time[s_row[2]]
+                s_tmp['t_med'] = median([s_tmp['t_end'], s_tmp['t_start']])
                 s_tmp['duration'] = s_row[3]/dt
                 # only first appearance of state is marked as early or late
                 if s_row[0] == row['ID_state'] and not early_flag:
                     s_tmp['state_group'] = 'ID'
                     ID_flag = True
-                # if s_row[0] == row['early_state'] and not early_flag:
-                #     s_tmp['state_group'] = 'early'
-                #     early_flag = True
-                # elif s_row[0] == row['late_state'] and not late_flag:
-                #     s_tmp['state_group'] = 'late'
-                #     late_flag = True
 
                 s_tmp['pos_in_trial'] = j
                 out.append(s_tmp)
             
-
     return pd.DataFrame(out)
 
+def analyze_classified_hmm_state_timing(best_hmms, decodes, col_name, min_dur=1):
+    '''create output array with columns: exp_name, exp_group, rec_dir,
+    rec_group, time_group, cta_group, taste, hmm_id, trial, state_group,
+    state_num, t_start, t_end, duration
+    ignore trials with only 1 state > min_dur ms
+    '''
+    
+    out_keys = ['exp_name', 'exp_group', 'time_group', 'palatability',
+                'rec_group', 'rec_dir', 'n_cells', 'taste', 'hmm_id','trial_num',
+                'state_group', 'state_num', 't_start', 't_end', 't_med','duration', 'pos_in_trial',
+                'unit_type', 'area', 'dt', 'n_states', 'valid','notes','single_state',col_name]
+    
+    best_hmms = best_hmms.dropna(subset=['hmm_id', col_name]).copy()
+
+    best_hmms.loc[:,'hmm_id'] = best_hmms['hmm_id'].astype('int')
+    best_hmms[col_name] = best_hmms[col_name].astype('int')
+    id_cols = ['exp_name', 'exp_group', 'time_group', 'rec_group',
+               'rec_dir', 'taste', 'hmm_id', 'palatability']
+    param_cols = ['n_cells', 'n_states', 'dt', 'area', 'unit_type', 'notes']
+    # State group is early or late
+    out = []
+    for i, row in best_hmms.iterrows():
+        template = dict.fromkeys(out_keys)  
+        for k in id_cols:
+            template[k] = row[k]
+
+        h5_file = get_hmm_h5(row['rec_dir'])
+        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row['hmm_id'])
+        for k in param_cols:
+            template[k] = params[k]
+
+        dt = params['dt'] * 1000  # dt in ms
+        min_pts = int(min_dur/dt)
+        row_id = hmm.stat_arrays['row_id'] # hmm_id, channel, taste, trial, all string
+        best_seqs = hmm.stat_arrays['best_sequences']
+        
+        for ids, path in zip(row_id, best_seqs):
+            decsub = decodes
+            trlno = int(ids[-1])
+
+            decsub = decsub.loc[(decsub.exp_name == row.exp_name) & (decsub.time_group == int(row.time_group)) &\
+                                (decsub.trial_num == trlno) & (decsub.hmm_id == row.hmm_id)]
+                
+            tmp = template.copy()
+            tmp['trial_num'] = int(ids[-1])
+            tmp['trial_group'] = (lambda x: int(x/5)+1)(tmp['trial_num'])
+            tmp[col_name] = row[col_name]
+            
+            id_valid = is_state_in_seq(path, row['ID_state'], min_pts=min_pts, time=time)
+            tmp['valid'] = (id_valid)
+            
+            summary = summarize_sequence(path).astype('int')
+            # Skip single state trials
+            if summary.shape[0] < 2:
+                # Instead mark single state trials
+                tmp['single_state'] = True
+            else:
+                tmp['single_state'] = False
+
+            for j, s_row in enumerate(summary):
+                s_tmp = tmp.copy()
+                s_tmp['state_num'] = s_row[0]
+                s_tmp['t_start'] = time[s_row[1]]
+                s_tmp['t_end'] = time[s_row[2]]
+                s_tmp['t_med'] = median([s_tmp['t_end'], s_tmp['t_start']])
+                s_tmp['duration'] = s_row[3]/dt
+                # only first appearance of state is marked as early or late
+                if s_row[0] == row[col_name]:
+                    s_tmp['state_group'] = col_name
+                        
+                s_tmp['pos_in_trial'] = j
+                out.append(s_tmp)
+    
+    
+    out = pd.DataFrame(out)
+    
+    mask = out.state_num==0
+    out.loc[mask, 'state_group'] = 'prestim'
+    out = out.dropna(subset = ['state_group'])
+    out = out.loc[out.duration >= min_dur]
+    idx = out.groupby(['rec_dir','palatability','trial_num','state_num'])['duration'].transform(max) == out['duration']
+    out = out[idx]
+    
+    return out
 
 def describe_hmm_state_timings(timing):
     def header(txt):

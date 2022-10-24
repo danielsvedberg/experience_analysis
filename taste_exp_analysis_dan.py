@@ -29,10 +29,10 @@ proj.make_rec_info_table() #run this in case you changed around project stuff
 
 PA = ana.ProjectAnalysis(proj)
 
-PA.detect_held_units(overwrite = True) #this part also gets the all units file
-[all_units, held_df] = PA.get_unit_info(overwrite = True) #run and check for correct area then run get best hmm
+PA.detect_held_units()#overwrite = True) #this part also gets the all units file
+[all_units, held_df] = PA.get_unit_info()#overwrite = True) #run and check for correct area then run get best hmm
 
-#PA.process_single_units(overwrite = True) #maybe run
+PA.process_single_units()#overwrite = True) #maybe run
 #PA.run()#overwrite = True)
 
 HA = ana.HmmAnalysis(proj)
@@ -45,6 +45,8 @@ best_hmms = HA.get_best_hmms(overwrite = True, sorting = 'best_BIC')#overwrite =
 #heads up, params #5 doesn't cover all animals, you want params #4
 #play around with state timings in mark_early_and_late_states()
 
+HA.plot_grouped_BIC()
+HA.plot_best_BIC()
 #check df for nan in HMMID or early or late state
 
 
@@ -71,14 +73,39 @@ for i in yfacs:
         g.fig.suptitle('trial number vs ID '+i+': '+j)
         g.add_legend()
         g.savefig(sf)
+        
+df1 = pd.DataFrame()
 
-for i, group in timingsub.groupby('rec_group'):
-    g = sns.pairplot(data=group, hue = 'taste')
-    sf = os.path.join(save_dir,i + '_pairplots.svg')
-    g.savefig(sf)
-#TODO 080722: 2 state hmm solutions fucking life up. Abu said just cut out 2 state models, gotta redo this shit. 
+ts = timingsub.loc[:,timingsub.columns != 'exp_name']
+grouped_timings = ts.groupby(['time_group','exp_group','taste'])
+for nm, grp in grouped_timings:
+    print(grp)
+    df = pd.DataFrame()
+    gr = grp.loc[:,grp.columns != ''
+    feat1s = []
+    feat2s = []
+    corrs = []
+    p_values = []
 
+    for feat1 in grp.columns:
+        for feat2 in grp.columns:
+            if feat1 != feat2:
+                feat1s.append(feat1)
+                feat2s.append(feat2)
+                corr, p_value = scipy.stats.spearmanr(grp[feat1], grp[feat2])
+                corrs.append(corr)
+                p_values.append(p_value)
 
+df['Feature_1'] = feat1s
+df['Feature_2'] = feat2s
+df['Correlation'] = corrs
+df['p_value'] = p_values
+df
+
+# grouped_timings = timingsub.groupby(['time_group','exp_group','taste'])
+# test = grouped_timings.corr().reset_index()
+# test = test.loc[test.level_3 == 'trial']
+# test2 = pd.calculate_pvalues(grouped_timings)
 
 nplt.plot_trialwise_bayesian_decoding(decode_data,plotdir = HA.save_dir)
 

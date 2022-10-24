@@ -428,7 +428,10 @@ def get_valid_trials(state_seqs, states, min_pts=1, time=None):
     for i, row in enumerate(state_seqs):
         if any([x not in row for x in states]):
             continue
-
+        
+        if len(np.unique(row)) == 1: #remove single-state trials
+            continue
+        
         good = True
         summary = summarize_sequence(row)
         for state in states:

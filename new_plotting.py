@@ -6,7 +6,7 @@ import seaborn as sns
 import pylab as plt
 from scipy.stats import sem, norm, chi2_contingency, rankdata, spearmanr
 import itertools as it
-from plotting import ORDERS, add_suplabels, change_hue
+from plotting import add_suplabels, change_hue
 import analysis_stats as stats
 from scipy.ndimage.filters import gaussian_filter1d
 from blechpy import load_dataset
@@ -27,46 +27,202 @@ ORDERS = {'exp_group': ['naive', 'suc_preexp'],
           'state_presence': ['both', 'early_only', 'late_only', 'neither'],
           'trial_group': [1,2,3,4,5,6]}
 
-
-def plot_trialwise_bayesian_decoding(df, plotdir = None):
-    #plotdir should be HA.savedir
-    
-    grcols = ['time_group','exp_group','trial_ID']
-    df = df.loc[df.prestim_state != True]
-    # df = df.loc[df.exp_name != 'DS44']
-    # df = df.loc[df.exp_name != 'DS36']
-    #df = df.loc[~((df.exp_name == 'DS47') & (df.time_group == 3))]
-    #averagedf = df.groupby(grcols).rolling(5,).mean()#.agg({'p_correct':'mean'})
-    df['moving'] = df.groupby(grcols)['p_correct'].transform(lambda x: x.rolling(10, min_periods = 1,center = True).mean())
-    
-    sns.set(font_scale = 1.2, style = "ticks", palette = None)
-    p = sns.relplot(
-        data = df, x = "trial_num", y = "p_correct", 
-        row = "trial_ID", col = "time_group", hue = "exp_group", style = "exp_group" #,kind = "line"
-        )
-    (p.set_axis_labels("Trial Number", "P(correct decode)")
-     .set_titles("session: {col_name}| taste: {row_name}")
-     ._legend.set_title(""))
-    
-    g = sns.relplot(
-        data = df, x = "trial_num", y = "p_correct", 
-        row = "trial_ID", col = "time_group", hue = "exp_name", style = "exp_group" #,kind = "line"
-        )
-    (g.set_axis_labels("Trial Number", "P(correct decode)")
-     .set_titles("session: {col_name}| taste: {row_name}")
-     ._legend.set_title(""))
-    
-    if plotdir:
-        sf = os.path.join(plotdir, 'trialwise_bayesian.svg')
-        p.savefig(sf)
         
-        sf2 = os.path.join(plotdir, 'anwise_bayesian.svg')
-        g.savefig(sf2)
-        plt.close()
-        plt.close()
-    else:
-        return p
+def plot_NB_decoding(df, plotdir = None, trial_group_size = 5):
+    df['trial-group'] = df.trial_num/trial_group_size
+    df['trial-group'] = df['trial-group'].astype(int)
+    df = df.loc[df.single_state == False]
+    df = df.loc[df.prestim_state == False]
+    df['p_taste'] = df.CA + df.CA + df.QHCl+ df.Suc
+    df = df.loc[df.prestim_state != True]
+    df = df.rename(columns = {'trial_num':'trial','p_correct':'p(correct)','time_group':'session','exp_group':'condition'})
+    
+    plot_trialwise_lm(df,'trial-group', ['p(correct)'], save_dir = plotdir, save_prefix = 'NB')
+    plot_trialwise_rel(df,'trial-group', ['p(correct)'], save_dir = plotdir, save_prefix = 'NB')
+    plot_daywise_data(df,['p(correct)'], save_dir = plotdir, save_prefix = 'NB')
+    
+def plot_NB_timing(df, plotdir = None, trial_group_size = 5):
+    df['trial-group'] = df.trial_num/trial_group_size
+    df['trial-group'] = df['trial-group'].astype(int)
+    df = df.loc[df.single_state ==False]
+    df = df.loc[df.state_num != 0]
+    df = df.loc[df.p_correct > 0.5]
+    df = df.rename(columns = {'trial_num':'trial','time_group':'session', 'exp_group':'condition', 't_start': 't(start)', 't_end':'t(end)', 't_med':'t(median)','err':'error', 'Y_pred':'predicted-palatability'})
+    y_facs = ['duration','t(start)', 't(end)', 't(median)']
+    
+    plot_trialwise_lm(df, x_col = 'trial',y_facs = y_facs, save_dir = plotdir, save_prefix = 'NB')
+    #plot_trialwise_rel(df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = 'NB')
+    #plot_daywise_data(df, y_facs, save_dir = plotdir, save_prefix = 'NB')
+    
+    
+def plot_LR(df, plotdir = None, trial_group_size = 5):
+    df['trial-group'] = df.trial_num/trial_group_size
+    df['trial-group'] = df['trial-group'].astype(int)
+    df = df.loc[df.single_state == False]
+    df = df.loc[df.state_group != 'Prestim']
+    
+    df = df.rename(columns = {'trial_num':'trial','time_group':'session', 'exp_group':'condition', 't_start': 't(start)', 't_end':'t(end)', 't_med':'t(median)','err':'error', 'Y_pred':'pred-pal'})
+    y_facs = ['duration', 'error', 'SquaredError','pred-pal']
+    
+    plot_trialwise_lm(df, x_col = 'trial', y_facs = y_facs, save_dir = plotdir, save_prefix = 'LR')
+    #plot_trialwise_rel(df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = 'LR')
+    #plot_daywise_data(df, y_facs, save_dir = plotdir, save_prefix = 'LR')
+    
+    
+def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None):
+    for y_col in y_facs:
+        g = sns.relplot(kind = 'line', data = df,
+                        x = x_col, y = y_col, row = 'taste', col = 'session', hue = 'condition', style = 'condition', 
+                        markers = True, err_style = 'band', ci = 95, 
+                        facet_kws={"margin_titles": True}, linewidth = 3, aspect = 1.5, height = 16)
+        g.tight_layout()
+        g.set_titles(row_template = '{row_name}')
+        #sns.move_legend(g, "lower center", bbox_to_anchor=(.4, 1), ncol=2, title=None, frameon=False)
+        
+        h = sns.relplot(kind = 'line', data = df,
+                        x = x_col, y = y_col, col = 'session', hue = 'condition', style = 'condition',
+                        markers = True, err_style = 'band', ci = 95,
+                        facet_kws={"margin_titles": True}, linewidth = 3, aspect = 1.5, height = 8)
+        h.tight_layout()
+        h.set_titles(row_template = '{row_name}')
+        #sns.move_legend(h, "lower center", bbox_to_anchor=(.4, 1), ncol=2, title=None, frameon=False)
+        
+        if x_col == 'trial-group':
+            g.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
+            g.set_xticklabels(['1-5','6-10','11-15','16-20','21-25','26-30'], rotation = 60)
+            h.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
+            h.set_xticklabels(['1-5','6-10','11-15','16-20','21-25','26-30'], rotation = 60)
+            
+        if y_col == 'p(correct)':
+            g.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
+            h.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
+            
+        if save_dir:
+            nm1 = save_prefix +'_'+ x_col + '_VS_' + y_col + '_Rel.svg'
+            sf = os.path.join(save_dir, nm1)
+            g.savefig(sf)
+            print(sf)
+            
+            nm2 = save_prefix +'_'+ x_col + '_VS_' + y_col + '_all_tsts_Rel.svg'
+            sf2 = os.path.join(save_dir, nm2)
+            h.savefig(sf2)
+            print(sf2)
+        plt.close('all')
 
+
+def plot_trialwise_lm(df, x_col, y_facs, save_dir = None, save_prefix = None):
+
+    for ycol in y_facs:
+        g = sns.lmplot(data = df, x = x_col, y = ycol, 
+                       hue = 'condition', col = 'session', row = 'taste', aspect = 1, height = 20,
+                       facet_kws={"margin_titles": True})
+        #g.tight_layout()
+        g.set_titles(row_template = '{row_name}')
+        #sns.move_legend(g, "lower center", bbox_to_anchor=(.4, 1), ncol=2, title=None, frameon=False)
+        
+        
+        h = sns.lmplot(data = df, x = x_col, y = ycol,
+                       hue = 'condition', col = 'session', aspect = 2, height = 8)
+        #h.tight_layout()
+        h.set_titles(row_template = '{row_name}')
+        #sns.move_legend(h, "lower center", bbox_to_anchor=(.4, 1), ncol=2, title=None, frameon=False)
+        
+        if x_col == 'trial-group':
+            g.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
+            g.set_xticklabels(['1-5','6-10','11-15','16-20','21-25','26-30'], rotation = 60)
+            h.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
+            h.set_xticklabels(['1-5','6-10','11-15','16-20','21-25','26-30'], rotation = 60)
+        
+        if ycol == 'p(correct)':
+            g.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
+            h.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
+        
+        if ycol == 'SquaredError':
+            g.set(ylim = (-0.1, 3))
+            h.set(ylim = (-0.1, 3))
+            
+        if ycol == 'error':
+            g.set(ylim = (-2, 2))
+            h.set(ylim = (-2, 2))
+        
+        if save_dir is not None:  
+            nm = save_prefix+x_col+'_VS_'+ycol+'_LMP.svg'
+            sf = os.path.join(save_dir,nm)
+            g.savefig(sf)
+            print(sf)
+            nm2 = save_prefix+x_col+'_VS_'+ycol+'_alltsts_LMP.svg'
+            sf2 = os.path.join(save_dir,nm2)
+            h.savefig(sf2)
+            print(sf2)
+        plt.close('all')
+
+def plotRsquared(df,y,row = None,save_dir = None,save_prefix = None):
+    g = sns.catplot(kind = 'bar', data = df,
+                    x = 'session', y = 'Correlation', hue = 'condition', row = row,
+                    margin_titles=True, aspect = 0.25, height = 20, capsize = 0.2, errwidth = 1, row_order = ['Suc','NaCl','CA','QHCl'])
+    
+    g.tight_layout()
+    g.set_titles(row_template = '{row_name}')
+    #g.fig.suptitle(y)
+    if save_dir:
+        nm1 = save_prefix + y+ '.svg'
+        sf = os.path.join(save_dir, nm1)
+        g.savefig(sf)
+        print(sf)
+    
+    
+def plot_daywise_data(df,yfacs, save_dir = None, save_prefix = None):
+
+    for ycol in yfacs:
+        g = sns.catplot(kind = 'bar', data = df,
+                        x = 'session', y = ycol, hue = 'condition', row = 'taste',
+                        ci = 95, margin_titles=True, aspect = 0.25, height = 20, capsize = 0.2, errwidth = 1)
+        g.tight_layout()
+        g.set_titles(row_template = '{row_name}')
+        #sns.move_legend(g, "lower center", bbox_to_anchor=(.4, 1), ncol=2, title=None, frameon=False)
+        
+        h = sns.catplot(kind = 'bar', data = df,
+                        x = 'session', y = ycol, hue = 'condition',
+                        ci = 95, margin_titles=True, aspect = 1, height = 10, capsize = 0.2, errwidth = 1)
+        h.tight_layout()
+        h.set_titles(row_template = '{row_name}')
+        #sns.move_legend(h, "lower center", bbox_to_anchor=(.4, 1), ncol=2, title=None, frameon=False)
+        
+        if ycol == 'p(correct)':
+            g.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
+            h.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
+        
+        if save_dir:
+            nm1 = save_prefix+ycol + '.svg'
+            sf = os.path.join(save_dir, nm1)
+            g.savefig(sf)
+            print(sf)
+            nm2 = save_prefix+ycol + '_all_tsts.svg'
+            sf2 = os.path.join(save_dir, nm2)
+            h.savefig(sf2)
+            plt.close('all')
+            print(sf2)
+        else:        
+            return g,h
+        
+def plot_pal_data(df,save_dir = None):
+    df = df.loc[df.single_state == False]
+    df = df.loc[df.state_group != 'Prestim']
+    df = df.rename(columns = {'palatability': 'pal-rating', 'Y_pred': 'predicted-pal','exp_group':'condition','time_group':'session','trial_num':'trial'})
+    
+    g = sns.lmplot(data = df, x = 'pal-rating', y = 'predicted-pal', row = 'condition', 
+                   col = 'session', hue = 'condition', legend = False, aspect = 1, height = 6,
+                   facet_kws={"margin_titles": True})
+    g.set_titles(row_template = '{row_name}')
+    g.set(ylim = (-1,6))
+    
+    if save_dir:
+        nm1 = 'pal_xyplot.svg'
+        sf = os.path.join(save_dir, nm1)
+        g.savefig(sf)
+        print(sf)
+    
+        
 def plot_confusion_differences(df, save_file=None):
     pal_df = stats.get_diff_df(df, ['exp_group', 'state_group'],
                                'time_group', 'pal_confusion')
@@ -83,9 +239,9 @@ def plot_confusion_differences(df, save_file=None):
     
     fig, axes = plt.subplots(ncols=2, figsize=(15, 7), sharey=False)
     sns.barplot(data=id_df, ax=axes[0], x='grouping', y='mean_diff',
-                hue='state_group', order=x_order, hue_order=o3)
+                hue='state_group', order=x_order, hue_order=o2)
     sns.barplot(data=pal_df, ax=axes[1], x='grouping', y='mean_diff',
-                hue='state_group', order=x_order, hue_order=o3)
+                hue='state_group', order=x_order, hue_order=o2)
     xdata = [x.get_x() + x.get_width()/2 for x in axes[0].patches]
     xdata.sort()
     tmp_pal = pal_df.set_index(['grouping', 'state_group'])[['mean_diff', 'sem_diff']].to_dict()
@@ -221,6 +377,8 @@ def plot_coding_correlations(df, save_file=None):
 
 
 def plot_timing_correlations(df, save_file=None):
+    df = df.loc[df.duration > 5]
+    df= df[['exp_name','time_group','exp_group','taste','trial','t_start','t_end', 't_med','duration']]
     data_cols = ['t_start', 't_end', 'duration']
     convert_vars = ['exp_name', 'exp_group', 'time_group', 'taste']
     comparison_vars = ['palatability', 'n_cells']
@@ -264,6 +422,31 @@ def plot_timing_correlations(df, save_file=None):
         fn += '.txt'
         agg.write_dict_to_txt({'Timing Correlation Statistics': statistics}, fn)
 
+
+def plot_trialwise_timing_deprecated(df,save_prefix = None):
+    
+    df = df.loc[df.state_group == 'ID']
+    df = df.loc[df.p_ID > 0.5] 
+    df = df.loc[df.t_start > -200]
+
+    yfacs = ['duration','t_start','t_end','t_med']
+    jfacs = ['Suc','NaCl','CA','QHCl']
+    for i in yfacs:
+        for j in jfacs:
+            
+            sf = save_prefix+'trlnoVS'+i+'_'+j+'.png'
+            
+            tastesub = df.loc[df.taste == j]
+            g = sns.FacetGrid(tastesub, col = 'time_group', row = 'exp_group', hue = 'exp_name', margin_titles = True, aspect = 1, height = 5)
+            g.map(sns.scatterplot, 'trial',i, s = 50)
+            g.fig.subplots_adjust(top = 0.9)
+            g.fig.suptitle('trial number vs ID '+i+': '+j)
+            g.add_legend()
+            
+            if save_prefix is not None:
+                g.savefig(sf)
+                
+            plt.close('all')
 
 def plot_confusion_data(df, save_file=None, group_col='exp_group', kind='bar',
                         plot_points=False):
@@ -925,6 +1108,7 @@ def plot_best_BIC(srt_df, save_file = None):
     
     if save_file:
         g.savefig(save_file)
+        plt.close('all')
     else:
         return g
 
@@ -949,7 +1133,7 @@ def plot_grouped_BIC(srt_df, save_file = None):
     g.set_axis_labels("number of HMM states", "BIC")
     if save_file and g.fig:
         g.savefig(save_file)
-        g.fig.close()
+        plt.close('all')
     else:
         return g
 
