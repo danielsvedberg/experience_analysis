@@ -464,20 +464,40 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
 
     return np.array(rates), np.array(trial_nums)
 
+def get_baseline_rates(rec_dir, hmm_id, units=None, min_dur=50, max_dur = 3000,):
+    h5_file = get_hmm_h5(rec_dir)
+    hmm , time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
+    channel = params['channel']
+    n_trials = params['n_trials']
+    t_start = -250#params['time_start']
+    t_end = 0#params['time_end']
+    dt = params['dt']
+    unit_type = params['unit_type']
+    area = params['area']
+    if units is not None:
+        unit_type = units
+    spike_array, s_dt, s_time = ph.get_hmm_spike_data(rec_dir, unit_type,
+                                                      channel,
+                                                      time_start=t_start,
+                                                      time_end=t_end, dt=dt,
+                                                      trials=n_trials, area=area)
+    
+
+
 #group is the groupby df
 #label_col is the heading of the taste col
 #all_units is all_units_table
 #TODO: filter out trials that don't have more than n_states-1 states
 def get_classifier_data(group, states, label_col, all_units,
-                        remove_baseline=False, other_state_col=None):
+                        remove_baseline=False):
     units = get_common_units(group, all_units)
     if units == {}:
         return None, None, None
     
-    if other_state_col is not None:
-        state2 = 0#row[other_state_col]
-    else:
-        state2 = None
+    # if other_state_col is not None:
+    #     state2 = 0#row[other_state_col]
+    # else:
+    #     state2 = None
         
     labels = []
     rates = []
@@ -486,38 +506,58 @@ def get_classifier_data(group, states, label_col, all_units,
         rec_dir = row['rec_dir']
         hmm_id = int(row['hmm_id'])
         label = row[label_col]
-        state = states[label]
-
+        b_state = states[label+'_bsln']
+        e_state = states[label+'_early']
+        l_state = states[label+'_late']
+        
         un = units[rec_dir]
         h5_file = get_hmm_h5(rec_dir)
         hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
         #if error is "selection lists cannot have repeated values" then you have repeated units in all_units, go fix PA.detect_held_units()
-        tmp_r, tmp_trials = get_state_firing_rates(rec_dir, hmm_id, state,
+        
+        #get baseline data:
+        tmp_ps_r, tmp_ps_trials = get_state_firing_rates(rec_dir,hmm_id,b_state, 
+                                                    units = un,
+                                                    remove_baseline = remove_baseline,
+                                                    other_state=None)
+        tmp_ps_l = np.repeat('prestim', tmp_ps_r.shape[0])
+        
+        tmp_ps_id = [(rec_dir,hmm_id,row[label_col], x, b_state, True) for x in tmp_ps_trials]
+        
+        if len(tmp_ps_r) != 0:
+            labels.append(tmp_ps_l)
+            rates.append(tmp_ps_r)
+            identifiers.extend(tmp_ps_id)
+        else:
+            continue
+            
+        #get early state data:
+        tmp_e_r, tmp_e_trials = get_state_firing_rates(rec_dir, hmm_id, e_state,
                                                    units=un,
                                                    remove_baseline=remove_baseline,
                                                    other_state=None)
         
-        tmp_l = np.repeat(row[label_col], tmp_r.shape[0])
-        tmp_id = [(rec_dir, hmm_id, row[label_col], x, state, False) for x in tmp_trials]
+        tmp_e_l = np.repeat(row[label_col]+'_early', tmp_e_r.shape[0])
+        tmp_e_id = [(rec_dir, hmm_id, row[label_col], x, e_state, False) for x in tmp_e_trials]
         
-        if len(tmp_r) == 0: # This should trigger when all trials are single state
-            continue
+        if len(tmp_e_r) != 0:
+            labels.append(tmp_e_l)
+            rates.append(tmp_e_r)
+            identifiers.extend(tmp_e_id)
         
-        labels.append(tmp_l)
-        rates.append(tmp_r)
-        identifiers.extend(tmp_id)
+        #get late state data:
+        tmp_l_r, tmp_l_trials = get_state_firing_rates(rec_dir, hmm_id, l_state,
+                                                   units=un,
+                                                   remove_baseline=remove_baseline,
+                                                   other_state=None) 
+        tmp_l_l = np.repeat(row[label_col]+'_late', tmp_l_r.shape[0])
+        tmp_l_id = [(rec_dir, hmm_id, row[label_col], x, l_state, False) for x in tmp_l_trials]
         
-        if other_state_col is not None:
-            tmp_ps_r, tmp_ps_trials = get_state_firing_rates(rec_dir,hmm_id,state2, 
-                                                        units = un,
-                                                        remove_baseline = remove_baseline,
-                                                        other_state=None)
-            tmp_ps_l = np.repeat('prestim', tmp_ps_r.shape[0])
-            tmp_ps_id = [(rec_dir,hmm_id,row[label_col], x, state2, True) for x in tmp_ps_trials]
-            if len(tmp_ps_r) != 0:
-                labels.append(tmp_ps_l)
-                rates.append(tmp_ps_r)
-                identifiers.extend(tmp_ps_id)
+        if len(tmp_l_r) != 0:
+            labels.append(tmp_l_l)
+            rates.append(tmp_l_r)
+            identifiers.extend(tmp_l_id)
+            
     # if no valid trials were found for any taste
     if len(rates) == 0:
         return None, None, None
@@ -891,7 +931,7 @@ def sequential_constrained(PI, A, B):
     return PI, A, B
        
 #Rabbit hole: NB_classifier_accuracy>get_classifier_data>get_state_firing_rates
-def analyze_NB_state_classification(best_hmms,all_units, prestim = True):
+def analyze_NB_state_classification(best_hmms,all_units, epoch = None, prestim = True):
     '''generates list of combinations (state_df) for every possible combination of HMM states 
     and then uses them as the prior for decoding
     Parameters
@@ -903,6 +943,11 @@ def analyze_NB_state_classification(best_hmms,all_units, prestim = True):
     NB_res : list with every single decode
     NB_meta : table with metadata to index NB_res and pull out best decodes from NB_res
     '''
+    if epoch is None:
+        epoch = 'early'
+    else:
+        epoch = 'late'
+    
     if prestim == True:
         other_state = 0
     else:
@@ -917,16 +962,41 @@ def analyze_NB_state_classification(best_hmms,all_units, prestim = True):
     
     for name, group in best_hmms.groupby(id_cols):
         id_tastes = group.taste
-        state_list = []
-        for i in id_tastes:
-            n_states = group.n_states.loc[group.taste == i]
-            n_states = n_states.iloc[0]
-            sts = range(1,n_states-1) #exclue state 0 and last state
-            state_list.append(sts)
         
+        b_list = []
+        e_list = []
+        l_list = []
+        
+        for i, row in group.iterrows():
+            h5 = get_hmm_h5(row['rec_dir'])
+            hmm, _, _ = ph.load_hmm_from_hdf5(h5, row['hmm_id'])
+            tmp = find_poss_epoch_states(hmm)
+            
+            b = np.unique(tmp[:,0])
+            e = np.unique(tmp[:,1]) 
+            l = np.unique(tmp[:,2])
+            
+            b_list.append(b)
+            e_list.append(e)
+            l_list.append(l)
+            
+        state_list = b_list + e_list + l_list 
         state_combos = itertools.product(*state_list) #we are excluding the first state since the HMM constraint is that first state must be baseline
         
-        state_df = pd.DataFrame(state_combos,columns=id_tastes)
+        b_labs = id_tastes+'_bsln'
+        e_labs = id_tastes+'_early'
+        l_labs = id_tastes+'_late'
+        el_tastes = pd.concat([e_labs,l_labs])
+        
+        taste_labs = pd.concat([b_labs,e_labs,l_labs])
+        state_df = pd.DataFrame(state_combos,columns=taste_labs)
+        
+        for j, taste in enumerate(id_tastes):
+            b_tst = b_labs.iloc[j]
+            e_tst = e_labs.iloc[j]
+            l_tst = l_labs.iloc[j]
+            state_df = state_df.loc[(state_df[l_tst] > state_df[e_tst]) & (state_df[e_tst] > state_df[b_tst])]
+            
         print(state_df)
         
         n_trials = dict(zip(group.taste,group.n_trials))
@@ -937,8 +1007,7 @@ def analyze_NB_state_classification(best_hmms,all_units, prestim = True):
             #res = NB_classifier_accuracy(group,row,label_col,all_units, other_state)
             
             labels, rates, identifiers = get_classifier_data(group, states, label_col, all_units,
-                                                             remove_baseline=False,
-                                                             other_state_col=other_state)
+                                                             remove_baseline=False)
             
             if (labels is not None) & (rates is not None):
                 model = stats.NBClassifier(labels, rates, row_id=identifiers)
@@ -960,12 +1029,13 @@ def analyze_NB_state_classification(best_hmms,all_units, prestim = True):
                 
                 tasteacc = sum(Y_taste==Y_pred_taste)/len(Y_taste)
                 
-                for i in id_tastes:
+                
+                for i in el_tastes:
                     n_dec = np.count_nonzero(res.Y==i)
                     n_trials_decoded.append(n_dec)
                     
-                n_trials_missed = sum(group.n_trials)-sum(n_trials_decoded)
-                n_trials_decoded = dict(zip(id_tastes,n_trials_decoded))
+                n_trials_missed = sum(group.n_trials*2)-sum(n_trials_decoded)
+                n_trials_decoded = dict(zip(el_tastes,n_trials_decoded))
                 
                 meta_row = {'exp_name':en,
                             'time_group':tg,
@@ -1008,15 +1078,17 @@ def process_NB_classification(NB_meta,NB_res):
         dec_probs = pd.DataFrame(res_row.model.predict_proba(res_row.X),columns = tastes)
         dec_probs[['exp_name','time_group','exp_group']] = row[['exp_name', 'time_group','exp_group']]
         info = pd.DataFrame(res_row.row_id, columns = ['rec_dir','hmm_id','trial_ID','trial_num','hmm_state','prestim_state'])
-        dec_probs = pd.concat([dec_probs, info],axis = 1)
+        Y = pd.DataFrame(res_row.Y, columns = ['Y'])
+        dec_probs = pd.concat([dec_probs, info,Y],axis = 1)
         best_res.append(dec_probs)
         
         p_correct = []
         for ind2, row2 in dec_probs.iterrows():
-            if row2['prestim_state'] == 'False':
-                p_correct.append(row2[row2.trial_ID])
-            else:
-                p_correct.append(row2.prestim)
+            p_correct.append(row2[row2.Y])
+            # if row2['prestim_state'] == 'False':
+            #     p_correct.append(row2[row2.Y])
+            # else:
+            #     p_correct.append(row2.prestim)
             
         dec_probs['p_correct']=p_correct
         
@@ -1028,19 +1100,24 @@ def process_NB_classification(NB_meta,NB_res):
     infocols = ['exp_name', 'time_group', 'exp_group']
     full_trials = []
     n_trials = pd.DataFrame(list(best_NB.n_trials))    
-    for i, row in n_trials.iterrows():
+    b_trls = n_trials.add_suffix('_bsln')
+    e_trls = n_trials.add_suffix('_early')
+    l_trls = n_trials.add_suffix('_late')
+    all_trials = pd.concat([b_trls,e_trls,l_trls],axis = 1)
+    for i, row in all_trials.iterrows():
+
         row_trials = [np.arange(x) for x in row.values]
         row_trials = pd.DataFrame(row_trials)
-        prestim_trials = row_trials.copy()
-        row_trials['trial_ID'] = row.index
-        row_trials['prestim_state'] = False
+        #prestim_trials = row_trials.copy()
+        row_trials['Y'] = row.index
+        #row_trials['prestim_state'] = False
         row_trials[infocols] = best_NB[infocols].iloc[i]
-        prestim_trials['trial_ID'] = row.index
-        prestim_trials['prestim_state'] = True
-        prestim_trials[infocols] = best_NB[infocols].iloc[i]
-        row_trials = row_trials.melt(id_vars = ['trial_ID','prestim_state']+infocols, value_name = 'trial_num')
-        prestim_trials = prestim_trials.melt(id_vars = ['trial_ID','prestim_state']+infocols, value_name = 'trial_num')
-        row_trials = pd.concat([row_trials, prestim_trials])
+        # prestim_trials['trial_ID'] = row.index
+        # prestim_trials['prestim_state'] = True
+        # prestim_trials[infocols] = best_NB[infocols].iloc[i]
+        row_trials = row_trials.melt(id_vars = ['Y']+infocols, value_name = 'trial_num')
+        #prestim_trials = prestim_trials.melt(id_vars = ['trial_ID','prestim_state']+infocols, value_name = 'trial_num')
+        #row_trials = pd.concat([row_trials, prestim_trials])
         full_trials.append(row_trials)
 
     full_trials = pd.concat(full_trials)
@@ -1057,13 +1134,13 @@ def process_NB_classification(NB_meta,NB_res):
             'prestim_state',
             'rec_dir',
             'hmm_state',
-            'hmm_id']
+            'hmm_id',
+            'Y']
     
     grcols = ['exp_name', 
             'time_group', 
             'exp_group',
-            'trial_ID', 
-            'prestim_state']
+            'Y']
     
     cats = decode_data[cols].drop_duplicates()
     cats = cats.set_index(grcols)
@@ -1394,7 +1471,7 @@ def LDA_classifier_confusion(group, label_col, state_col, all_units,
     return 100 * counts[0] / np.sum(counts), np.mean(predictions)  ## returns % nacl
 
 #did I run HA.mark_early_and_late_states
-def choose_early_late_states(hmm, early_window=[250,1250], late_window=[2000, 2500]):
+def choose_bsln_early_late_states(hmm, bsln_window = [-250,0], early_window=[201,1600], late_window=[1601, 3000]):
     '''picks state that most often appears in the late_window as the late
     state, and the state that most commonly appears in the early window
     (excluding the late state) as the early state.
@@ -1413,6 +1490,8 @@ def choose_early_late_states(hmm, early_window=[250,1250], late_window=[2000, 25
     seqs = hmm.stat_arrays['best_sequences']
     time = hmm.stat_arrays['time']
     trial_win = np.where(time > 0)[0]
+    
+    bidx = np.where((time >= bsln_window[0]) & (time < bsln_window[1]))[0]
     eidx = np.where((time >= early_window[0]) & (time < early_window[1]))[0]
     lidx = np.where((time >= late_window[0]) & (time < late_window[1]))[0]
     #drop single trial states
@@ -1423,33 +1502,40 @@ def choose_early_late_states(hmm, early_window=[250,1250], late_window=[2000, 25
 
     good_trials = np.array(good_trials)
     if len(good_trials) == 0:
-        return None, None
+        return None, None, None
 
     seqs = seqs[good_trials, :]
     n_trials = seqs.shape[0]
 
+    bbins = list(np.arange(0,hmm.n_states-1))
+    ebins = list(np.arange(1, hmm.n_states))
     lbins = list(np.arange(1, hmm.n_states))
-    ebins = list(np.arange(0, hmm.n_states-1))
-    lcount = []
+    
+    bcount = []
     ecount = []
-    for i,j in zip(ebins, lbins):
-        ecount.append(np.sum(seqs[:, eidx] == i))
-        lcount.append(np.sum(seqs[:, lidx] == j))
+    lcount = []
+    
+    for i,j,k in zip(bbins, ebins, lbins):
+        bcount.append(np.sum(seqs[:, bidx] == i))
+        ecount.append(np.sum(seqs[:, eidx] == j))
+        lcount.append(np.sum(seqs[:, lidx] == k))
 
     #lcount, lbins = np.histogram(seqs[:, lidx], np.arange(hmm.n_states+1))
     #ecount, ebins = np.histogram(seqs[:, eidx], np.arange(hmm.n_states+1))
-    pairs = [(x,y) for x,y in product(ebins,lbins) if x!=y]
+    pairs = [[x,y,z] for x,y,z in product(bbins, ebins,lbins) if (x!=y & y!=z & z!=x) & (x < y < z)]
+    pairs = np.array(pairs)
     probs = []
-    for x,y in pairs:
-        i1 = ebins.index(x)
-        i2 = lbins.index(y)
+    for x,y,z in pairs:
+        i0 = bbins.index(x)
+        i1 = ebins.index(y)
+        i2 = lbins.index(z)
+        p0 = bcount[i0] / n_trials
         p1 = ecount[i1] / n_trials
         p2 = lcount[i2] / n_trials
-        probs.append(p1 * p2)
+        probs.append(p0 * p1 * p2)
 
     best_idx = np.argmax(probs)
-    early_state, late_state = pairs[best_idx]
-    late_state = 3
+    bsln_state, early_state, late_state = pairs[best_idx]
 
     # early_state = ebins[np.argmax(ecount)]
     # if early_state in lbins:
@@ -1468,7 +1554,63 @@ def choose_early_late_states(hmm, early_window=[250,1250], late_window=[2000, 25
     #         early_state = idx
     #         tmp = count
 
-    return early_state, late_state
+    return bsln_state, early_state, late_state
+
+
+def find_poss_epoch_states(hmm, bsln_window = [-250,0], early_window=[201,1600], late_window=[1601, 3000]):
+    '''picks state that most often appears in the late_window as the late
+    state, and the state that most commonly appears in the early window
+    (excluding the late state) as the early state.
+
+    Parameters
+    ----------
+    hmm: phmm.PoissonHMM
+    early_window: list of int, time window in ms [start, end]
+    late_window: list of int, time window in ms [start, end]
+
+    Returns
+    -------
+    int, int : early_state, late_state
+        early_state = None if it cannout choose one
+    '''
+    seqs = hmm.stat_arrays['best_sequences']
+    time = hmm.stat_arrays['time']
+    trial_win = np.where(time > 0)[0]
+    
+    bidx = np.where((time >= bsln_window[0]) & (time < bsln_window[1]))[0]
+    eidx = np.where((time >= early_window[0]) & (time < early_window[1]))[0]
+    lidx = np.where((time >= late_window[0]) & (time < late_window[1]))[0]
+    #drop single trial states
+    good_trials = []
+    for i, s in enumerate(seqs):
+        if len(np.unique(s[trial_win])) != 1:
+            good_trials.append(i)
+
+    good_trials = np.array(good_trials)
+    if len(good_trials) == 0:
+        return None, None, None
+
+    seqs = seqs[good_trials, :]
+
+    bbins = list(np.arange(0,hmm.n_states-1))
+    ebins = list(np.arange(1, hmm.n_states))
+    lbins = list(np.arange(1, hmm.n_states))
+    
+    bcount = []
+    ecount = []
+    lcount = []
+    
+    for i,j,k in zip(bbins, ebins, lbins):
+        bcount.append(np.sum(seqs[:, bidx] == i))
+        ecount.append(np.sum(seqs[:, eidx] == j))
+        lcount.append(np.sum(seqs[:, lidx] == k))
+        
+    best_bsln_idx = np.argmax(bcount)
+    bbins = [bbins[best_bsln_idx]]
+    pairs = [[x,y,z] for x,y,z in product(bbins, ebins,lbins) if (x!=y & y!=z & z!=x) & (x < y < z)]
+    pairs = np.array(pairs)
+
+    return pairs
 
 
 ## State timing analysis ##
@@ -1476,7 +1618,7 @@ def choose_early_late_states(hmm, early_window=[250,1250], late_window=[2000, 25
 #031420 check here if "trial_group" makes it in
 def analyze_hmm_state_timing(best_hmms, min_dur=1):
     '''create output array with columns: exp_name, exp_group, rec_dir,
-    rec_group, time_group, cta_group, taste, hmm_id, trial, state_group,
+    rec_group, time_group, exp_group, taste, hmm_id, trial, state_group,
     state_num, t_start, t_end, duration
     ignore trials with only 1 state > min_dur ms
     '''
@@ -1544,7 +1686,7 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
             
     return pd.DataFrame(out)
 
-def analyze_classified_hmm_state_timing(best_hmms, decodes, col_name, min_dur=1):
+def analyze_classified_hmm_state_timing(best_hmms, decodes, min_dur=1):
     '''create output array with columns: exp_name, exp_group, rec_dir,
     rec_group, time_group, cta_group, taste, hmm_id, trial, state_group,
     state_num, t_start, t_end, duration
@@ -1552,17 +1694,17 @@ def analyze_classified_hmm_state_timing(best_hmms, decodes, col_name, min_dur=1)
     '''
     
     out_keys = ['exp_name', 'exp_group', 'time_group', 'palatability',
-                'rec_group', 'rec_dir', 'n_cells', 'taste', 'hmm_id','trial_num',
-                'state_group', 'state_num', 't_start', 't_end', 't_med','duration', 'pos_in_trial',
-                'unit_type', 'area', 'dt', 'n_states', 'valid','notes','single_state',col_name]
+                'rec_group', 'rec_dir', 'n_cells', 'taste', 'hmm_id','trial_num', 'state_num', 't_start', 't_end', 't_med','duration', 'pos_in_trial',
+                'unit_type', 'area', 'dt', 'n_states','notes','single_state']
     
-    best_hmms = best_hmms.dropna(subset=['hmm_id', col_name]).copy()
+    best_hmms = best_hmms.dropna(subset=['hmm_id']).copy()
 
     best_hmms.loc[:,'hmm_id'] = best_hmms['hmm_id'].astype('int')
-    best_hmms[col_name] = best_hmms[col_name].astype('int')
+    #best_hmms[col_name] = best_hmms[col_name].astype('int')
     id_cols = ['exp_name', 'exp_group', 'time_group', 'rec_group',
                'rec_dir', 'taste', 'hmm_id', 'palatability']
     param_cols = ['n_cells', 'n_states', 'dt', 'area', 'unit_type', 'notes']
+    decodes['trial_num'] = decodes.trial_num.astype(int)
     # State group is early or late
     out = []
     for i, row in best_hmms.iterrows():
@@ -1584,16 +1726,16 @@ def analyze_classified_hmm_state_timing(best_hmms, decodes, col_name, min_dur=1)
             decsub = decodes
             trlno = int(ids[-1])
 
-            decsub = decsub.loc[(decsub.exp_name == row.exp_name) & (decsub.time_group == int(row.time_group)) &\
-                                (decsub.trial_num == trlno) & (decsub.hmm_id == row.hmm_id)]
+            # decsub = decsub.loc[(decsub.exp_name == row.exp_name) & (decsub.time_group == int(row.time_group)) &\
+            #                     (decsub.trial_num == trlno) & (decsub.hmm_id == row.hmm_id)]
                 
             tmp = template.copy()
             tmp['trial_num'] = int(ids[-1])
             tmp['trial_group'] = (lambda x: int(x/5)+1)(tmp['trial_num'])
-            tmp[col_name] = row[col_name]
+            #tmp[col_name] = row[col_name]
             
-            id_valid = is_state_in_seq(path, row['ID_state'], min_pts=min_pts, time=time)
-            tmp['valid'] = (id_valid)
+            #id_valid = is_state_in_seq(path, row[col_name], min_pts=min_pts, time=time)
+            #tmp['valid'] = (id_valid)
             
             summary = summarize_sequence(path).astype('int')
             # Skip single state trials
@@ -1610,9 +1752,6 @@ def analyze_classified_hmm_state_timing(best_hmms, decodes, col_name, min_dur=1)
                 s_tmp['t_end'] = time[s_row[2]]
                 s_tmp['t_med'] = median([s_tmp['t_end'], s_tmp['t_start']])
                 s_tmp['duration'] = s_row[3]/dt
-                # only first appearance of state is marked as early or late
-                if s_row[0] == row[col_name]:
-                    s_tmp['state_group'] = col_name
                         
                 s_tmp['pos_in_trial'] = j
                 out.append(s_tmp)
@@ -1620,9 +1759,13 @@ def analyze_classified_hmm_state_timing(best_hmms, decodes, col_name, min_dur=1)
     
     out = pd.DataFrame(out)
     
-    mask = out.state_num==0
-    out.loc[mask, 'state_group'] = 'prestim'
-    out = out.dropna(subset = ['state_group'])
+    Y_index = decodes[['rec_dir','hmm_id','hmm_state','trial_ID','Y']].drop_duplicates()
+    Y_index = Y_index.rename(columns = {'hmm_state':'state_num','trial_ID':'taste','Y':'state_group'})
+    Y_index[['hmm_id','state_num']] = Y_index[['hmm_id','state_num']].astype(int)
+    out = out.merge(Y_index, on=['rec_dir','hmm_id','state_num','taste'])
+    #mask = out.Y=='prestim'
+    #out.loc[mask, 'state_group'] = 'prestim'
+    #out = out.dropna(subset = ['state_group'])
     out = out.loc[out.duration >= min_dur]
     idx = out.groupby(['rec_dir','palatability','trial_num','state_num'])['duration'].transform(max) == out['duration']
     out = out[idx]

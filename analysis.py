@@ -1410,42 +1410,68 @@ class HmmAnalysis(object):
         BIC_file = os.path.join(self.save_dir, 'bic_comparison.svg')
         nplt.plot_BIC(ho, self.project, save_file=BIC_file)
 
-    def analyze_NB_ID(self, overwrite = True):
 
+    def analyze_NB_ID(self, overwrite = True, epoch = None):
+        '''
+        critical function for pizza talk decoding analysis of HMM states
+        '''
         if overwrite is True:
             best_hmms = self.get_best_hmms(sorting = "best_BIC")
             all_units, _ = ProjectAnalysis(self.project).get_unit_info()
-            NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms, all_units, prestim = True)
+            NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms, all_units, epoch = epoch, prestim = True)
             decode_data = hmma.process_NB_classification(NB_meta,NB_res)
             
             best_cop = best_hmms
-            id_states = decode_data.reset_index()
-            id_states = id_states.loc[id_states.prestim_state != True]
-            id_states = id_states[['exp_name','time_group','trial_ID','hmm_state','hmm_id']].drop_duplicates()
-            id_states.time_group = id_states.time_group.astype(str)
-            id_states.hmm_id = id_states.hmm_id.astype(int)
-            id_states = id_states.rename(columns={"hmm_state":"ID_state"})
+            decode_data = decode_data.reset_index()
+            
+            fm = decode_data[['exp_name','time_group','trial_ID','Y','hmm_state','hmm_id']].drop_duplicates()
+            fm = fm.pivot(index = ['exp_name','time_group','trial_ID','hmm_id'], columns = 'Y', values = 'hmm_state')
+            fm = fm.fillna(0)
+            ecols = fm.loc[:,fm.columns.str.endswith('early')].astype(int)
+            fm['early'] = ecols.sum(skipna = False,axis = 1)
+            
+            lcols = fm.loc[:,fm.columns.str.endswith('late')].astype(int)
+            fm['late'] = lcols.sum(skipna = False, axis = 1)
+            fm = fm[['prestim','early', 'late']].reset_index()
+        
+
             try:
                 best_cop = best_cop.drop(columns = ['ID_state','trial_ID'])
             except:
                 print('good')
                 
-            best_hmms = pd.merge(best_cop,id_states, on=["exp_name","time_group","hmm_id"])
+            best_cop['time_group'] = best_cop.time_group.astype(int)
+            best_cop['hmm_id'] = best_cop.hmm_id.astype(int)
+            fm['time_group'] = fm.time_group.astype(int)
+            fm['hmm_id'] = fm.hmm_id.astype(int)
+            best_hmms = best_cop.merge(fm, on=["exp_name","time_group","hmm_id"])
             
-            timings = hmma.analyze_classified_hmm_state_timing(best_hmms,decode_data, 'ID_state', min_dur = 50)
+            timings = hmma.analyze_classified_hmm_state_timing(best_hmms,decode_data, min_dur = 50)
+            
             save_dir = self.save_dir
             ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')
-            self.files['ID_timing'] = ID_timing_sf
+            self.files['early_ID_timing'] = ID_timing_sf
             feather.write_dataframe(timings, ID_timing_sf)
             
+            ID_decode_sf = os.path.join(save_dir,'ID_decode.feather')
+            self.files['decode'] = ID_decode_sf
+            feather.write_dataframe(decode_data,ID_decode_sf)
+            
+            #TODO: consolidate output of this function so it's the same when saved or not
+            #NB_meta.drop(columns = ['hmm_state'])
             best_file = self.files['best_hmms']
             feather.write_dataframe(best_hmms, best_file)
             
-            return NB_res,NB_meta,decode_data,best_hmms,timings
+            return NB_meta,decode_data,best_hmms,timings
         
         else:
-            decode_data = feather.read_dataframe(self.files['NB_ID_decodes'])
-            timings = feather.read_dataframe(self.files['ID_timing'])
+            save_dir = self.save_dir
+            
+            ID_decode_sf = os.path.join(save_dir,'ID_decode.feather')
+            decode_data = feather.read_dataframe(ID_decode_sf)
+            
+            ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')
+            timings = feather.read_dataframe(ID_timing_sf)
             
             return decode_data,timings
 
@@ -1581,24 +1607,12 @@ class HmmAnalysis(object):
             nplt.plot_timing_distributions(grp, state='late',
                                            value_col='t_start', save_file=fn1)
 
-            exc_df = grp#[grp['exclude'] == False]
             # exp_group
             comp_file = os.path.join(plot_dir, f'{taste}_timing_comparison.svg')
             nplt.plot_timing_data(grp, save_file=comp_file, group_col='exp_group')
             tb_file = os.path.join(plot_dir, f'{taste}_trial_group_comparision.svg')
             nplt.plot_intraday_timing(grp, save_file = tb_file, group_col = 'trial_group')
 
-            # # exp_group excluding GFP-NoCTA
-            # comp_file = os.path.join(plot_dir, f'{taste}_timing_comparison-exclude.svg')
-            # nplt.plot_timing_data(exc_df, save_file=comp_file, group_col='exp_group')
-
-            # # cta_group
-            # comp_file = os.path.join(plot_dir, f'{taste}_timing_comparison-CTA.svg')
-            # nplt.plot_timing_data(grp, save_file=comp_file, group_col='cta_group')
-
-            # # cta_group excluding GFP-NoCTA
-            # comp_file = os.path.join(plot_dir, f'{taste}_timing_comparison-CTA-exclude.svg')
-            # nplt.plot_timing_data(exc_df, save_file=comp_file, group_col='time_group')
 
     def plot_hmm_confusion(self, save_dir=None):
         if save_dir is None:
@@ -1915,12 +1929,25 @@ class HmmAnalysis(object):
         def apply_states(row):
             h5 = hmma.get_hmm_h5(row['rec_dir'])
             hmm, _, _ = phmm.load_hmm_from_hdf5(h5, row['hmm_id'])
-            tmp = hmma.choose_early_late_states(hmm)
-            return pd.Series({'early_state': tmp[0], 'late_state': tmp[1]})
+            tmp = hmma.choose_bsln_early_late_states(hmm)
+            return pd.Series({'bsln_state': tmp[0], 'early_state': tmp[1], 'late_state': tmp[2]})
 
-        ho[['early_state', 'late_state']] = ho.apply(apply_states, axis=1)
+        ho[['bsln_state','early_state', 'late_state']] = ho.apply(apply_states, axis=1)
         self.write_sorted_hmms(ho)
-        
+    
+    def mark_poss_epochs(self):
+        ho = self.get_sorted_hmms()
+        def apply_states(row):
+            if row.n_states > 2:
+                h5 = hmma.get_hmm_h5(row['rec_dir'])
+                hmm, _, _ = phmm.load_hmm_from_hdf5(h5, row['hmm_id'])
+                tmp = hmma.find_poss_epoch_states(hmm)
+                return pd.Series({'bsln_state': tmp[0], 'early_state': tmp[1], 'late_state': tmp[2]})
+            else:
+                return pd.Series({'bsln_state': 'nan', 'early_state': 'nan', 'late_state': 'nan'})
+        ho[['bsln_state','early_state', 'late_state']] = ho.apply(apply_states, axis=1)
+        self.write_sorted_hmms(ho)
+    
     def mark_4_states(self):
         ho = self.get_sorted_hmms()
         def apply_states(row):

@@ -29,17 +29,23 @@ ORDERS = {'exp_group': ['naive', 'suc_preexp'],
 
         
 def plot_NB_decoding(df, plotdir = None, trial_group_size = 5):
+    #df[['Y','epoch']] = df.Y.str.split('_', expand = True)
+    
     df['trial-group'] = df.trial_num/trial_group_size
     df['trial-group'] = df['trial-group'].astype(int)
     df = df.loc[df.single_state == False]
     df = df.loc[df.prestim_state == False]
-    df['p_taste'] = df.CA + df.CA + df.QHCl+ df.Suc
+    
+    #df['p_taste'] = df.CA + df.CA + df.QHCl+ df.Suc
     df = df.loc[df.prestim_state != True]
     df = df.rename(columns = {'trial_num':'trial','p_correct':'p(correct)','time_group':'session','exp_group':'condition'})
     
-    plot_trialwise_lm(df,'trial-group', ['p(correct)'], save_dir = plotdir, save_prefix = 'NB')
-    plot_trialwise_rel(df,'trial-group', ['p(correct)'], save_dir = plotdir, save_prefix = 'NB')
-    plot_daywise_data(df,['p(correct)'], save_dir = plotdir, save_prefix = 'NB')
+    for i in ['early','late']:
+        sp = 'NB_'+i
+        sub_df = df.loc[df.epoch == i]
+        #plot_trialwise_lm(sub_df,'trial-group', ['p(correct)'], save_dir = plotdir, save_prefix = sp)
+        plot_trialwise_rel(sub_df,'trial-group', ['p(correct)'], save_dir = plotdir, save_prefix = sp)
+        #plot_daywise_data(sub_df,['p(correct)'], save_dir = plotdir, save_prefix = sp)
     
 def plot_NB_timing(df, plotdir = None, trial_group_size = 5):
     df['trial-group'] = df.trial_num/trial_group_size
@@ -50,10 +56,12 @@ def plot_NB_timing(df, plotdir = None, trial_group_size = 5):
     df = df.rename(columns = {'trial_num':'trial','time_group':'session', 'exp_group':'condition', 't_start': 't(start)', 't_end':'t(end)', 't_med':'t(median)','err':'error', 'Y_pred':'predicted-palatability'})
     y_facs = ['duration','t(start)', 't(end)', 't(median)']
     
-    plot_trialwise_lm(df, x_col = 'trial',y_facs = y_facs, save_dir = plotdir, save_prefix = 'NB')
-    #plot_trialwise_rel(df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = 'NB')
-    #plot_daywise_data(df, y_facs, save_dir = plotdir, save_prefix = 'NB')
-    
+    for i in ['early','late']:
+        sp = 'NB_'+i
+        sub_df = df.loc[df.epoch == i]
+        #plot_trialwise_lm(sub_df, x_col = 'trial',y_facs = y_facs, save_dir = plotdir, save_prefix = sp)
+        plot_trialwise_rel(sub_df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = sp)
+        #plot_daywise_data(sub_df, y_facs, save_dir = plotdir, save_prefix = 'NB')
     
 def plot_LR(df, plotdir = None, trial_group_size = 5):
     df['trial-group'] = df.trial_num/trial_group_size
@@ -65,44 +73,80 @@ def plot_LR(df, plotdir = None, trial_group_size = 5):
     y_facs = ['duration', 'error', 'SquaredError','pred-pal']
     
     plot_trialwise_lm(df, x_col = 'trial', y_facs = y_facs, save_dir = plotdir, save_prefix = 'LR')
-    #plot_trialwise_rel(df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = 'LR')
-    #plot_daywise_data(df, y_facs, save_dir = plotdir, save_prefix = 'LR')
+    plot_trialwise_rel(df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = 'LR')
+    plot_daywise_data(df, y_facs, save_dir = plotdir, save_prefix = 'LR')
     
     
 def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None):
     for y_col in y_facs:
+        df['taste'] = pd.Categorical(df['taste'], ['Suc','NaCl','CA','QHCl'])
+        #plot with raste on each row
+        xline_dat = df.groupby(['taste','session','condition'])[y_col].agg('mean').reset_index()
         g = sns.relplot(kind = 'line', data = df,
                         x = x_col, y = y_col, row = 'taste', col = 'session', hue = 'condition', style = 'condition', 
-                        markers = True, err_style = 'band', ci = 95, 
-                        facet_kws={"margin_titles": True}, linewidth = 3, aspect = 1.5, height = 16)
-        g.tight_layout()
+                        markers = True, err_style = 'band', ci = 99.72, height = 4, aspect = 1,
+                        linewidth = 3,legend = False,
+                        facet_kws={"margin_titles": True})
         g.set_titles(row_template = '{row_name}')
-        #sns.move_legend(g, "lower center", bbox_to_anchor=(.4, 1), ncol=2, title=None, frameon=False)
         
-        h = sns.relplot(kind = 'line', data = df,
-                        x = x_col, y = y_col, col = 'session', hue = 'condition', style = 'condition',
-                        markers = True, err_style = 'band', ci = 95,
-                        facet_kws={"margin_titles": True}, linewidth = 3, aspect = 1.5, height = 8)
-        h.tight_layout()
-        h.set_titles(row_template = '{row_name}')
-        #sns.move_legend(h, "lower center", bbox_to_anchor=(.4, 1), ncol=2, title=None, frameon=False)
-        
-        if x_col == 'trial-group':
-            g.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
-            g.set_xticklabels(['1-5','6-10','11-15','16-20','21-25','26-30'], rotation = 60)
-            h.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
-            h.set_xticklabels(['1-5','6-10','11-15','16-20','21-25','26-30'], rotation = 60)
-            
         if y_col == 'p(correct)':
             g.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
-            h.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
-            
+        
+        if x_col == 'trial-group':
+            n_groups = int(max(df['trial-group']))
+            xt = np.arange(0,n_groups+1)
+            xend = n_groups+0.25
+            g.set(xlim = (-0.25,xend), xticks = xt)
+            labs = ['1-5','6-10','11-15','16-20','21-25','26-30']
+            xlabs = labs[0:n_groups+1]
+            g.set_xticklabels(xlabs, rotation = 45)
+        axes = g.axes.flatten()
+        counter = 0
+        for i, ax in enumerate(axes):
+            print(i)
+            ax.axhline(xline_dat[y_col].iloc[counter])
+            counter = counter+1
+            ax.axhline(xline_dat[y_col].iloc[counter], c = 'orange')
+            counter = counter+1
+        
         if save_dir:
             nm1 = save_prefix +'_'+ x_col + '_VS_' + y_col + '_Rel.svg'
             sf = os.path.join(save_dir, nm1)
             g.savefig(sf)
             print(sf)
-            
+        plt.close('all')
+    
+        
+        #plot with tastes aggregated into one row
+        h = sns.relplot(kind = 'line', data = df,
+                        x = x_col, y = y_col, col = 'session', hue = 'condition', style = 'condition',
+                        markers = True, err_style = 'band', ci = 99.72, 
+                        linewidth = 3,  height = 5, aspect = .8, legend = False,
+                        facet_kws={"margin_titles": True})
+        h.set_titles(row_template = '{row_name}')
+
+        if x_col == 'trial-group':
+            n_groups = int(max(df['trial-group']))
+            xt = np.arange(0,n_groups+1)
+            xend = n_groups+0.25
+            h.set(xlim = (-0.25,xend), xticks = xt)
+            labs = ['1-5','6-10','11-15','16-20','21-25','26-30']
+            xlabs = labs[0:n_groups+1]
+            h.set_xticklabels(xlabs, rotation = 45)
+        if y_col == 'p(correct)':
+            h.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
+        
+        xline_dat = df.groupby(['session','condition'])[y_col].agg('mean').reset_index()
+        axes = h.axes.flatten()
+        counter = 0
+        for i, ax in enumerate(axes):
+            print(i)
+            ax.axhline(xline_dat[y_col].iloc[counter])
+            counter = counter+1
+            ax.axhline(xline_dat[y_col].iloc[counter], c = 'orange')
+            counter = counter+1
+       
+        if save_dir: 
             nm2 = save_prefix +'_'+ x_col + '_VS_' + y_col + '_all_tsts_Rel.svg'
             sf2 = os.path.join(save_dir, nm2)
             h.savefig(sf2)
@@ -116,16 +160,11 @@ def plot_trialwise_lm(df, x_col, y_facs, save_dir = None, save_prefix = None):
         g = sns.lmplot(data = df, x = x_col, y = ycol, 
                        hue = 'condition', col = 'session', row = 'taste', aspect = 1, height = 20,
                        facet_kws={"margin_titles": True})
-        #g.tight_layout()
         g.set_titles(row_template = '{row_name}')
-        #sns.move_legend(g, "lower center", bbox_to_anchor=(.4, 1), ncol=2, title=None, frameon=False)
-        
         
         h = sns.lmplot(data = df, x = x_col, y = ycol,
                        hue = 'condition', col = 'session', aspect = 2, height = 8)
-        #h.tight_layout()
         h.set_titles(row_template = '{row_name}')
-        #sns.move_legend(h, "lower center", bbox_to_anchor=(.4, 1), ncol=2, title=None, frameon=False)
         
         if x_col == 'trial-group':
             g.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
@@ -156,19 +195,41 @@ def plot_trialwise_lm(df, x_col, y_facs, save_dir = None, save_prefix = None):
             print(sf2)
         plt.close('all')
 
-def plotRsquared(df,y,row = None,save_dir = None,save_prefix = None):
-    g = sns.catplot(kind = 'bar', data = df,
-                    x = 'session', y = 'Correlation', hue = 'condition', row = row,
-                    margin_titles=True, aspect = 0.25, height = 20, capsize = 0.2, errwidth = 1, row_order = ['Suc','NaCl','CA','QHCl'])
+# def plotRsquared(df,y,row = None,save_dir = None,save_prefix = None):
+#     g = sns.catplot(kind = 'bar', data = df,
+#                     x = 'session', y = 'Correlation', hue = 'condition', row = row,
+#                     margin_titles=True, aspect = 0.25, height = 20, capsize = 0.2, errwidth = 1, row_order = ['Suc','NaCl','CA','QHCl'])
     
-    g.tight_layout()
-    g.set_titles(row_template = '{row_name}')
-    #g.fig.suptitle(y)
-    if save_dir:
-        nm1 = save_prefix + y+ '.svg'
-        sf = os.path.join(save_dir, nm1)
-        g.savefig(sf)
-        print(sf)
+#     g.tight_layout()
+#     g.set_titles(row_template = '{row_name}')
+#     #g.fig.suptitle(y)
+#     if save_dir:
+#         nm1 = save_prefix + y+ '.svg'
+#         sf = os.path.join(save_dir, nm1)
+#         g.savefig(sf)
+#         print(sf)
+
+def plotRsquared(df,yfacs,row = None,save_dir = None,save_prefix = None):
+    df = df.rename(columns = {'time_group':'session','exp_group':'condition'})
+    df['session'] = df.session.astype(int)
+    df = df.loc[df.state_group  != 'prestim']
+    df = df.sort_values(by = ['condition'], ascending = True)
+    for i in yfacs:
+        data = df.loc[df.Feature==i]
+    
+        g = sns.catplot(kind = 'bar', data = data,
+                        x = 'session', y = 'Correlation', hue = 'condition', row = row,
+                        margin_titles=True, aspect = 0.25, height = 20, capsize = 0.2, errwidth = 1, row_order = ['Suc','NaCl','CA','QHCl'])
+    
+        g.tight_layout()
+        g.set_titles(row_template = '{row_name}')
+        g.fig.suptitle(i)
+        if save_dir:
+            nm1 = save_prefix + i+ '.svg'
+            sf = os.path.join(save_dir, nm1)
+            g.savefig(sf)
+            print(sf)
+    plt.close('all')
     
     
 def plot_daywise_data(df,yfacs, save_dir = None, save_prefix = None):
