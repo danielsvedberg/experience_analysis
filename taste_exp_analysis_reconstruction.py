@@ -63,13 +63,11 @@ nplt.plot_NB_decoding(NB_decode,plotdir = HA.save_dir, trial_group_size = 10)
 
 NB_summary = NB_decode.groupby(['exp_name','time_group','trial_ID','prestim_state','rec_dir','hmm_state']).agg('mean').reset_index()
 
-
 # [_,NB_meta_late,NB_decode_late,NB_best_hmms_late,NB_timings_late] = HA.analyze_NB_ID(overwrite = True, epoch = 'late')
 # NB_decode_late['taste'] = NB_decode.trial_ID
 # NB_decode_late['state_num'] = NB_decode['hmm_state'].astype(int)
 # nplt.plot_NB_decoding(NB_decode_late, plotdir = HA.save_dir, epoch = 'late', trial_group_size = 5)
 # NB_late_summary = NB_decode_late.groupby(['exp_name','time_group','trial_ID','prestim_state','rec_dir','hmm_state']).agg('mean').reset_index()
-
 
 ###############################################################################
 ###Naive Bayes timing##########################################################

@@ -18,6 +18,7 @@ from collections import Counter
 import aggregation as agg
 import itertools
 from statistics import median
+from more_itertools import flatten
 
 def deduce_state_order(best_paths):
     '''Looks at best paths and determines the most common ordering of states by
@@ -351,7 +352,6 @@ def analyze_state_correlations(timings,groupings,xfeat,features):
     df['p_value'] = p_values
     df['bonf_pvalue'] = df.p_value*len(features)
     df[groupings] = pd.DataFrame(nms)
-    
     
     return df
 
@@ -929,9 +929,9 @@ def sequential_constrained(PI, A, B):
     A[-1, -1] = 1.0
 
     return PI, A, B
-       
+
 #Rabbit hole: NB_classifier_accuracy>get_classifier_data>get_state_firing_rates
-def analyze_NB_state_classification(best_hmms,all_units, epoch = None, prestim = True):
+def analyze_NB_state_classification(best_hmms,all_units):
     '''generates list of combinations (state_df) for every possible combination of HMM states 
     and then uses them as the prior for decoding
     Parameters
@@ -943,15 +943,6 @@ def analyze_NB_state_classification(best_hmms,all_units, epoch = None, prestim =
     NB_res : list with every single decode
     NB_meta : table with metadata to index NB_res and pull out best decodes from NB_res
     '''
-    if epoch is None:
-        epoch = 'early'
-    else:
-        epoch = 'late'
-    
-    if prestim == True:
-        other_state = 0
-    else:
-        other_state = None
     
     label_col = 'taste'
     id_cols = ['exp_name','exp_group','time_group']
@@ -960,45 +951,11 @@ def analyze_NB_state_classification(best_hmms,all_units, epoch = None, prestim =
     best_hmms = best_hmms.dropna(subset=['hmm_id'])
     best_hmms['single_state_trials'] = best_hmms.apply(lambda x: check_single_state_trials(x,min_dur = 50), axis = 1)
     
+    
     for name, group in best_hmms.groupby(id_cols):
-        id_tastes = group.taste
-        
-        b_list = []
-        e_list = []
-        l_list = []
-        
-        for i, row in group.iterrows():
-            h5 = get_hmm_h5(row['rec_dir'])
-            hmm, _, _ = ph.load_hmm_from_hdf5(h5, row['hmm_id'])
-            tmp = find_poss_epoch_states(hmm)
-            
-            b = np.unique(tmp[:,0])
-            e = np.unique(tmp[:,1]) 
-            l = np.unique(tmp[:,2])
-            
-            b_list.append(b)
-            e_list.append(e)
-            l_list.append(l)
-            
-        state_list = b_list + e_list + l_list 
-        state_combos = itertools.product(*state_list) #we are excluding the first state since the HMM constraint is that first state must be baseline
-        
-        b_labs = id_tastes+'_bsln'
-        e_labs = id_tastes+'_early'
-        l_labs = id_tastes+'_late'
-        el_tastes = pd.concat([e_labs,l_labs])
-        
-        taste_labs = pd.concat([b_labs,e_labs,l_labs])
-        state_df = pd.DataFrame(state_combos,columns=taste_labs)
-        
-        for j, taste in enumerate(id_tastes):
-            b_tst = b_labs.iloc[j]
-            e_tst = e_labs.iloc[j]
-            l_tst = l_labs.iloc[j]
-            state_df = state_df.loc[(state_df[l_tst] > state_df[e_tst]) & (state_df[e_tst] > state_df[b_tst])]
-            
-        print(state_df)
-        
+        state_df = generate_state_combos(group)
+        el_tastes = state_df.columns
+        el_tastes = list(filter(lambda x: 'bsln' not in x, el_tastes))
         n_trials = dict(zip(group.taste,group.n_trials))
         n_single_state = dict(zip(group.taste,group.single_state_trials))
         en = name[0]; eg = name[1]; tg = name[2]
@@ -1061,6 +1018,144 @@ def analyze_NB_state_classification(best_hmms,all_units, epoch = None, prestim =
     NB_meta['performance'] = (1-(NB_meta['n_trials_missed']/NB_meta['tot_trials']))*NB_meta['taste_acc'] #(NB_meta['accuracies']*1E-2)
     
     return NB_res, NB_meta #should do process_NB_classification next
+
+
+def generate_state_combos(group):
+    id_tastes = group.taste
+    
+    b_list = []
+    e_list = []
+    l_list = []
+    
+    for i, row in group.iterrows():
+        h5 = get_hmm_h5(row['rec_dir'])
+        hmm, _, _ = ph.load_hmm_from_hdf5(h5, row['hmm_id'])
+        tmp = find_poss_epoch_states(hmm)
+        
+        b = np.unique(tmp[:,0])
+        e = np.unique(tmp[:,1]) 
+        l = np.unique(tmp[:,2])
+        
+        b_list.append(b)
+        e_list.append(e)
+        l_list.append(l)
+        
+    state_list = b_list + e_list + l_list 
+    state_combos = itertools.product(*state_list) #we are excluding the first state since the HMM constraint is that first state must be baseline
+    
+    b_labs = id_tastes+'_bsln'
+    e_labs = id_tastes+'_early'
+    l_labs = id_tastes+'_late'
+    el_tastes = pd.concat([e_labs,l_labs])
+    
+    taste_labs = pd.concat([b_labs,e_labs,l_labs])
+    state_df = pd.DataFrame(state_combos,columns=taste_labs)
+    
+    for j, taste in enumerate(id_tastes):
+        b_tst = b_labs.iloc[j]
+        e_tst = e_labs.iloc[j]
+        l_tst = l_labs.iloc[j]
+        state_df = state_df.loc[(state_df[l_tst] > state_df[e_tst]) & (state_df[e_tst] > state_df[b_tst])]
+        
+    print(state_df)
+    return state_df, el_tastes
+    
+def nb_group(group, all_units):
+    label_col = 'taste'
+    [state_df, el_tastes] = generate_state_combos(group)
+    n_trials = dict(zip(group.taste,group.n_trials))
+    n_single_state = dict(zip(group.taste,group.single_state_trials))
+    name = group[['exp_name','exp_group','time_group']].drop_duplicates().values.tolist()[0]
+    en = name[0]; eg = name[1]; tg = name[2]
+    NB_res, metadict= [], []
+    for i, states in state_df.iterrows():
+
+        labels, rates, identifiers = get_classifier_data(group, states, label_col, all_units,
+                                                         remove_baseline=False)
+        
+        if (labels is not None) & (rates is not None):
+            model = stats.NBClassifier(labels, rates, row_id=identifiers)
+            res = model.leave1out_fit()
+            
+            
+        if (res is not None) & (labels is not None):
+            NB_res.append(res)  
+            n_trials_decoded = []
+            
+            res_frame = pd.DataFrame()
+            res_frame['X'] = list(res.X)
+            res_frame['Y'] = res.Y
+            res_frame['Y_pred'] = res.Y_predicted
+            res_frame['row_ID'] = list(res.row_id)
+            
+            tasteidx = res.Y != 'prestim'
+            Y_taste = res.Y[tasteidx]
+            Y_pred_taste = res.Y_predicted[tasteidx]
+            
+            tasteacc = sum(Y_taste==Y_pred_taste)/len(Y_taste)
+            
+            
+            for i in el_tastes:
+                n_dec = np.count_nonzero(res.Y==i)
+                n_trials_decoded.append(n_dec)
+                
+            n_trials_missed = sum(group.n_trials*2)-sum(n_trials_decoded)
+            n_trials_decoded = dict(zip(el_tastes,n_trials_decoded))
+            
+            meta_row = {'exp_name':en,
+                        'time_group':tg,
+                        'exp_group':eg,
+                        'accuracies':res.accuracy, 
+                        'taste_acc':tasteacc,
+                        'hmm_state':states, 
+                        'n_trials': n_trials,
+                        'n_single_state': n_single_state,
+                        'n_trials_dec': n_trials_decoded,
+                        'n_trials_missed': n_trials_missed
+                        }
+            
+            meta_row.update(states)
+            print('decode:', name,' ',i)
+            print(meta_row)
+            metadict.append(meta_row)
+            
+    meta = pd.DataFrame(metadict)
+    return [res, meta]
+
+#Rabbit hole: NB_classifier_accuracy>get_classifier_data>get_state_firing_rates
+def analyze_NB_state_classification_parallel(best_hmms,all_units):
+    '''generates list of combinations (state_df) for every possible combination of HMM states 
+    and then uses them as the prior for decoding
+    Parameters
+    ----------
+    best_hmms : Produced by HA.get_best_hmms() 
+    all_units : Produced by PA.get_unit_info()
+    Returns
+    -------
+    NB_res : list with every single decode
+    NB_meta : table with metadata to index NB_res and pull out best decodes from NB_res
+    '''
+    id_cols = ['exp_name','exp_group','time_group']
+    all_units = all_units.query('area == "GC" and single_unit == True')
+    best_hmms = best_hmms.dropna(subset=['hmm_id'])
+    best_hmms['single_state_trials'] = best_hmms.apply(lambda x: check_single_state_trials(x,min_dur = 50), axis = 1)
+    
+    groupedBH = best_hmms.groupby(id_cols)
+    
+    delayed_func = delayed(nb_group)
+    res = Parallel(n_jobs = -2)(delayed_func(subgroup, all_units)
+                                for name, subgroup in groupedBH)
+    
+    res_list = [list(x) for x in zip(*res)]
+    NB_res = res_list[0]
+    NB_meta = pd.concat(res_list[1])
+    
+    NB_meta['earlyness'] = [x.sum() for x in NB_meta.hmm_state]
+    NB_meta['tot_trials'] = pd.DataFrame(list(NB_meta.n_trials)).sum(axis=1)
+    NB_meta['performance'] = (1-(NB_meta['n_trials_missed']/NB_meta['tot_trials']))*NB_meta['taste_acc'] #(NB_meta['accuracies']*1E-2)
+    
+    return NB_res, NB_meta #should do process_NB_classification next
+
 
 def process_NB_classification(NB_meta,NB_res):
     
@@ -2164,4 +2259,4 @@ def saccharin_confusion_analysis(best_hmms, all_units, area='GC',
 
     return pd.DataFrame(out)
 
-
+    
