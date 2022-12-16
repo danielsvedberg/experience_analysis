@@ -1447,6 +1447,13 @@ class HmmAnalysis(object):
             best_hmms = best_cop.merge(fm, on=["exp_name","time_group","hmm_id"])
             
             timings = hmma.analyze_classified_hmm_state_timing(best_hmms,decode_data, min_dur = 50)
+            proj = self.project
+            trial_info = proj.get_trial_info()
+            trial_info = trial_info.rename(columns = {'name':'taste', 'trial_num':'session_trial', 'taste_trial':'trial_num'})
+            trial_info = trial_info[['trial_num','taste','off_time', 'session_trial','rec_dir']]
+            trial_info['trial_num'] = trial_info['trial_num'] - 1
+            timings = pd.merge(timings, trial_info, on = ['rec_dir','taste', 'trial_num'], how = 'left')
+            timings['session_trial'] = timings.groupby(['rec_dir'])['session_trial'].transform(lambda x: x-x.min())
             
             save_dir = self.save_dir
             ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')

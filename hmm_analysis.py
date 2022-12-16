@@ -1788,6 +1788,8 @@ def analyze_classified_hmm_state_timing(best_hmms, decodes, min_dur=1):
     ignore trials with only 1 state > min_dur ms
     '''
     
+    #need to add: session trial & deviation from "standard" solution
+    
     out_keys = ['exp_name', 'exp_group', 'time_group', 'palatability',
                 'rec_group', 'rec_dir', 'n_cells', 'taste', 'hmm_id','trial_num', 'state_num', 't_start', 't_end', 't_med','duration', 'pos_in_trial',
                 'unit_type', 'area', 'dt', 'n_states','notes','single_state']

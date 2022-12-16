@@ -74,8 +74,18 @@ NB_summary = NB_decode.groupby(['exp_name','time_group','trial_ID','prestim_stat
 
 grcols = ['rec_dir','trial_num','taste','state_num']
 NB_decsub = NB_decode[grcols+['p_correct']]
-NB_timings = NB_timings.merge(NB_decsub, on = grcols)
+NB_timings = NB_timings.merge(NB_decsub, on = grcols, how = 'left')
 NB_timings[['Y','epoch']] = NB_timings.state_group.str.split('_',expand=True)
+avg_timing = NB_timings.groupby(['exp_name','taste', 'state_group']).mean()[['t_start','t_end','t_med','duration']]
+avg_timing = avg_timing.rename(columns = lambda x : 'avg_'+x)
+
+NB_timings = pd.merge(NB_timings, avg_timing, on = ['exp_name', 'taste','state_group'], how = 'left')
+NB_timings = NB_timings.set_index(['exp_name','taste','state_group','rec_dir','session_trial'])
+
+NB_timings['delta_t_start'] = NB_timings['t_start'] - avg_timing['avg_t_start']
+NB_timings['delta_t_end'] = NB_timings['t_end'] - avg_timing['avg_t_end']
+NB_timings['delta_t_med'] = NB_timings['t_med'] - avg_timing['avg_t_med']
+
 nplt.plot_NB_timing(NB_timings,HA.save_dir,trial_group_size = 10)
 
 ###############################################################################
