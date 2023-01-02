@@ -61,6 +61,8 @@ NB_decode['state_num'] = NB_decode['hmm_state'].astype(int)
 
 nplt.plot_NB_decoding(NB_decode,plotdir = HA.save_dir, trial_group_size = 10)
 
+
+
 NB_summary = NB_decode.groupby(['exp_name','time_group','trial_ID','prestim_state','rec_dir','hmm_state']).agg('mean').reset_index()
 
 # [_,NB_meta_late,NB_decode_late,NB_best_hmms_late,NB_timings_late] = HA.analyze_NB_ID(overwrite = True, epoch = 'late')
@@ -71,7 +73,7 @@ NB_summary = NB_decode.groupby(['exp_name','time_group','trial_ID','prestim_stat
 
 ###############################################################################
 ###Naive Bayes timing##########################################################
-
+[NB_decode,NB_timings] = HA.analyze_NB_ID(overwrite = False)
 grcols = ['rec_dir','trial_num','taste','state_num']
 NB_decsub = NB_decode[grcols+['p_correct']]
 NB_timings = NB_timings.merge(NB_decsub, on = grcols, how = 'left')
@@ -79,14 +81,26 @@ NB_timings[['Y','epoch']] = NB_timings.state_group.str.split('_',expand=True)
 avg_timing = NB_timings.groupby(['exp_name','taste', 'state_group']).mean()[['t_start','t_end','t_med','duration']]
 avg_timing = avg_timing.rename(columns = lambda x : 'avg_'+x)
 
-NB_timings = pd.merge(NB_timings, avg_timing, on = ['exp_name', 'taste','state_group'], how = 'left')
-NB_timings = NB_timings.set_index(['exp_name','taste','state_group','rec_dir','session_trial'])
-
-NB_timings['delta_t_start'] = NB_timings['t_start'] - avg_timing['avg_t_start']
-NB_timings['delta_t_end'] = NB_timings['t_end'] - avg_timing['avg_t_end']
-NB_timings['delta_t_med'] = NB_timings['t_med'] - avg_timing['avg_t_med']
-
-nplt.plot_NB_timing(NB_timings,HA.save_dir,trial_group_size = 10)
+#NB_timings = pd.merge(NB_timings, avg_timing, on = ['exp_name', 'taste','state_group'], how = 'left')
+idxcols1 = list(NB_timings.loc[:,'exp_name':'state_num'].columns)
+idxcols2 = list(NB_timings.loc[:, 'pos_in_trial':].columns)
+idxcols = idxcols1 + idxcols2
+NB_timings = NB_timings.set_index(idxcols)
+NB_timings = NB_timings.reset_index()
+NB_timings = NB_timings.set_index(['exp_name','taste', 'state_group','session_trial','time_group'])
+operating_columns = ['t_start','t_end','t_med', 'duration']
+for i in operating_columns:
+    deltaname = i+'_delta'
+    absdeltname = i+'_absDelta'
+    propname = i+'_prop'
+    abspropname = i+'_absProp'
+    NB_timings[deltaname] = NB_timings[i] - avg_timing['avg_'+i]
+    NB_timings[absdeltname] = abs(NB_timings[deltaname])
+    NB_timings[propname] = NB_timings[i]/avg_timing['avg_'+i]
+    NB_timings[abspropname] = abs(NB_timings[propname])
+    
+NB_timings = NB_timings.reset_index()
+nplt.plot_NB_timing(NB_timings,HA.save_dir,trial_group_size = 20)
 
 ###############################################################################
 ###Analysis of trial vs NB factors correlations################################
