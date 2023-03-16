@@ -1,6 +1,7 @@
 import os
 import glob
 from scipy.ndimage.filters import gaussian_filter1d
+from scipy import stats as scistats
 from blechpy.analysis import poissonHMM as ph
 from blechpy import load_dataset
 from blechpy.dio import hmmIO
@@ -373,7 +374,7 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
 
     Returns
     -------
-    np.ndarray : Trials x Neuron matrix of firing rates
+    np.ndarray : Trials x Neuron matrix of firing rates (rows x cols)
 
     Raises
     ------
@@ -418,7 +419,6 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
         if trial not in valid_trials: # Skip if state is not in trial
             continue
 
-        # only grab first instance of state
         instate = (path == state).astype(int)
         lag = np.insert(instate,0,0)
         lead = np.append(instate,0)
@@ -428,7 +428,7 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
         edgeoffs = np.where(edges==-1)[0]
         
         statelens = edgeoffs-edgeons
-        longest = np.where(statelens==max(statelens))[0][0]
+        longest = np.where(statelens==max(statelens))[0][0] #get longest instance of state
         onidx = edgeons[longest]
         offidx = edgeoffs[longest] -1
 
@@ -1722,10 +1722,10 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
                 'state_group', 'state_num', 't_start', 't_end', 't_med','duration', 'pos_in_trial',
                 'unit_type', 'area', 'dt', 'n_states', 'notes', 'valid']
     
-    best_hmms = best_hmms.dropna(subset=['hmm_id', 'ID_state']).copy()
+    best_hmms = best_hmms.dropna(subset=['hmm_id', 'early_state']).copy()
 
     best_hmms.loc[:,'hmm_id'] = best_hmms['hmm_id'].astype('int')
-    best_hmms['ID_state'] = best_hmms['ID_state'].astype('int')
+    #best_hmms['ID_state'] = best_hmms['ID_state'].astype('int')
     id_cols = ['exp_name', 'exp_group', 'time_group', 'rec_group',
                'rec_dir', 'taste', 'hmm_id', 'palatability']
     param_cols = ['n_cells', 'n_states', 'dt', 'area', 'unit_type', 'notes']
@@ -1750,7 +1750,7 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
             tmp['trial'] = int(ids[-1])
             tmp['trial_group'] = (lambda x: int(x/5)+1)(tmp['trial'])
             
-            id_valid = is_state_in_seq(path, row['ID_state'], min_pts=min_pts, time=time)
+            id_valid = is_state_in_seq(path, row['early_state'], min_pts=min_pts, time=time)
             #tmp['valid'] = (e_valid and l_valid)
             tmp['valid'] = (id_valid)
 
@@ -1772,7 +1772,7 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
                 s_tmp['t_med'] = median([s_tmp['t_end'], s_tmp['t_start']])
                 s_tmp['duration'] = s_row[3]/dt
                 # only first appearance of state is marked as early or late
-                if s_row[0] == row['ID_state'] and not early_flag:
+                if s_row[0] == row['early_state'] and not early_flag:
                     s_tmp['state_group'] = 'ID'
                     ID_flag = True
 
@@ -1780,6 +1780,55 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
                 out.append(s_tmp)
             
     return pd.DataFrame(out)
+
+def getModeHmm(hmm):
+    best_seqs = hmm.stat_arrays['best_sequences']
+    gamma = hmm.stat_arrays['gamma_probabilities']
+    mode_seqs, _ = scistats.mode(best_seqs)
+    mode_seqs = mode_seqs.flatten().astype(int)
+    mode_seqs = np.ravel(mode_seqs)
+    mode_gamma = gamma[:,mode_seqs,np.arange(gamma.shape[2])]
+    return mode_seqs, mode_gamma
+
+def binstate(best_hmms,trial_group = 5):
+    def getbinstateprob(row, trial_group):
+        h5_file = get_hmm_h5(row['rec_dir'])
+        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row["hmm_id"])
+        mode_seqs, mode_gamma = getModeHmm(hmm)
+
+        rowids = hmm.stat_arrays['row_id']
+        time = hmm.stat_arrays['time']
+        colnames  =['hmm_id','dig_in','taste','trial']
+        outdf = pd.DataFrame(rowids,columns = colnames)
+        outdf['trial_group'] = (outdf.trial.astype(int)/trial_group).astype(int)
+        nmcols = ['exp_name','exp_group','rec_group','time_group']
+        outdf[nmcols] = row[nmcols]
+        colnames = outdf.columns
+        gammadf = pd.DataFrame(mode_gamma,columns = time) 
+        outdf = pd.concat([outdf,gammadf], axis = 1)
+        outdf = pd.melt(outdf,id_vars = colnames, value_vars = list(time), var_name = 'time', value_name = 'gamma_mode')
+        return(outdf)
+    out = best_hmms.apply(lambda x: getbinstateprob(x,5), axis = 1).tolist()
+    out = pd.concat(out)
+    return out
+    
+def binwrong(best_hmms, trial_group = 5):
+    def getwrongbin(row, trial_group):
+        h5_file = get_hmm_h5(row['rec_dir'])
+        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row["hmm_id"])
+        mode_seqs, mode_gamma = getModeHmm(hmm) #get mode state # and gamma prob
+
+        rowids = hmm.stat_arrays['row_id']
+        time = hmm.stat_arrays['time']
+        colnames  =['hmm_id','dig_in','taste','trial']
+        outdf = pd.DataFrame(rowids,columns = colnames)
+        outdf['trial_group'] = (outdf.trial.astype(int)/trial_group).astype(int)
+        nmcols = ['exp_name','exp_group','rec_group','time_group']
+        outdf[nmcols] = row[nmcols]
+        colnames = outdf.columns
+        gammadf = pd.DataFrame(mode_gamma,columns = time) 
+        outdf = pd.concat([outdf,gammadf], axis = 1)
+        outdf = pd.melt(outdf,id_vars = colnames, value_vars = list(time), var_name = 'time', value_name = 'gamma_mode')
 
 def analyze_classified_hmm_state_timing(best_hmms, decodes, min_dur=1):
     '''create output array with columns: exp_name, exp_group, rec_dir,
@@ -2136,7 +2185,6 @@ class CustomHandler(ph.HmmHandler):
 
         #self.plot_saved_models()
         self.load_params()
-
 
 ## New confusion Analysis ##
 def stratified_shuffle_split(labels, data, repeats, test_label):

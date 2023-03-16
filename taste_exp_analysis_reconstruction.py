@@ -5,24 +5,15 @@ Created on Tue Nov  8 13:17:30 2022
 
 @author: dsvedberg
 """
-import numpy as np
-import matplotlib.pyplot as plt
-import datashader
-from blechpy.analysis import poissonHMM as phmm
-import glob
-import re
-import os
-import pandas as pd
+
 #get into the directory
 import analysis as ana
 import blechpy
 import new_plotting as nplt
 import hmm_analysis as hmma 
-import scipy
 import seaborn as sns
-import matplotlib
-matplotlib.use('TkAgg')
-
+import os
+import pandas as pd
 #you need to make a project analysis using blechpy.project() first
 #rec_dir =  '/media/dsvedberg/Ubuntu Disk/taste_experience'
 rec_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'
@@ -80,6 +71,37 @@ NB_timings = NB_timings.merge(NB_decsub, on = grcols, how = 'left')
 NB_timings[['Y','epoch']] = NB_timings.state_group.str.split('_',expand=True)
 avg_timing = NB_timings.groupby(['exp_name','taste', 'state_group']).mean()[['t_start','t_end','t_med','duration']]
 avg_timing = avg_timing.rename(columns = lambda x : 'avg_'+x)
+
+###############################################################################
+from joblib import Parallel, delayed
+gamma_mode_df = hmma.binstate(best_hmms)
+
+def plotGammaMode(group, name):
+    group= group.reset_index()
+    p = sns.relplot(data = group, x = "time", y = "gamma_mode", row ="time_group", col ="trial_group" , hue = "exp_group", kind ="line", facet_kws={'margin_titles':True})
+    p.tight_layout()
+    p.set_ylabels("p(gamma) of mode state")
+    name = '_'.join(name)
+    fn = name+"_Gammaplot.png"
+    sf = os.path.join(HA.save_dir, fn)
+    p.savefig(sf)
+
+Parallel(n_jobs = 8)(delayed(plotGammaMode)(group,name) for name, group in gamma_mode_df.groupby(['taste']))
+    
+for name, group in gamma_mode_df.groupby(['taste']):
+    group = group.reset_index()
+    plotGammaMode(group,name)
+
+pr_modegamma_poststim = gamma_mode_df.loc[gamma_mode_df.time > 0]
+pr_modegamma_poststim['trial'] = pr_modegamma_poststim.trial.astype(int)
+binavg_pr_mode_gamma = pr_modegamma_poststim.groupby(['taste','trial','exp_name','time_group','exp_group','trial_group']).mean().reset_index()
+binavg_pr_mode_gamma['taste'] = pd.Categorical(binavg_pr_mode_gamma['taste'], ['Suc','NaCl','CA','QHCl'])
+g = sns.relplot(data = binavg_pr_mode_gamma, x = "trial", y = "gamma_mode", row = "time_group", col = "taste", hue = "exp_group", kind = "line",
+                facet_kws={'margin_titles':True})
+g.tight_layout()
+g.set_ylabels("p(gamma) of mode state")
+sf = os.path.join(HA.save_dir, 'test.png')
+g.savefig(sf)
 
 #NB_timings = pd.merge(NB_timings, avg_timing, on = ['exp_name', 'taste','state_group'], how = 'left')
 idxcols1 = list(NB_timings.loc[:,'exp_name':'state_num'].columns)

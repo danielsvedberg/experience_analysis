@@ -13,4 +13,4 @@ handler = phmm.HmmHandler(rec_dir)
 
 params = [{'threshold':1e-1, 'max_iter':500, 'n_repeats':5,'time_start':-500, 'time_end': 2500, 'taste': ['Suc','NaCl','CA','QHCl'],'n_states': x} for x in [10,11]]
 handler.add_params(params)
-handler.run()
+handler.run(constraint_func = phmm.sequential_constraint, parallel = False)
