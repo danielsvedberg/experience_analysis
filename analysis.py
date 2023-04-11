@@ -1930,6 +1930,7 @@ class HmmAnalysis(object):
         sorted_df['sorting'] = 'rejected'
         sorted_df['sort_method'] = 'auto'
         self.write_sorted_hmms(sorted_df)
+        
 
     def mark_early_and_late_states(self):
         ho = self.get_sorted_hmms()
