@@ -28,11 +28,15 @@ ORDERS = {'exp_group': ['naive', 'suc_preexp'],
           'trial_group': [1,2,3,4,5,6]}
 
         
-def plot_NB_decoding(df, plotdir = None, trial_group_size = 5):
+def plot_NB_decoding(df, plotdir = None, trial_group_size = 5, trial_col = 'trial_num'):
     #df[['Y','epoch']] = df.Y.str.split('_', expand = True)
     
-    df['trial-group'] = df.trial_num/trial_group_size
+    df['trial-group'] = df[trial_col]/trial_group_size
     df['trial-group'] = df['trial-group'].astype(int)
+    df['tg_start'] = df.groupby(['trial-group'])[trial_col].transform('min')+1
+    df['tg_end'] = df.groupby(['trial-group'])[trial_col].transform('max')+1
+    df['trials'] = df.tg_start.astype(str) + '-' + df.tg_end.astype(str)
+    
     df = df.loc[df.single_state == False]
     df = df.loc[df.prestim_state == False]
     
@@ -44,25 +48,30 @@ def plot_NB_decoding(df, plotdir = None, trial_group_size = 5):
         sp = 'NB_'+i
         sub_df = df.loc[df.epoch == i]
         #plot_trialwise_lm(sub_df,'trial-group', ['p(correct)'], save_dir = plotdir, save_prefix = sp)
-        plot_trialwise_rel(sub_df,'trial-group', ['p(correct)'], save_dir = plotdir, save_prefix = sp)
+        plot_trialwise_rel(sub_df,'trial-group', ['p(correct)'], save_dir = plotdir, save_prefix = sp, trial_col = 'trial_num')
         #plot_daywise_data(sub_df,['p(correct)'], save_dir = plotdir, save_prefix = sp)
     
-def plot_NB_timing(df, plotdir = None, trial_group_size = 5):
+def plot_NB_timing(df, plotdir = None, trial_group_size = 5, trial_col = 'trial_num'):
     #df['trial-group'] = df.trial_num/trial_group_size
-    df['session-trial-group'] = df.session_trial/trial_group_size
-    df['session-trial-group'] = df['trial-group'].astype(int)
+    
+    df['trial-group'] = df[trial_col]/trial_group_size
+    df['trial-group'] = df['trial-group'].astype(int)
+    df['tg_start'] = df.groupby(['trial-group'])[trial_col].transform('min')+1
+    df['tg_end'] = df.groupby(['trial-group'])[trial_col].transform('max')+1
+    df['trials'] = df.tg_start.astype(str) + '-' + df.tg_end.astype(str)
+    
     df = df.loc[df.single_state ==False]
     df = df.loc[df.state_num != 0]
     df = df.loc[df.p_correct > 0.5]
     df = df.rename(columns = {'trial_num':'trial','time_group':'session', 'exp_group':'condition', 't_start': 't(start)', 't_end':'t(end)', 't_med':'t(median)','err':'error', 'Y_pred':'predicted-palatability'})
-    y_facs = list(df.loc[:,'t(start)':'duration_absProp'].columns)
+    y_facs = list(df.loc[:,'t(start)':'duration_absZscore'].columns)
     #['duration','t(start)', 't(end)', 't(median)']
     
     for i in ['early','late']:
         sp = 'NB_'+i
         sub_df = df.loc[df.epoch == i]
-        plot_trialwise_lm(sub_df, x_col = 'session_trial',y_facs = y_facs, save_dir = plotdir, save_prefix = sp)
-        #plot_trialwise_rel(sub_df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = sp)
+        #plot_trialwise_lm(sub_df, x_col = 'session_trial',y_facs = y_facs, save_dir = plotdir, save_prefix = sp)
+        plot_trialwise_rel(sub_df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = sp, trial_col = 'trial_num')
         #plot_daywise_data(sub_df, y_facs, save_dir = plotdir, save_prefix = 'NB')
     
 def plot_LR(df, plotdir = None, trial_group_size = 5):
@@ -79,7 +88,10 @@ def plot_LR(df, plotdir = None, trial_group_size = 5):
     plot_daywise_data(df, y_facs, save_dir = plotdir, save_prefix = 'LR')
     
     
-def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None):
+def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None, trial_col = 'trial group'):
+    cols = [x_col, 'trials']
+    triallabs = df[cols].reset_index(drop=True).drop_duplicates().sort_values(by = [x_col])
+    
     for y_col in y_facs:
         df['taste'] = pd.Categorical(df['taste'], ['Suc','NaCl','CA','QHCl'])
         #plot with raste on each row
@@ -91,17 +103,22 @@ def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None):
                         facet_kws={"margin_titles": True})
         g.set_titles(row_template = '{row_name}')
         
+        n_groups = int(max(df['trial-group']))
+        xt = np.arange(0,n_groups+1)
+        xend = n_groups+0.25
+        g.set(xlim = (-0.25,xend), xticks = xt)#, xlabel=trial_col)
+        g.set_xticklabels(triallabs['trials'], rotation = 45)
         if y_col == 'p(correct)':
             g.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
         
-        if x_col == 'trial-group':
-            n_groups = int(max(df['trial-group']))
-            xt = np.arange(0,n_groups+1)
-            xend = n_groups+0.25
-            g.set(xlim = (-0.25,xend), xticks = xt)
-            labs = ['1-5','6-10','11-15','16-20','21-25','26-30']
-            xlabs = labs[0:n_groups+1]
-            g.set_xticklabels(xlabs, rotation = 45)
+        # if x_col == 'trial-group':
+        #     n_groups = int(max(df['trial-group']))
+        #     xt = np.arange(0,n_groups+1)
+        #     xend = n_groups+0.25
+        #     g.set(xlim = (-0.25,xend), xticks = xt)
+        #     labs = ['1-5','6-10','11-15','16-20','21-25','26-30']
+        #     xlabs = labs[0:n_groups+1]
+        #     g.set_xticklabels(xlabs, rotation = 45)
         axes = g.axes.flatten()
         counter = 0
         for i, ax in enumerate(axes):
@@ -125,15 +142,17 @@ def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None):
                         linewidth = 3,  height = 5, aspect = .8, legend = False,
                         facet_kws={"margin_titles": True})
         h.set_titles(row_template = '{row_name}')
-
-        if x_col == 'trial-group':
-            n_groups = int(max(df['trial-group']))
-            xt = np.arange(0,n_groups+1)
-            xend = n_groups+0.25
-            h.set(xlim = (-0.25,xend), xticks = xt)
-            labs = ['1-5','6-10','11-15','16-20','21-25','26-30']
-            xlabs = labs[0:n_groups+1]
-            h.set_xticklabels(xlabs, rotation = 45)
+        h.set(xlim = (-0.25,xend), xticks = xt)#, xlabel=trial_col)
+        h.set_xticklabels(triallabs['trials'], rotation = 45)
+    
+        # if x_col == 'trial-group':
+        #     n_groups = int(max(df['trial-group']))
+        #     xt = np.arange(0,n_groups+1)
+        #     xend = n_groups+0.25
+        #     h.set(xlim = (-0.25,xend), xticks = xt)
+        #     labs = ['1-5','6-10','11-15','16-20','21-25','26-30']
+        #     xlabs = labs[0:n_groups+1]
+        #     h.set_xticklabels(xlabs, rotation = 45)
         if y_col == 'p(correct)':
             h.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
         

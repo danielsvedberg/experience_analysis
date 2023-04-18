@@ -12,7 +12,7 @@ import blechpy
 import new_plotting as nplt
 import hmm_analysis as hmma 
 import seaborn as sns
-import os
+#import os
 import pandas as pd
 #you need to make a project analysis using blechpy.project() first
 #rec_dir =  '/media/dsvedberg/Ubuntu Disk/taste_experience'
@@ -25,16 +25,16 @@ PA = ana.ProjectAnalysis(proj)
 PA.detect_held_units()#overwrite = True) #this part also gets the all units file
 [all_units, held_df] = PA.get_unit_info()#overwrite = True) #run and check for correct area then run get best hmm
 
-#PA.process_single_units(overwrite = True) #maybe run
+PA.process_single_units()#overwrite = True) #maybe run
 #PA.run(overwrite = True)
 
 HA = ana.HmmAnalysis(proj)
 HA.get_hmm_overview()#overwrite = True) #use overwrrite = True to debug
 #HA.sort_hmms_by_params()#overwrite = True)
-HA.sort_hmms_by_BIC()#overwrite = True)
+HA.sort_hmms_by_BIC(overwrite = True)
 srt_df = HA.get_sorted_hmms()
 #HA.mark_early_and_late_states() #this is good, is writing in early and late states I think
-best_hmms = HA.get_best_hmms(sorting = 'best_BIC')#, overwrite = True)# sorting = 'params #4') #HA has no attribute project analysis #this is not getting the early and late states 
+best_hmms = HA.get_best_hmms(sorting = 'best_BIC', overwrite = True)# sorting = 'params #4') #HA has no attribute project analysis #this is not getting the early and late states 
 #heads up, params #5 doesn't cover all animals, you want params #4
 #play around with state timings in mark_early_and_late_states()
 
@@ -44,14 +44,20 @@ best_hmms = HA.get_best_hmms(sorting = 'best_BIC')#, overwrite = True)# sorting 
 sns.set(style = 'white', font_scale = 1.5, rc={"figure.figsize":(10, 10)})
 ###############################################################################
 ###NAIVE BAYES CLASSIFICATION##################################################
-#[NB_meta,NB_decode,NB_best,NB_timings] = HA.analyze_NB_ID(overwrite = True)
-[NB_decode,NB_timings] = HA.analyze_NB_ID(overwrite = False)
+NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite = True, parallel = True) #run with overwrite
+
+NB_meta_save = NB_meta
+NB_decode_save = NB_decode
+NB_decode = NB_decode.drop(columns = ['index']).drop_duplicates()
+
+NB_meta_,NB_decode_,NB_best_,NB_timings_ = HA.analyze_NB_ID(overwrite = False) #run with no overwrite, make sure to not overwrite NB_meta and NB_decode if you have them
 NB_decode[['Y','epoch']] = NB_decode.Y.str.split('_',expand=True)
 NB_decode['taste'] = NB_decode.trial_ID
 NB_decode['state_num'] = NB_decode['hmm_state'].astype(int)
 
 nplt.plot_NB_decoding(NB_decode,plotdir = HA.save_dir, trial_group_size = 10)
 
+###############################################################################
 
 
 NB_summary = NB_decode.groupby(['exp_name','time_group','trial_ID','prestim_state','rec_dir','hmm_state']).agg('mean').reset_index()
@@ -64,46 +70,25 @@ NB_summary = NB_decode.groupby(['exp_name','time_group','trial_ID','prestim_stat
 
 ###############################################################################
 ###Naive Bayes timing##########################################################
-[NB_decode,NB_timings] = HA.analyze_NB_ID(overwrite = False)
+#[NB_decode,NB_timings] = HA.analyze_NB_ID(overwrite = False, parallel = True)
+# = hmma.analyze_NB_state_classification_parallel(best_hmms, all_units)
+
+NB_decode['state_num'] = NB_decode['hmm_state'].astype('int64')
+NB_decode['taste'] = NB_decode['trial_ID']
 grcols = ['rec_dir','trial_num','taste','state_num']
-NB_decsub = NB_decode[grcols+['p_correct']]
+NB_decsub = NB_decode[grcols+['p_correct']].drop_duplicates()
+
+
+
 NB_timings = NB_timings.merge(NB_decsub, on = grcols, how = 'left')
+NB_timings = NB_timings.drop_duplicates()
 NB_timings[['Y','epoch']] = NB_timings.state_group.str.split('_',expand=True)
 avg_timing = NB_timings.groupby(['exp_name','taste', 'state_group']).mean()[['t_start','t_end','t_med','duration']]
 avg_timing = avg_timing.rename(columns = lambda x : 'avg_'+x)
 
-###############################################################################
-from joblib import Parallel, delayed
-gamma_mode_df = hmma.binstate(best_hmms)
 
-def plotGammaMode(group, name):
-    group= group.reset_index()
-    p = sns.relplot(data = group, x = "time", y = "gamma_mode", row ="time_group", col ="trial_group" , hue = "exp_group", kind ="line", facet_kws={'margin_titles':True})
-    p.tight_layout()
-    p.set_ylabels("p(gamma) of mode state")
-    name = '_'.join(name)
-    fn = name+"_Gammaplot.png"
-    sf = os.path.join(HA.save_dir, fn)
-    p.savefig(sf)
-
-Parallel(n_jobs = 8)(delayed(plotGammaMode)(group,name) for name, group in gamma_mode_df.groupby(['taste']))
-    
-for name, group in gamma_mode_df.groupby(['taste']):
-    group = group.reset_index()
-    plotGammaMode(group,name)
-
-pr_modegamma_poststim = gamma_mode_df.loc[gamma_mode_df.time > 0]
-pr_modegamma_poststim['trial'] = pr_modegamma_poststim.trial.astype(int)
-binavg_pr_mode_gamma = pr_modegamma_poststim.groupby(['taste','trial','exp_name','time_group','exp_group','trial_group']).mean().reset_index()
-binavg_pr_mode_gamma['taste'] = pd.Categorical(binavg_pr_mode_gamma['taste'], ['Suc','NaCl','CA','QHCl'])
-g = sns.relplot(data = binavg_pr_mode_gamma, x = "trial", y = "gamma_mode", row = "time_group", col = "taste", hue = "exp_group", kind = "line",
-                facet_kws={'margin_titles':True})
-g.tight_layout()
-g.set_ylabels("p(gamma) of mode state")
-sf = os.path.join(HA.save_dir, 'test.png')
-g.savefig(sf)
-
-#NB_timings = pd.merge(NB_timings, avg_timing, on = ['exp_name', 'taste','state_group'], how = 'left')
+NB_timings = pd.merge(NB_timings, avg_timing, on = ['exp_name', 'taste','state_group'], how = 'left').drop_duplicates()
+NB_timings = NB_timings.reset_index()
 idxcols1 = list(NB_timings.loc[:,'exp_name':'state_num'].columns)
 idxcols2 = list(NB_timings.loc[:, 'pos_in_trial':].columns)
 idxcols = idxcols1 + idxcols2
@@ -111,18 +96,18 @@ NB_timings = NB_timings.set_index(idxcols)
 NB_timings = NB_timings.reset_index()
 NB_timings = NB_timings.set_index(['exp_name','taste', 'state_group','session_trial','time_group'])
 operating_columns = ['t_start','t_end','t_med', 'duration']
+
+from scipy.stats import zscore
 for i in operating_columns:
-    deltaname = i+'_delta'
-    absdeltname = i+'_absDelta'
-    propname = i+'_prop'
-    abspropname = i+'_absProp'
-    NB_timings[deltaname] = NB_timings[i] - avg_timing['avg_'+i]
-    NB_timings[absdeltname] = abs(NB_timings[deltaname])
-    NB_timings[propname] = NB_timings[i]/avg_timing['avg_'+i]
-    NB_timings[abspropname] = abs(NB_timings[propname])
+    zscorename = i+'_zscore'
+    abszscorename = i+'_absZscore'
+    NB_timings[zscorename] = NB_timings.groupby(['exp_name', 'state_group'])[i].transform(lambda x: zscore(x))
+    NB_timings[zscorename] = NB_timings[zscorename].fillna(0)
+    NB_timings[abszscorename] = abs(NB_timings[zscorename])
     
 NB_timings = NB_timings.reset_index()
-nplt.plot_NB_timing(NB_timings,HA.save_dir,trial_group_size = 20)
+NB_timings['trial-group'] = NB_timings['trial_group']
+nplt.plot_NB_timing(NB_timings,HA.save_dir,trial_group_size = 24, trial_col = 'session_trial')
 
 ###############################################################################
 ###Analysis of trial vs NB factors correlations################################
@@ -164,8 +149,37 @@ HA.analyze_hmms(overwrite = True) #comment out/adapt some analyses
 HA.plot_hmm_timing()
 
 
+###############################################################################
+###mode gamma probability analysis
+from joblib import Parallel, delayed
+gamma_mode_df = hmma.binstate(best_hmms)
 
+def plotGammaMode(group, name):
+    group= group.reset_index()
+    p = sns.relplot(data = group, x = "time", y = "gamma_mode", row ="time_group", col ="trial_group" , hue = "exp_group", kind ="line", facet_kws={'margin_titles':True})
+    p.tight_layout()
+    p.set_ylabels("p(gamma) of mode state")
+    name = '_'.join(name)
+    fn = name+"_Gammaplot.png"
+    sf = os.path.join(HA.save_dir, fn)
+    p.savefig(sf)
 
+Parallel(n_jobs = 8)(delayed(plotGammaMode)(group,name) for name, group in gamma_mode_df.groupby(['taste']))
+    
+for name, group in gamma_mode_df.groupby(['taste']):
+    group = group.reset_index()
+    plotGammaMode(group,name)
+
+pr_modegamma_poststim = gamma_mode_df.loc[gamma_mode_df.time > 0]
+pr_modegamma_poststim['trial'] = pr_modegamma_poststim.trial.astype(int)
+binavg_pr_mode_gamma = pr_modegamma_poststim.groupby(['taste','trial','exp_name','time_group','exp_group','trial_group']).mean().reset_index()
+binavg_pr_mode_gamma['taste'] = pd.Categorical(binavg_pr_mode_gamma['taste'], ['Suc','NaCl','CA','QHCl'])
+g = sns.relplot(data = binavg_pr_mode_gamma, x = "trial", y = "gamma_mode", row = "time_group", col = "taste", hue = "exp_group", kind = "line",
+                facet_kws={'margin_titles':True})
+g.tight_layout()
+g.set_ylabels("p(gamma) of mode state")
+sf = os.path.join(HA.save_dir, 'test.png')
+g.savefig(sf)
 
 
 

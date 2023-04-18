@@ -1,4 +1,3 @@
-from pushbullet_tools import push_message as pm
 import os
 import shutil
 import pdb
@@ -26,6 +25,7 @@ from datetime import datetime
 from tqdm import tqdm
 from joblib import parallel_backend
 from joblib import Parallel, delayed
+from pushbullet_tools import push_message as pm
 
 # PAL_MAP = {'Water': -1, 'Saccharin': -1, 'Quinine': 1,
 #            'Citric Acid': 2, 'NaCl': 3}
@@ -1200,8 +1200,9 @@ class HmmAnalysis(object):
         best_file = self.files['best_hmms']
         if save_dir is not None:
             best_file = os.path.join(save_dir, os.path.basename(best_file))
-
-        if os.path.isfile(best_file) and not overwrite:
+        
+        bf = os.path.isfile(best_file)
+        if bf and not overwrite:
             best_hmms = feather.read_dataframe(best_file)
             return best_hmms
 
@@ -1411,18 +1412,23 @@ class HmmAnalysis(object):
         nplt.plot_BIC(ho, self.project, save_file=BIC_file)
 
 
-    def analyze_NB_ID(self, overwrite = True, epoch = None):
+    def analyze_NB_ID(self, overwrite = True, epoch = None, parallel = False):
         '''
         critical function for pizza talk decoding analysis of HMM states
         '''
         if overwrite is True:
             best_hmms = self.get_best_hmms(sorting = "best_BIC")
             all_units, _ = ProjectAnalysis(self.project).get_unit_info()
-            NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms, all_units, epoch = epoch, prestim = True)
+            
+            if parallel == True:
+                NB_res, NB_meta = hmma.analyze_NB_state_classification_parallel(best_hmms, all_units)
+            else:
+                NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms, all_units)#, epoch = epoch, prestim = True)
+                
             decode_data = hmma.process_NB_classification(NB_meta,NB_res)
             
             best_cop = best_hmms
-            decode_data = decode_data.reset_index()
+            decode_data = decode_data.reset_index(drop=True)
             
             fm = decode_data[['exp_name','time_group','trial_ID','Y','hmm_state','hmm_id']].drop_duplicates()
             fm = fm.pivot(index = ['exp_name','time_group','trial_ID','hmm_id'], columns = 'Y', values = 'hmm_state')
@@ -1433,8 +1439,7 @@ class HmmAnalysis(object):
             lcols = fm.loc[:,fm.columns.str.endswith('late')].astype(int)
             fm['late'] = lcols.sum(skipna = False, axis = 1)
             fm = fm[['prestim','early', 'late']].reset_index()
-        
-
+            
             try:
                 best_cop = best_cop.drop(columns = ['ID_state','trial_ID'])
             except:
@@ -1445,6 +1450,7 @@ class HmmAnalysis(object):
             fm['time_group'] = fm.time_group.astype(int)
             fm['hmm_id'] = fm.hmm_id.astype(int)
             best_hmms = best_cop.merge(fm, on=["exp_name","time_group","hmm_id"])
+            best_hmms = best_hmms.drop_duplicates()
             
             timings = hmma.analyze_classified_hmm_state_timing(best_hmms,decode_data, min_dur = 50)
             proj = self.project
@@ -1453,6 +1459,7 @@ class HmmAnalysis(object):
             trial_info = trial_info[['trial_num','taste','off_time', 'session_trial','rec_dir']]
             trial_info['trial_num'] = trial_info['trial_num'] - 1
             timings = pd.merge(timings, trial_info, on = ['rec_dir','taste', 'trial_num'], how = 'left')
+            timings = timings.drop_duplicates()
             timings['session_trial'] = timings.groupby(['rec_dir'])['session_trial'].transform(lambda x: x-x.min())
             
             save_dir = self.save_dir
@@ -1479,8 +1486,10 @@ class HmmAnalysis(object):
             
             ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')
             timings = feather.read_dataframe(ID_timing_sf)
+            best_hmms = ['need to run with overwrite to get best_hmms']
+            NB_meta = ['need to run with overwrite to get NB_meta']
             
-            return decode_data,timings
+            return NB_meta, decode_data, best_hmms, timings
 
     def analyze_pal_linear_regression(self):
         best_hmms = self.get_best_hmms(sorting = 'best_BIC')

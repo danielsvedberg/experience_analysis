@@ -947,14 +947,14 @@ def analyze_NB_state_classification(best_hmms,all_units):
     label_col = 'taste'
     id_cols = ['exp_name','exp_group','time_group']
     NB_res = []; metadict = []
-    all_units = all_units.query('area == "GC" and single_unit == True')
-    best_hmms = best_hmms.dropna(subset=['hmm_id'])
-    best_hmms['single_state_trials'] = best_hmms.apply(lambda x: check_single_state_trials(x,min_dur = 50), axis = 1)
+    all_u = all_units.query('area == "GC" and single_unit == True')
+    best_hmms_ = best_hmms.dropna(subset=['hmm_id'])
+    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x,min_dur = 50), axis = 1)
     
     
-    for name, group in best_hmms.groupby(id_cols):
-        state_df = generate_state_combos(group)
-        el_tastes = state_df.columns
+    for name, group in best_hmms_.groupby(id_cols):
+        state_df, el_tastes = generate_state_combos(group)
+        #el_tastes = state_df.columns
         el_tastes = list(filter(lambda x: 'bsln' not in x, el_tastes))
         n_trials = dict(zip(group.taste,group.n_trials))
         n_single_state = dict(zip(group.taste,group.single_state_trials))
@@ -963,7 +963,7 @@ def analyze_NB_state_classification(best_hmms,all_units):
         for i, states in state_df.iterrows():
             #res = NB_classifier_accuracy(group,row,label_col,all_units, other_state)
             
-            labels, rates, identifiers = get_classifier_data(group, states, label_col, all_units,
+            labels, rates, identifiers = get_classifier_data(group, states, label_col, all_u,
                                                              remove_baseline=False)
             
             if (labels is not None) & (rates is not None):
@@ -1019,7 +1019,6 @@ def analyze_NB_state_classification(best_hmms,all_units):
     
     return NB_res, NB_meta #should do process_NB_classification next
 
-
 def generate_state_combos(group):
     id_tastes = group.taste
     
@@ -1052,6 +1051,7 @@ def generate_state_combos(group):
     state_df = pd.DataFrame(state_combos,columns=taste_labs)
     
     for j, taste in enumerate(id_tastes):
+        print(j)
         b_tst = b_labs.iloc[j]
         e_tst = e_labs.iloc[j]
         l_tst = l_labs.iloc[j]
@@ -1062,12 +1062,15 @@ def generate_state_combos(group):
     
 def nb_group(group, all_units):
     label_col = 'taste'
-    [state_df, el_tastes] = generate_state_combos(group)
+    state_df, el_tastes = generate_state_combos(group)
+    
+    
     n_trials = dict(zip(group.taste,group.n_trials))
     n_single_state = dict(zip(group.taste,group.single_state_trials))
     name = group[['exp_name','exp_group','time_group']].drop_duplicates().values.tolist()[0]
     en = name[0]; eg = name[1]; tg = name[2]
     NB_res, metadict= [], []
+    
     for i, states in state_df.iterrows():
 
         labels, rates, identifiers = get_classifier_data(group, states, label_col, all_units,
@@ -1076,7 +1079,6 @@ def nb_group(group, all_units):
         if (labels is not None) & (rates is not None):
             model = stats.NBClassifier(labels, rates, row_id=identifiers)
             res = model.leave1out_fit()
-            
             
         if (res is not None) & (labels is not None):
             NB_res.append(res)  
@@ -1120,7 +1122,7 @@ def nb_group(group, all_units):
             metadict.append(meta_row)
             
     meta = pd.DataFrame(metadict)
-    return [res, meta]
+    return [NB_res, meta]
 
 #Rabbit hole: NB_classifier_accuracy>get_classifier_data>get_state_firing_rates
 def analyze_NB_state_classification_parallel(best_hmms,all_units):
@@ -1136,18 +1138,19 @@ def analyze_NB_state_classification_parallel(best_hmms,all_units):
     NB_meta : table with metadata to index NB_res and pull out best decodes from NB_res
     '''
     id_cols = ['exp_name','exp_group','time_group']
-    all_units = all_units.query('area == "GC" and single_unit == True')
-    best_hmms = best_hmms.dropna(subset=['hmm_id'])
-    best_hmms['single_state_trials'] = best_hmms.apply(lambda x: check_single_state_trials(x,min_dur = 50), axis = 1)
+    all_units_ = all_units.query('area == "GC" and single_unit == True')
+    best_hmms_ = best_hmms.dropna(subset=['hmm_id'])
+    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x,min_dur = 50), axis = 1)
     
-    groupedBH = best_hmms.groupby(id_cols)
+    groupedBH = best_hmms_.groupby(id_cols)
     
     delayed_func = delayed(nb_group)
-    res = Parallel(n_jobs = -2)(delayed_func(subgroup, all_units)
+    res = Parallel(n_jobs = -2)(delayed_func(subgroup, all_units_)
                                 for name, subgroup in groupedBH)
     
     res_list = [list(x) for x in zip(*res)]
     NB_res = res_list[0]
+    NB_res = list(itertools.chain(*NB_res))
     NB_meta = pd.concat(res_list[1])
     
     NB_meta['earlyness'] = [x.sum() for x in NB_meta.hmm_state]
@@ -1159,7 +1162,7 @@ def analyze_NB_state_classification_parallel(best_hmms,all_units):
 
 def process_NB_classification(NB_meta,NB_res):
     
-    best_NB = NB_meta
+    best_NB = NB_meta.reset_index(drop = True)
     best_NB = best_NB[best_NB.groupby(['exp_name','time_group']).performance.transform('max') == best_NB.performance]
     best_NB = best_NB[best_NB.groupby(['exp_name','time_group']).earlyness.transform('min')==best_NB.earlyness]
     best_NB = best_NB.loc[best_NB.groupby(['exp_name','time_group']).accuracies.idxmin()]
@@ -1246,7 +1249,7 @@ def process_NB_classification(NB_meta,NB_res):
     full_trials = full_trials.reset_index()
     decode_data = decode_data.reset_index()
     decode_data.pop('index')
-    decode_data = full_trials.merge(decode_data, how = "outer").fillna(0)
+    decode_data = full_trials.merge(decode_data, how = "outer").fillna(0).drop_duplicates()
     
     ss_trials = []
     rd_id = []
@@ -1273,7 +1276,7 @@ def process_NB_classification(NB_meta,NB_res):
                 
     ss_dict = {'rec_dir':rd_id, 'hmm_id':hid, 'trial_num': trls, 'single_state': ss_trials}
     ss_frame = pd.DataFrame(ss_dict)        
-    decode_data = decode_data.merge(ss_frame, on = ['rec_dir','hmm_id','trial_num'])
+    decode_data = decode_data.merge(ss_frame, on = ['rec_dir','hmm_id','trial_num']).drop_duplicates()
     
     return decode_data
 
@@ -1303,7 +1306,7 @@ def process_LinReg_pal_classification(results):
     groups = df.groupby(['iteration','rec_dir','Y','hmm_state']).groups.keys()
     groups = pd.DataFrame(groups, columns = ['iteration','rec_dir','Y','hmm_state'])
     groups.Y = 'pal_' + groups.Y
-    groups = groups.pivot(index = ['iteration','rec_dir'], columns = 'Y', values = 'hmm_state').reset_index()
+    groups = groups.pivot(index = ['iteration','rec_dir'], columns = 'Y', values = 'hmm_state').reset_index(drop=True)
     
     meta = pd.DataFrame(list(zip(mse,accuracies,n_trials)),columns =['mse','accuracies','n_trials'])
     meta = pd.concat([meta,groups],axis=1)
