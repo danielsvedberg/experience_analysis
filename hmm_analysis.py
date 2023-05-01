@@ -350,7 +350,6 @@ def analyze_state_correlations(timings,groupings,xfeat,features):
 
     df['Feature'] = feats
     df['Correlation'] = corrs
-    df['p_value'] = p_values
     df['bonf_pvalue'] = df.p_value*len(features)
     df[groupings] = pd.DataFrame(nms)
     
@@ -1784,6 +1783,32 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
             
     return pd.DataFrame(out)
 
+
+def getMaxGamma(best_hmms, trial_group = 5):
+    def maxgamma(row):
+        h5_file = get_hmm_h5(row['rec_dir'])
+        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row["hmm_id"])
+        gamma = hmm.stat_arrays['gamma_probabilities']
+        max_gamma = np.amax(gamma,axis = 1)
+        
+        rowids = hmm.stat_arrays['row_id']
+        time = hmm.stat_arrays['time']
+        colnames  =['hmm_id','dig_in','taste','trial']
+        outdf = pd.DataFrame(rowids,columns = colnames)
+        outdf['trial_group'] = (outdf.trial.astype(int)/trial_group).astype(int)
+        nmcols = ['exp_name','exp_group','rec_group','time_group']
+        outdf[nmcols] = row[nmcols]
+        colnames = outdf.columns
+        gammadf = pd.DataFrame(max_gamma,columns = time) 
+        outdf = pd.concat([outdf,gammadf], axis = 1)
+        outdf = pd.melt(outdf,id_vars = colnames, value_vars = list(time), var_name = 'time', value_name = 'max_gamma')
+        return(outdf)
+    out = best_hmms.apply(lambda x: maxgamma(x), axis = 1).tolist()
+    out = pd.concat(out)
+    
+
+    return out
+
 def getModeHmm(hmm):
     best_seqs = hmm.stat_arrays['best_sequences']
     gamma = hmm.stat_arrays['gamma_probabilities']
@@ -1793,11 +1818,11 @@ def getModeHmm(hmm):
     mode_gamma = gamma[:,mode_seqs,np.arange(gamma.shape[2])]
     return mode_seqs, mode_gamma
 
-def binstate(best_hmms,trial_group = 5):
+def binstate(best_hmms, statefunc = getModeHmm, trial_group = 5):
     def getbinstateprob(row, trial_group):
         h5_file = get_hmm_h5(row['rec_dir'])
         hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row["hmm_id"])
-        mode_seqs, mode_gamma = getModeHmm(hmm)
+        mode_seqs, mode_gamma = statefunc(hmm)
 
         rowids = hmm.stat_arrays['row_id']
         time = hmm.stat_arrays['time']

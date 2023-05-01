@@ -11,6 +11,8 @@ import analysis_stats as stats
 from scipy.ndimage.filters import gaussian_filter1d
 from blechpy import load_dataset
 import seaborn as sns
+from joblib import Parallel, delayed
+
 
 #I might need to replace a bunch of x['time_group'] under df['grouping']
 
@@ -27,7 +29,52 @@ ORDERS = {'exp_group': ['naive', 'suc_preexp'],
           'state_presence': ['both', 'early_only', 'late_only', 'neither'],
           'trial_group': [1,2,3,4,5,6]}
 
-        
+def plotGamma(group, name, save_dir, yax = "gamma_mode"):
+    group= group.reset_index()
+    p = sns.relplot(data = group, x = "time", y = yax, row ="time_group", col ="trial_group" , hue = "exp_group", kind ="line", facet_kws={'margin_titles':True})
+    p.tight_layout()
+    p.set_ylabels("p(gamma) of mode state")
+    name = '_'.join(name)
+    fn = name+"_"+yax+".png"
+    sf = os.path.join(save_dir, fn)
+    p.savefig(sf)
+
+def plotGammaBar(group,name,save_dir,yax = "gamma_mode"):
+    sns.set(style = "whitegrid")
+    group = group.reset_index()
+    
+    # Create a FacetGrid with the desired structure
+    g = sns.FacetGrid(group, col="time_group", row="exp_group", height=4, aspect=1, margin_titles=True)
+    
+    # Add a bar plot to the FacetGrid for each panel
+    g.map(sns.violinplot, "trial_group", yax, order=None, ci=None, color="lightblue")
+    
+    # Add a swarm plot to the FacetGrid for each panel
+    #g.map(sns.stripplot, "trial_group", yax, order=None, color="black")
+    
+    # Set the axis labels
+    g.set_axis_labels("trial_group", yax)
+    
+    # Add a title for each panel
+    #g.set_titles("time_group = {session #}, exp_group = {experiment group}")
+    
+    # Adjust the space between panels
+    #g.fig.subplots_adjust(wspace=.05, hspace=.15)
+    
+    sn = '_'.join(name)
+    fn = sn +"_"+yax+"_barplot.png"
+    sf = os.path.join(save_dir, fn)
+    g.savefig(sf)
+
+    
+    
+def plotGammaPar(gamma_df, save_dir, yax = "gamma_mode"):
+    Parallel(n_jobs = 8)(delayed(plotGamma)(group, name, save_dir, yax) for name, group in gamma_df.groupby(['taste']))
+
+def plotGammaBarPar(gamma_df, save_dir, yax = "gamma_mode"):
+    Parallel(n_jobs = 8)(delayed(plotGammaBar)(group, name, save_dir, yax) for name, group in gamma_df.groupby(['taste']))
+
+
 def plot_NB_decoding(df, plotdir = None, trial_group_size = 5, trial_col = 'trial_num'):
     #df[['Y','epoch']] = df.Y.str.split('_', expand = True)
     
@@ -71,7 +118,7 @@ def plot_NB_timing(df, plotdir = None, trial_group_size = 5, trial_col = 'trial_
         sp = 'NB_'+i
         sub_df = df.loc[df.epoch == i]
         #plot_trialwise_lm(sub_df, x_col = 'session_trial',y_facs = y_facs, save_dir = plotdir, save_prefix = sp)
-        plot_trialwise_rel(sub_df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = sp, trial_col = 'trial_num')
+        plot_trialwise_rel(sub_df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = sp, trial_col = trial_col)
         #plot_daywise_data(sub_df, y_facs, save_dir = plotdir, save_prefix = 'NB')
     
 def plot_LR(df, plotdir = None, trial_group_size = 5):
@@ -88,7 +135,7 @@ def plot_LR(df, plotdir = None, trial_group_size = 5):
     plot_daywise_data(df, y_facs, save_dir = plotdir, save_prefix = 'LR')
     
     
-def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None, trial_col = 'trial group'):
+def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None, trial_col = 'trial_group'):
     cols = [x_col, 'trials']
     triallabs = df[cols].reset_index(drop=True).drop_duplicates().sort_values(by = [x_col])
     
@@ -129,7 +176,7 @@ def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None, t
             counter = counter+1
         
         if save_dir:
-            nm1 = save_prefix +'_'+ x_col + '_VS_' + y_col + '_Rel.svg'
+            nm1 = save_prefix +'_'+ trial_col + '_VS_' + y_col + '_Rel.svg'
             sf = os.path.join(save_dir, nm1)
             g.savefig(sf)
             print(sf)
@@ -167,7 +214,7 @@ def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None, t
             counter = counter+1
        
         if save_dir: 
-            nm2 = save_prefix +'_'+ x_col + '_VS_' + y_col + '_all_tsts_Rel.svg'
+            nm2 = save_prefix +'_'+ trial_col + '_VS_' + y_col + '_all_tsts_Rel.svg'
             sf2 = os.path.join(save_dir, nm2)
             h.savefig(sf2)
             print(sf2)

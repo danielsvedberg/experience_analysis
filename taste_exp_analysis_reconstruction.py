@@ -14,6 +14,8 @@ import hmm_analysis as hmma
 import seaborn as sns
 #import os
 import pandas as pd
+import os
+
 #you need to make a project analysis using blechpy.project() first
 #rec_dir =  '/media/dsvedberg/Ubuntu Disk/taste_experience'
 rec_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'
@@ -55,7 +57,7 @@ NB_decode[['Y','epoch']] = NB_decode.Y.str.split('_',expand=True)
 NB_decode['taste'] = NB_decode.trial_ID
 NB_decode['state_num'] = NB_decode['hmm_state'].astype(int)
 
-nplt.plot_NB_decoding(NB_decode,plotdir = HA.save_dir, trial_group_size = 10)
+nplt.plot_NB_decoding(NB_decode,plotdir = HA.save_dir, trial_group_size = 24)
 
 ###############################################################################
 
@@ -107,7 +109,14 @@ for i in operating_columns:
     
 NB_timings = NB_timings.reset_index()
 NB_timings['trial-group'] = NB_timings['trial_group']
-nplt.plot_NB_timing(NB_timings,HA.save_dir,trial_group_size = 24, trial_col = 'session_trial')
+
+
+timings_test = NB_timings.groupby(['rec_dir','taste','session_trial']).filter(lambda x: len(x) >= 3)
+
+nplt.plot_NB_timing(timings_test,HA.save_dir,trial_group_size = 12, trial_col = 'session_trial')
+nplt.plot_NB_timing(timings_test,HA.save_dir,trial_group_size = 3, trial_col = 'trial_num')
+
+
 
 ###############################################################################
 ###Analysis of trial vs NB factors correlations################################
@@ -151,24 +160,18 @@ HA.plot_hmm_timing()
 
 ###############################################################################
 ###mode gamma probability analysis
-from joblib import Parallel, delayed
+
 gamma_mode_df = hmma.binstate(best_hmms)
 
-def plotGammaMode(group, name):
-    group= group.reset_index()
-    p = sns.relplot(data = group, x = "time", y = "gamma_mode", row ="time_group", col ="trial_group" , hue = "exp_group", kind ="line", facet_kws={'margin_titles':True})
-    p.tight_layout()
-    p.set_ylabels("p(gamma) of mode state")
-    name = '_'.join(name)
-    fn = name+"_Gammaplot.png"
-    sf = os.path.join(HA.save_dir, fn)
-    p.savefig(sf)
+nplt.plotGammaPar(gamma_mode_df, save_dir = HA.save_dir, yax = "gamma_mode")
 
-Parallel(n_jobs = 8)(delayed(plotGammaMode)(group,name) for name, group in gamma_mode_df.groupby(['taste']))
-    
-for name, group in gamma_mode_df.groupby(['taste']):
-    group = group.reset_index()
-    plotGammaMode(group,name)
+maxgammadf = hmma.getMaxGamma(best_hmms, trial_group = 5)
+maxgammadf2 = maxgammadf.loc[maxgammadf.max_gamma < 0.9]
+
+
+nplt.plotGammaPar(maxgammadf, save_dir = HA.save_dir, yax = "max_gamma")
+
+nplt.plotGammaBarPar(maxgammadf2, save_dir = HA.save_dir, yax = "max_gamma")
 
 pr_modegamma_poststim = gamma_mode_df.loc[gamma_mode_df.time > 0]
 pr_modegamma_poststim['trial'] = pr_modegamma_poststim.trial.astype(int)
@@ -182,5 +185,8 @@ sf = os.path.join(HA.save_dir, 'test.png')
 g.savefig(sf)
 
 
-
+def getgroupidx(grouped_df, idx):
+    name = list(grouped_df.groups.keys())[idx]
+    group = grouped_df.get_group(name)
+    return group, name
 
