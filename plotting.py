@@ -888,7 +888,7 @@ def plot_pca_traces(df, params, save_file, exp_name=None):
         ax_mean.set_title(name)
         if plt_i == 0:
             ax_all.legend()
-            ax_means.legend()
+            #ax_means.legend()
 
     fig_all.suptitle(exp_name)
     fig_mean.suptitle(exp_name)
@@ -1421,6 +1421,7 @@ def plot_classifier_results(group, early_res, late_res,
         dt = params['dt']
         early_state = row['early_state']
         late_state = row['late_state']
+        unit_type = params['unit_type']
         spike_array, _, s_time = phmm.get_hmm_spike_data(rec_dir, unit_type,
                                                          channel,
                                                          time_start=t_start,

@@ -103,6 +103,7 @@ def plot_NB_timing(df, plotdir = None, trial_group_size = 5, trial_col = 'trial_
     
     df['trial-group'] = df[trial_col]/trial_group_size
     df['trial-group'] = df['trial-group'].astype(int)
+    df['time_group'] = df['time_group'].astype(int)
     df['tg_start'] = df.groupby(['trial-group'])[trial_col].transform('min')+1
     df['tg_end'] = df.groupby(['trial-group'])[trial_col].transform('max')+1
     df['trials'] = df.tg_start.astype(str) + '-' + df.tg_end.astype(str)
@@ -110,15 +111,15 @@ def plot_NB_timing(df, plotdir = None, trial_group_size = 5, trial_col = 'trial_
     df = df.loc[df.single_state ==False]
     df = df.loc[df.state_num != 0]
     df = df.loc[df.p_correct > 0.5]
-    df = df.rename(columns = {'trial_num':'trial','time_group':'session', 'exp_group':'condition', 't_start': 't(start)', 't_end':'t(end)', 't_med':'t(median)','err':'error', 'Y_pred':'predicted-palatability'})
+    df = df.rename(columns = {'time_group':'session', 'exp_group':'condition', 't_start': 't(start)', 't_end':'t(end)', 't_med':'t(median)','err':'error', 'Y_pred':'predicted-palatability'})
     y_facs = list(df.loc[:,'t(start)':'duration_absZscore'].columns)
     #['duration','t(start)', 't(end)', 't(median)']
     
     for i in ['early','late']:
-        sp = 'NB_'+i
+        sp = 'NB_'+i+'_'
         sub_df = df.loc[df.epoch == i]
-        #plot_trialwise_lm(sub_df, x_col = 'session_trial',y_facs = y_facs, save_dir = plotdir, save_prefix = sp)
-        plot_trialwise_rel(sub_df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = sp, trial_col = trial_col)
+        plot_trialwise_lm(sub_df, x_col = trial_col, y_facs = y_facs, save_dir = plotdir, save_prefix = sp)
+        #plot_trialwise_rel(sub_df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = sp, trial_col = trial_col)
         #plot_daywise_data(sub_df, y_facs, save_dir = plotdir, save_prefix = 'NB')
     
 def plot_LR(df, plotdir = None, trial_group_size = 5):
@@ -220,36 +221,34 @@ def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None, t
             print(sf2)
         plt.close('all')
 
-
-def plot_trialwise_lm(df, x_col, y_facs, save_dir = None, save_prefix = None):
-
+def plot_trialwise_lm(df, x_col, y_facs, hue = 'condition', col = 'session', row = 'taste', save_dir = None, save_prefix = None):
+    row_order = ['Suc','NaCl','CA','QHCl']
+    df['all'] = 'all tastes'
     for ycol in y_facs:
-        g = sns.lmplot(data = df, x = x_col, y = ycol, 
-                       hue = 'condition', col = 'session', row = 'taste', aspect = 0.5, height = 15,
-                       facet_kws={"margin_titles": True})
+    
+        g = sns.lmplot(data = df, x = x_col, y = ycol, hue = hue, col = col, row = row, row_order = row_order, aspect = 1, height = 4, facet_kws={"margin_titles": True})
         g.set_titles(row_template = '{row_name}')
         
-        # h = sns.lmplot(data = df, x = x_col, y = ycol,
-        #                hue = 'condition', col = 'session', aspect = 2, height = 8)
-        # h.set_titles(row_template = '{row_name}')
+        h = sns.lmplot(data = df, x = x_col, y = ycol, hue = hue, col = col, row = 'all', aspect = 0.75, height = 6, facet_kws={"margin_titles": True}, scatter_kws={"alpha": 0.25})
+        h.set_titles(row_template = '{row_name}')
         
         if x_col == 'trial-group':
             g.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
             g.set_xticklabels(['1-5','6-10','11-15','16-20','21-25','26-30'], rotation = 60)
-            #h.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
-            #h.set_xticklabels(['1-5','6-10','11-15','16-20','21-25','26-30'], rotation = 60)
+            h.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
+            h.set_xticklabels(['1-5','6-10','11-15','16-20','21-25','26-30'], rotation = 60)
         
         if ycol == 'p(correct)':
             g.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
-            #h.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
+            h.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
         
         if ycol == 'SquaredError':
             g.set(ylim = (-0.1, 3))
-            #h.set(ylim = (-0.1, 3))
+            h.set(ylim = (-0.1, 3))
             
         if ycol == 'error':
             g.set(ylim = (-2, 2))
-           # h.set(ylim = (-2, 2))
+            h.set(ylim = (-2, 2))
         
         if save_dir is not None:  
             nm = save_prefix+x_col+'_VS_'+ycol+'_LMP.png'
@@ -258,7 +257,7 @@ def plot_trialwise_lm(df, x_col, y_facs, save_dir = None, save_prefix = None):
             print(sf)
             nm2 = save_prefix+x_col+'_VS_'+ycol+'_alltsts_LMP.png'
             sf2 = os.path.join(save_dir,nm2)
-            #h.savefig(sf2)
+            h.savefig(sf2)
             print(sf2)
         plt.close('all')
 
@@ -1603,6 +1602,7 @@ def plot_mean_spearman_correlation(pal_file, proj, save_file=None):
     o1 = ORDERS['exp_group']
     o2 = ORDERS['time_group']
     o3 = ['Early (0-750ms)', 'Late (750-2000ms)']
+    o4 = ORDERS['taste']
     s_order = [f'{x}_{y}' for x,y in it.product(o1,o2)]
     s_order = [x for x in s_order if x in df.simple_groups.unique()]
     g_order = [f'{x}_{y}\n{z}' for x,y,z in it.product(o1,o2)]

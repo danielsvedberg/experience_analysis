@@ -46,13 +46,13 @@ best_hmms = HA.get_best_hmms(sorting = 'best_BIC', overwrite = True)# sorting = 
 sns.set(style = 'white', font_scale = 1.5, rc={"figure.figsize":(10, 10)})
 ###############################################################################
 ###NAIVE BAYES CLASSIFICATION##################################################
-NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite = True, parallel = True) #run with overwrite
+NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite = False, parallel = True) #run with overwrite
 
 NB_meta_save = NB_meta
 NB_decode_save = NB_decode
-NB_decode = NB_decode.drop(columns = ['index']).drop_duplicates()
+#NB_decode = NB_decode.drop(columns = ['index']).drop_duplicates()
 
-NB_meta_,NB_decode_,NB_best_,NB_timings_ = HA.analyze_NB_ID(overwrite = False) #run with no overwrite, make sure to not overwrite NB_meta and NB_decode if you have them
+NB_meta_,NB_decode,NB_best_,NB_timings = HA.analyze_NB_ID(overwrite = False) #run with no overwrite, make sure to not overwrite NB_meta and NB_decode if you have them
 NB_decode[['Y','epoch']] = NB_decode.Y.str.split('_',expand=True)
 NB_decode['taste'] = NB_decode.trial_ID
 NB_decode['state_num'] = NB_decode['hmm_state'].astype(int)
@@ -80,8 +80,6 @@ NB_decode['taste'] = NB_decode['trial_ID']
 grcols = ['rec_dir','trial_num','taste','state_num']
 NB_decsub = NB_decode[grcols+['p_correct']].drop_duplicates()
 
-
-
 NB_timings = NB_timings.merge(NB_decsub, on = grcols, how = 'left')
 NB_timings = NB_timings.drop_duplicates()
 NB_timings[['Y','epoch']] = NB_timings.state_group.str.split('_',expand=True)
@@ -99,6 +97,9 @@ NB_timings = NB_timings.reset_index()
 NB_timings = NB_timings.set_index(['exp_name','taste', 'state_group','session_trial','time_group'])
 operating_columns = ['t_start','t_end','t_med', 'duration']
 
+#remove all trials with less than 3 states
+NB_timings = NB_timings.groupby(['rec_dir','taste','session_trial']).filter(lambda x: len(x) >= 3)
+
 from scipy.stats import zscore
 for i in operating_columns:
     zscorename = i+'_zscore'
@@ -109,12 +110,11 @@ for i in operating_columns:
     
 NB_timings = NB_timings.reset_index()
 NB_timings['trial-group'] = NB_timings['trial_group']
+NB_timings['session_trial'] = NB_timings.session_trial.astype(int) #make trial number an int
+NB_timings['time_group'] = NB_timings.time_group.astype(int) #make trial number an int
 
-
-timings_test = NB_timings.groupby(['rec_dir','taste','session_trial']).filter(lambda x: len(x) >= 3)
-
-nplt.plot_NB_timing(timings_test,HA.save_dir,trial_group_size = 12, trial_col = 'session_trial')
-nplt.plot_NB_timing(timings_test,HA.save_dir,trial_group_size = 3, trial_col = 'trial_num')
+nplt.plot_NB_timing(NB_timings,HA.save_dir,trial_group_size = 12, trial_col = 'session_trial')
+nplt.plot_NB_timing(NB_timings,HA.save_dir,trial_group_size = 3, trial_col = 'trial_num')
 
 
 
@@ -160,8 +160,28 @@ HA.plot_hmm_timing()
 
 ###############################################################################
 ###mode gamma probability analysis
+#get gamma probability of mode state for each bin
+gamma_mode_df = hmma.binstate(best_hmms) #TODO get session trial number in here
 
-gamma_mode_df = hmma.binstate(best_hmms)
+gmdf_poststim = gamma_mode_df.loc[gamma_mode_df.time > 0] #filter away prestim bins
+
+#average gamma probability of mode state for trial
+gmdf_avg = gmdf_poststim.groupby(['exp_name','taste','time_group','trial','exp_group']).mean().reset_index()
+gmdf_avg['trial'] = gmdf_avg.trial.astype(int) #make trial number an int
+gmdf_avg['mean pr(mode state)'] = gmdf_avg['gamma_mode'] #rename gamma_mode column to mean pr(mode state)
+#plot scatterplot of mean gamma probability of mode state vs trial, with linear regression
+nplt.plot_trialwise_lm(df = gmdf_avg, x_col = 'trial', y_facs = ['mean pr(mode state)'], h = 'exp_group', c = 'time_group', save_dir = HA.save_dir, save_prefix= 'gamma_mode')
+
+#rank each trial by accuracy
+gmdf_avg['accuracy_rank'] = gmdf_avg.groupby(['exp_name','taste','time_group','exp_group'])['gamma_mode'].rank(ascending = False)
+
+#plot accuracy rank vs trial with linear regression
+nplt.plot_trialwise_lm(df = gmdf_avg, x_col = 'trial', y_facs = ['accuracy_rank'], hue = 'exp_group', col = 'time_group', save_dir = HA.save_dir, save_prefix= 'gamma_mode')
+
+#plot distribution of accuracy rank vs trial
+g = sns.displot(data = gmdf_avg, x = 'trial', y = 'accuracy_rank', color = '0',bins = 5,row = 'exp_group', col = 'time_group', palette = 'colorblind', facet_kws = {'margin_titles':True})
+sf = os.path.join(HA.save_dir, 'accuracy_rank_vs_trial_histogram.png')
+g.savefig(sf)
 
 nplt.plotGammaPar(gamma_mode_df, save_dir = HA.save_dir, yax = "gamma_mode")
 
