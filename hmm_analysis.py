@@ -1818,28 +1818,31 @@ def getModeHmm(hmm):
     mode_gamma = gamma[:,mode_seqs,np.arange(gamma.shape[2])]
     return mode_seqs, mode_gamma
 
-def binstate(best_hmms, statefunc = getModeHmm, trial_group = 5):
-    def getbinstateprob(row, trial_group):
-        h5_file = get_hmm_h5(row['rec_dir'])
-        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row["hmm_id"])
-        mode_seqs, mode_gamma = statefunc(hmm)
+def binstate(best_hmms, statefunc = getModeHmm):
+    def getbinstateprob(row):
+        h5_file = get_hmm_h5(row['rec_dir']) #get hmm file name
+        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row["hmm_id"]) #load hmm
+        mode_seqs, mode_gamma = statefunc(hmm) #get mode state # and gamma prob
 
         rowids = hmm.stat_arrays['row_id']
         time = hmm.stat_arrays['time']
         colnames  =['hmm_id','dig_in','taste','trial']
         outdf = pd.DataFrame(rowids,columns = colnames)
-        outdf['trial_group'] = (outdf.trial.astype(int)/trial_group).astype(int)
-        nmcols = ['exp_name','exp_group','rec_group','time_group']
+        nmcols = ['exp_name','exp_group','rec_group','time_group', 'rec_dir']
         outdf[nmcols] = row[nmcols]
         colnames = outdf.columns
         gammadf = pd.DataFrame(mode_gamma,columns = time) 
         outdf = pd.concat([outdf,gammadf], axis = 1)
         outdf = pd.melt(outdf,id_vars = colnames, value_vars = list(time), var_name = 'time', value_name = 'gamma_mode')
         return(outdf)
-    out = best_hmms.apply(lambda x: getbinstateprob(x,5), axis = 1).tolist()
+    out = best_hmms.apply(lambda x: getbinstateprob(x), axis = 1).tolist()
     out = pd.concat(out)
     return out
     
+def add_trial_group(df, trial_group = 5):
+    df['trial_group'] = (df.trial.astype(int)/trial_group).astype(int)
+    return df
+
 def binwrong(best_hmms, trial_group = 5):
     def getwrongbin(row, trial_group):
         h5_file = get_hmm_h5(row['rec_dir'])

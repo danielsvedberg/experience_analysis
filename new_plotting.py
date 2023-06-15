@@ -29,15 +29,23 @@ ORDERS = {'exp_group': ['naive', 'suc_preexp'],
           'state_presence': ['both', 'early_only', 'late_only', 'neither'],
           'trial_group': [1,2,3,4,5,6]}
 
-def plotGamma(group, name, save_dir, yax = "gamma_mode"):
-    group= group.reset_index()
-    p = sns.relplot(data = group, x = "time", y = yax, row ="time_group", col ="trial_group" , hue = "exp_group", kind ="line", facet_kws={'margin_titles':True})
+def plotGamma(group, name, save_dir, xax = 'time', yax = "gamma_mode", row = "session", col = "trial_bin", hue = "exp_group"):
+    group = group.reset_index()
+    p = sns.relplot(data = group, x = xax, y = yax, row ="session", col = col, hue = hue, kind ="line", facet_kws={'margin_titles':True})
     p.tight_layout()
     p.set_ylabels("p(gamma) of mode state")
-    name = '_'.join(name)
-    fn = name+"_"+yax+".png"
+    #p.move_legend("lower center", bbox_to_anchor=(.5, 1), ncol=2, title=None, frameon=False)
+    if len(name) > 1:
+        name = '_'.join(name)
+    p.fig.suptitle(name)
+    p.fig.subplots_adjust(top=0.9)
+    plt.ylim(0,1)
+    fn = name+"_"+yax+"X"+col+".png"
     sf = os.path.join(save_dir, fn)
     p.savefig(sf)
+
+def plotGammaPar(gamma_df, save_dir, groups = ['taste'], xax = 'time', yax = "gamma_mode", row = "session", col = "trial_bin", hue = "exp_group"):
+    Parallel(n_jobs = 8)(delayed(plotGamma)(group, name, save_dir, xax = xax, yax = yax, row = row, col = col, hue = hue) for name, group in gamma_df.groupby(groups))
 
 def plotGammaBar(group,name,save_dir,yax = "gamma_mode"):
     sns.set(style = "whitegrid")
@@ -65,12 +73,7 @@ def plotGammaBar(group,name,save_dir,yax = "gamma_mode"):
     fn = sn +"_"+yax+"_barplot.png"
     sf = os.path.join(save_dir, fn)
     g.savefig(sf)
-
     
-    
-def plotGammaPar(gamma_df, save_dir, yax = "gamma_mode"):
-    Parallel(n_jobs = 8)(delayed(plotGamma)(group, name, save_dir, yax) for name, group in gamma_df.groupby(['taste']))
-
 def plotGammaBarPar(gamma_df, save_dir, yax = "gamma_mode"):
     Parallel(n_jobs = 8)(delayed(plotGammaBar)(group, name, save_dir, yax) for name, group in gamma_df.groupby(['taste']))
 
@@ -111,15 +114,15 @@ def plot_NB_timing(df, plotdir = None, trial_group_size = 5, trial_col = 'trial_
     df = df.loc[df.single_state ==False]
     df = df.loc[df.state_num != 0]
     df = df.loc[df.p_correct > 0.5]
-    df = df.rename(columns = {'time_group':'session', 'exp_group':'condition', 't_start': 't(start)', 't_end':'t(end)', 't_med':'t(median)','err':'error', 'Y_pred':'predicted-palatability'})
-    y_facs = list(df.loc[:,'t(start)':'duration_absZscore'].columns)
+    df = df.rename(columns = {'time_group':'session', 'exp_group':'condition', 't_start': 't(start)', 't_end':'t(end)', 't_med':'t(median)','err':'error', 'Y_pred':'predicted-taste'})
+    y_facs = list(df.loc[:,'t(start)':'duration_zscore'].columns)
     #['duration','t(start)', 't(end)', 't(median)']
     
     for i in ['early','late']:
         sp = 'NB_'+i+'_'
         sub_df = df.loc[df.epoch == i]
-        plot_trialwise_lm(sub_df, x_col = trial_col, y_facs = y_facs, save_dir = plotdir, save_prefix = sp)
-        #plot_trialwise_rel(sub_df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = sp, trial_col = trial_col)
+        #plot_trialwise_lm(sub_df, x_col = trial_col, y_facs = y_facs, save_dir = plotdir, save_prefix = sp)
+        plot_trialwise_rel(sub_df, x_col = 'trial-group', y_facs = y_facs, save_dir = plotdir, save_prefix = sp, trial_col = trial_col)
         #plot_daywise_data(sub_df, y_facs, save_dir = plotdir, save_prefix = 'NB')
     
 def plot_LR(df, plotdir = None, trial_group_size = 5):
@@ -158,15 +161,7 @@ def plot_trialwise_rel(df, x_col, y_facs, save_dir = None, save_prefix = None, t
         g.set_xticklabels(triallabs['trials'], rotation = 45)
         if y_col == 'p(correct)':
             g.set(ylim = (-0.1,1.1), yticks = [0,0.25, 0.5, 0.75, 1])
-        
-        # if x_col == 'trial-group':
-        #     n_groups = int(max(df['trial-group']))
-        #     xt = np.arange(0,n_groups+1)
-        #     xend = n_groups+0.25
-        #     g.set(xlim = (-0.25,xend), xticks = xt)
-        #     labs = ['1-5','6-10','11-15','16-20','21-25','26-30']
-        #     xlabs = labs[0:n_groups+1]
-        #     g.set_xticklabels(xlabs, rotation = 45)
+
         axes = g.axes.flatten()
         counter = 0
         for i, ax in enumerate(axes):
@@ -228,9 +223,10 @@ def plot_trialwise_lm(df, x_col, y_facs, hue = 'condition', col = 'session', row
     
         g = sns.lmplot(data = df, x = x_col, y = ycol, hue = hue, col = col, row = row, row_order = row_order, aspect = 1, height = 4, facet_kws={"margin_titles": True})
         g.set_titles(row_template = '{row_name}')
-        
+        g.set(ylim =(0, 3000))
         h = sns.lmplot(data = df, x = x_col, y = ycol, hue = hue, col = col, row = 'all', aspect = 0.75, height = 6, facet_kws={"margin_titles": True}, scatter_kws={"alpha": 0.25})
         h.set_titles(row_template = '{row_name}')
+        h.set(ylim =(0, 3000))
         
         if x_col == 'trial-group':
             g.set(xlim = (-0.25,5.25), xticks = [0,1,2,3,4,5])
