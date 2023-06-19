@@ -2297,6 +2297,186 @@ def compare_taste_responses(rec1, unit1, rec2, unit2, params, method='bootstrap'
 #         handler.run()
 # 
 #     pyplt.close('all')
+import pandas as pd
+import numpy as np
+import statsmodels.formula.api as smf
+
+def find_changepoint(df, trial_col, response_col, model_cols, fit_groups):
+    min_aic = np.inf
+    best_model = None
+    best_changepoint = None
+
+    # Iterate over all possible changepoints
+    for changepoint in df[trial_col].unique():
+
+        # Create a new variable representing trials after the changepoint
+        df['trial_after'] = np.where(df[trial_col] > changepoint, df[trial_col] - changepoint, 0)
+
+        # Define the model formula
+        formula = f"{response_col} ~ {trial_col} + {' + '.join(model_cols)} + trial_after"
+        
+        # Combine fit groups for the mixedlm 'groups' argument
+        df['combined_fit_group'] = df[fit_groups].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
+
+        # Fit a mixed model with this new variable
+        model = smf.mixedlm(formula, df, groups=df['combined_fit_group'])
+        result = model.fit()
+
+        # Compare the AIC of this model with the best one so far
+        if result.aic < min_aic:
+            min_aic = result.aic
+            best_model = result
+            best_changepoint = changepoint
+
+    print(f"Best changepoint: {best_changepoint}")
+    print(best_model.summary())
+    
+    return best_model, best_changepoint
+
+
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
+from statsmodels.stats.anova import anova_lm
+from statsmodels.stats.multitest import multipletests
+
+def split_test(df, fit_groups, model_groups, trial_col, value_col):
+    results = []
+
+    # sort the dataframe by group columns and trial index, for consistency
+    df.sort_values(fit_groups + [trial_col], inplace=True)
+
+    # create a new combined group column for the mixedlm model
+    df['combined_model_group'] = df[model_groups].apply(lambda x: '_'.join(x.astype(str)), axis=1)
+
+    # group the DataFrame by fit_groups and apply the test to each group
+    for name, group in df.groupby(fit_groups):
+        # find the maximum trial index to determine the range of possible splits
+        max_trial = group[trial_col].max()
+
+        # Test every possible split
+        for i in range(1, max_trial):  # splits at i
+            # categorize trials into two groups
+            group['group'] = np.where(group[trial_col] <= i, 'first', 'remaining')
+
+            # perform ANOVA
+            model = ols(f"{value_col} ~ group", group).fit()
+            anova_results = anova_lm(model)
+
+            # create a row dict with result and group info
+            row = {fg: n for fg, n in zip(fit_groups, name if isinstance(name, tuple) else (name,))}
+            row.update({
+                'split': i,
+                'p_value': anova_results.loc['group', 'PR(>F)'],  # get p-value of the group effect
+                'intercept': model.params['Intercept'],
+                'coefficient': model.params['group[T.remaining]']
+            })
+
+            results.append(row)
+
+    # create results dataframe
+    results_df = pd.DataFrame(results)
+
+    # apply Bonferroni correction
+    results_df['reject'], results_df['p_value_corrected'], _, _ = multipletests(results_df['p_value'], method='bonferroni')
+
+    return results_df
+
+# Usage example:
+# results = split_test(df, ['subject_group', 'date'], ['subject'], 'trial_index', 'measurement')
+# print(results)
+
+
+import ruptures as rpt
+
+def detect_changepoints(df, group_list, data_col, time_col):
+    """
+    Detect changepoints in time series data for each grouping and compute the BIC.
+    Skip any groups with fewer than 10 observations. Return a DataFrame.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input DataFrame.
+    group_list : list
+        List of column names for grouping.
+    data_col : str
+        Column name for the data of interest.
+    time_col : str
+        Column name for the time.
+        
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame where the index is reset and turned into separate columns representing the groups,
+        and the other columns are 'changepoints' and 'bic'.
+    """
+    all_results = []  # Will hold DataFrames for each group
+    
+    for key, group in df.groupby(group_list):
+        if len(group) < 10:
+            continue  # Skip groups with fewer than 10 observations
+
+        model = "l2"  # Cost model, "l2" for signal noise represented by a Gaussian distribution
+        algo = rpt.Pelt(model=model).fit(group[data_col].values)  # Fit model to data
+        result = algo.predict(pen=1)  # Predict the changepoints. "pen" is the penalty value.
+        # Associate changepoints with their corresponding time values
+        changepoints_time = [group[time_col].values[i-1] for i in result[:-1]]
+        
+        # Calculate BIC
+        n = len(group)  # Number of observations
+        k = len(result) - 1  # Number of parameters in the model (number of changepoints)
+        residuals = np.concatenate(([group[data_col].values[result[i-1]:result[i]] - 
+                                     np.mean(group[data_col].values[result[i-1]:result[i]]) 
+                                     for i in range(1, len(result))]))
+        sigma_sq = np.sum(residuals**2) / n  # Estimate of the error variance
+        bic = n*np.log(sigma_sq) + k*np.log(n)  # BIC formula
+        
+        # Create a DataFrame for this group
+        group_df = pd.DataFrame({
+            'changepoints': [changepoints_time],
+            'bic': [bic]
+        }, index=[key])
+        
+        all_results.append(group_df)
+    
+    # Concatenate all group DataFrames
+    results_df = pd.concat(all_results)
+    
+    # Reset index and rename columns
+    results_df.reset_index(inplace=True)
+    
+    # If the index was a MultiIndex, it will be a tuple now
+    if isinstance(key, tuple):
+        for i, col_name in enumerate(group_list):
+            results_df[col_name] = results_df['index'].apply(lambda x: x[i])
+        results_df.drop(columns='index', inplace=True)
+    
+    return results_df
+
+    
+
+def add_session_trial(df, proj, trial_col = 'trial', trial_id = 'taste'):
+    '''Adds session trial number to any df with columns containing rec_dir, trial number (of the taste),
+    and taste or channel
+    '''
+    trial_info = proj.get_trial_info()
+    trial_info['taste'] = trial_info['name']
+    trial_info['trial'] = trial_info['taste_trial'] - 1
+    trial_info['dig_in'] = trial_info['channel']
+    trial_info['din'] = trial_info['channel']
+    trial_info['session_trial'] = trial_info['trial_num'].astype(int)
+    
+    trial_info[trial_col] = trial_info[trial_col].astype(int)
+    trial_info[trial_id] = trial_info[trial_id].astype(str)
+    df[trial_col] = df[trial_col].astype(int)
+    df[trial_id] = df[trial_id].astype(str)
+    
+    for_merge = trial_info[['rec_dir', trial_col, trial_id, 'session_trial']]
+
+    out = df.merge(for_merge, on = ['rec_dir', trial_col, trial_id], how = 'left')
+    out['session_trial'] = out.groupby(['rec_dir'])['session_trial'].transform(lambda x: x - x.min())
+    return(out)
+    
 
 def refit_hmms(sorted_df, base_params, all_units,log_file=None, rec_params={}):
     '''re-wrtitten 8/4/20

@@ -43,7 +43,7 @@ best_hmms = HA.get_best_hmms(sorting = 'best_BIC', overwrite = True)# sorting = 
 sns.set(style = 'white', font_scale = 1.5, rc={"figure.figsize":(10, 10)})
 ###############################################################################
 ###NAIVE BAYES CLASSIFICATION##################################################
-NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite = False, parallel = True) #run with overwrite
+NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite = False, parallel = True)
 
 NB_meta_save = NB_meta
 NB_decode_save = NB_decode
