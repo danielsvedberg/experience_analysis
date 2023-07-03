@@ -3,9 +3,9 @@ import blechpy
 import new_plotting as nplt
 import hmm_analysis as hmma 
 import seaborn as sns
-#import os
-import pandas as pd
 import os
+import pandas as pd
+import pylab as plt
 
 rec_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'
 proj = blechpy.load_project(rec_dir)

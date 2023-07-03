@@ -1,3 +1,4 @@
+import itertools
 import os
 import shutil
 import pdb
@@ -12,6 +13,10 @@ import analysis_stats as stats
 import helper_funcs as hf
 import population_analysis as pop
 import hmm_analysis as hmma
+import statsmodels.formula.api as smf
+import patsy
+from itertools import product
+from statsmodels.regression.linear_model import OLS
 from scipy.stats import mannwhitneyu, spearmanr, sem, f_oneway, rankdata, pearsonr, ttest_ind
 from blechpy import load_project, load_dataset, load_experiment
 from blechpy.plotting import data_plot as dplt
@@ -2295,26 +2300,115 @@ def compare_taste_responses(rec1, unit1, rec2, unit2, params, method='bootstrap'
 #             handler.add_params(params)
 # 
 #         handler.run()
-# 
-#     pyplt.close('all')
+#
+from piecewise_regression import Fit
+from multiprocessing import Pool, cpu_count
+
 import pandas as pd
-import numpy as np
-import statsmodels.formula.api as smf
+from piecewise_regression import Fit
+from multiprocessing import Pool, cpu_count
+
+def fit_group(args):
+    try:
+        name, group, response_col, trial_col = args
+        if len(group) >= 10:
+            pw_fit = Fit(group[trial_col].to_list(), group[response_col].to_list(), n_breakpoints=1, tolerance=10 ** -4,
+                         max_iterations=100, n_boot=20)
+            # Check if the fit has converged
+            converged = pw_fit.best_muggeo.converged if pw_fit.best_muggeo else False
+            return list(name) + [pw_fit, converged, response_col, trial_col]
+        else:
+            return None
+    except Exception as e:
+        print(f"Error in fit_group: {e}")
+        return None
+
+
+def fit_piecewise_regression(df, groups, response_col, trial_col):
+    # Create a multiprocessing pool
+    with Pool(cpu_count()) as pool:
+        # Prepare the arguments for fit_group
+        args = [(name, group, response_col, trial_col) for name, group in df.groupby(groups)]
+        # Use the pool to run fit_group in parallel
+        results = pool.map(fit_group, args)
+        # Close the pool and wait for all processes to finish
+        pool.close()
+        pool.join()
+
+    # Filter out None results
+    results = [result for result in results if result is not None]
+
+    # Convert the results to a DataFrame
+    results_df = pd.DataFrame(results, columns=groups + ['pw_fit', 'converged', 'response_col', 'trial_col'])
+
+    return results_df
+
+
+def find_changepoints_individual(df, model_groups, fit_groups, trial_col, response_col):
+    all_results = []
+    df = df.copy()
+    df['combined_fit_group'] = df[fit_groups].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
+    df[trial_col] = df[trial_col]+1
+    for combo, sub_df in df.groupby(model_groups):
+        print(combo)
+        sub_df = sub_df.copy()
+        sub_df.sort_values(trial_col, inplace=True)
+        best_aic = np.inf
+        best_changepoint = None
+        best_result = None
+
+        unique_trials = np.unique(sub_df[trial_col])
+
+        best_subdf = []
+        for changepoint in unique_trials[1:-1]:
+            print(changepoint)
+            sub_df["after_split"] = sub_df[trial_col] >= changepoint
+            formula = f"{response_col} ~ {trial_col} * after_split"
+            model = smf.mixedlm(formula, data=sub_df, groups=sub_df['combined_fit_group'])
+            try: result = model.fit()
+            except: continue
+
+            num_params = len(result.params)  # number of parameters
+            log_likelihood = result.llf  # log-likelihood of the model
+            aic = -2 * log_likelihood + 2 * num_params
+            print(aic)
+
+            if aic < best_aic:
+                best_aic = aic
+                best_changepoint = changepoint
+                best_result = result
+
+        best_subdf = sub_df
+        try: best_subdf['prediction'] = best_result.fittedvalues
+        except: Exception("warning: no changepoint found for " + str(combo))
+        best_subdf['best_changepoint'] = best_changepoint
+        all_results.append(best_subdf)
+
+
+    results_df = pd.concat(all_results)
+    return results_df
 
 def find_changepoint(df, trial_col, response_col, model_cols, fit_groups):
     min_aic = np.inf
     best_model = None
     best_changepoint = None
 
-    # Iterate over all possible changepoints
-    for changepoint in df[trial_col].unique():
+    unique_trials = df[trial_col].unique()
+    # Exclude first and last trials, to ensure each group contains at least 2 trials
+    models = []
+    changepoints = []
+    log_likelihoods = []
+    aics = []
+    for changepoint in unique_trials[1:-1]:
+        print(changepoint)
 
         # Create a new variable representing trials after the changepoint
+        df["trial_before"] = np.where(df[trial_col] <= changepoint, df[trial_col], 0)
         df['trial_after'] = np.where(df[trial_col] > changepoint, df[trial_col] - changepoint, 0)
 
         # Define the model formula
-        formula = f"{response_col} ~ {trial_col} + {' + '.join(model_cols)} + trial_after"
-        
+        formula = f"{response_col} ~ {' + '.join(model_cols)} + trial_before + trial_after"
+
         # Combine fit groups for the mixedlm 'groups' argument
         df['combined_fit_group'] = df[fit_groups].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
 
@@ -2322,17 +2416,28 @@ def find_changepoint(df, trial_col, response_col, model_cols, fit_groups):
         model = smf.mixedlm(formula, df, groups=df['combined_fit_group'])
         result = model.fit()
 
+        # Calculate AIC and BIC manually
+        num_params = len(result.params)  # number of parameters
+        num_obs = len(df)  # number of observations
+        log_likelihood = result.llf  # log-likelihood of the model
+
+        aic = -2 * log_likelihood + 2 * num_params
+
+        aics.append(aic)
+        models.append(result)
+        changepoints.append(changepoint)
+        log_likelihoods.append(log_likelihood)
+
         # Compare the AIC of this model with the best one so far
-        if result.aic < min_aic:
-            min_aic = result.aic
+        if aic < min_aic:
+            min_aic = aic
             best_model = result
             best_changepoint = changepoint
 
     print(f"Best changepoint: {best_changepoint}")
     print(best_model.summary())
-    
-    return best_model, best_changepoint
 
+    return best_model, best_changepoint
 
 import statsmodels.api as sm
 from statsmodels.formula.api import ols

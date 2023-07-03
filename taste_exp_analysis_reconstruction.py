@@ -61,7 +61,7 @@ nplt.plot_NB_decoding(NB_decode,plotdir = HA.save_dir, trial_group_size = 24)
 
 NB_summary = NB_decode.groupby(['exp_name','time_group','trial_ID','prestim_state','rec_dir','hmm_state']).agg('mean').reset_index()
 
-# [_,NB_meta_late,NB_decode_late,NB_best_hmms_late,NB_timings_late] = HA.analyze_NB_ID(overwrite = True, epoch = 'late')
+[_,NB_meta_late,NB_decode_late,NB_best_hmms_late,NB_timings_late] = HA.analyze_NB_ID(overwrite = True, epoch = 'late')
 # NB_decode_late['taste'] = NB_decode.trial_ID
 # NB_decode_late['state_num'] = NB_decode['hmm_state'].astype(int)
 # nplt.plot_NB_decoding(NB_decode_late, plotdir = HA.save_dir, epoch = 'late', trial_group_size = 5)
@@ -148,7 +148,8 @@ NB_timings = NB_timings.reset_index()
 
 
 early_timings = NB_timings.loc[NB_timings.epoch == 'early']
-test = ana.detect_changepoints(early_timings,['exp_name', 'time_group', 'exp_group', 'taste'], 't_start', 'trial_num')
+cngpts = ana.detect_changepoints(early_timings,['exp_name', 'time_group', 'exp_group', 'taste'], 't_start', 'trial_num')
+nplt.plot_changepoint_histograms(cngpts)
 
 ##############################################################################
 ###mixed LM trial split analysis #############################################
@@ -173,6 +174,12 @@ idxcols2 = list(NB_timings.loc[:, 'pos_in_trial':].columns)
 idxcols = idxcols1 + idxcols2
 NB_timings = NB_timings.set_index(idxcols)
 NB_timings = NB_timings.reset_index()
+from scipy.stats import zscore
+for i in operating_columns:
+    zscorename = i+'_zscore'
+    abszscorename = i+'_absZscore'
+    NB_timings[zscorename] = NB_timings.groupby(['exp_name', 'state_group'])[i].transform(lambda x: zscore(x))
+    NB_timings[zscorename] = NB_timings[zscorename].fillna(0)
 
 fit_groups = ['exp_group', 'time_group']
 model_groups = ['exp_name','taste']
@@ -180,13 +187,31 @@ grouping = fit_groups + model_groups
 early_timings = NB_timings.loc[NB_timings.epoch == 'early']
 early_timings = early_timings.groupby(grouping).filter(lambda group: len(group) >= 10)
 early_timings['exp_name'] = early_timings['exp_name'].astype('str')
-test = ana.split_test(early_timings, fit_groups, model_groups, 'trial_num', 't_end')
+early_timings['taste'] = early_timings['taste'].astype('category')
+early_timings['exp_group'] = early_timings['exp_group'].astype('category')
 
 
-fit_groups = ['exp_group', 'time_group', 'taste']
-model_groups = ['exp_name']
-test = ana.find_changepoint(early_timings, 'trial_num', 't_end', fit_groups, model_groups)                                                                    
+trial_col = 'trial_num'
+response_col = 't_end_zscore'
+model_cols = ['exp_group', 'time_group', 'taste']
+fit_groups = ['exp_name']
+subject_col = 'exp_name'
+taste_col = 'taste'
+session_col = 'time_group'
+condition_col = 'exp_group'
+model_groups = ['exp_group', 'time_group', 'taste', 'exp_name']
 
+
+results_df = ana.find_changepoints_individual(early_timings, model_groups, fit_groups, trial_col, response_col)
+nplt.plot_piecewise_individual_models(results_df,session_col,taste_col,condition_col,trial_col,response_col, subject_col, HA.save_dir)
+
+###trying to use the piecewise-regression library
+results_df = ana.fit_piecewise_regression(early_timings, model_groups, 't_end', 'trial_num')
+results_df = results_df.sort_values(['time_group'])
+results_df = results_df.sort_values(['converged'], ascending = False)
+nplt.plot_multiple_piecewise_regression(results_df, save_dir = HA.save_dir)
+
+results_df = ana.fit_piecewise_regression(early_timings, model_groups, 't_end', 'trial_num')
 ###############################################################################
 ###Analysis of trial vs NB factors correlations################################
 groupings = ['time_group','exp_group','state_group']
@@ -204,6 +229,7 @@ nplt.plotRsquared(NB_corrs,yfacs,save_dir = HA.save_dir, save_prefix = 'NB_timin
 groupings = ['time_group','exp_group','state_group','taste']
 NB_corrs_tst = hmma.analyze_state_correlations(df, groupings,'trial_num', features)
 nplt.plotRsquared(NB_corrs_tst,yfacs, row = 'taste', save_dir = HA.save_dir, save_prefix = 'NB_timing')
+
 
 
 

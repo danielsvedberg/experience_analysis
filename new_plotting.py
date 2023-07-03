@@ -2,7 +2,6 @@ import aggregation as agg
 import os
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import pylab as plt
 from scipy.stats import sem, norm, chi2_contingency, rankdata, spearmanr
 import itertools as it
@@ -20,7 +19,7 @@ TASTE_COLORS = {'Suc': 'tab:blue', 'NaCl': 'tab:red', 'QHCl': 'tab:purple', 'CA'
 EXP_COLORS = {'suc_preexp': 'tab:blue', 'naive': 'tab:green'}
 ORDERS = {'exp_group': ['naive', 'suc_preexp'],
           #'cta_group': ['CTA', 'No CTA'],
-          'taste': ['Suc', 'NaCl', 'CA', 'QHCl', 'Spont'],
+          'taste': ['Suc', 'NaCl', 'CA', 'QHCl'],
           #'time_group': ['Exposure_1','Exposure_2','Exposure_3'],
           'time_group': ['1','2','3'],
           'state_group': ['early', 'late'],
@@ -28,6 +27,156 @@ ORDERS = {'exp_group': ['naive', 'suc_preexp'],
           'unit_type': ['pyramidal', 'interneuron'],
           'state_presence': ['both', 'early_only', 'late_only', 'neither'],
           'trial_group': [1,2,3,4,5,6]}
+
+def plot_multiple_piecewise_regression(results_df, save_dir = None):
+    # Get unique values for 'exp_group' and 'time_group'
+    time_groups = results_df['time_group'].unique()
+
+    # Specify the order of 'taste'
+    tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
+
+    # Loop over each 'exp_group'
+    for name, df_exp_group in results_df.groupby(['exp_group', 'exp_name']):
+        exp_group = name[0]
+        exp_name = name[1]
+
+        trial_col = str(df_exp_group['trial_col'].iloc[1])
+        response_col = str(df_exp_group['response_col'].iloc[1])
+
+        # Get the limits of the data
+        x_min = df_exp_group['pw_fit'].apply(lambda fit: min(fit.xx)).min()
+        x_max = df_exp_group['pw_fit'].apply(lambda fit: max(fit.xx)).max()
+        y_min = df_exp_group['pw_fit'].apply(lambda fit: min(fit.yy)).min()
+        y_max = df_exp_group['pw_fit'].apply(lambda fit: max(fit.yy)).max()
+
+        # Calculate the buffer (10% of the range of the data)
+        x_buffer = (x_max - x_min) * 0.1
+        y_buffer = (y_max - y_min) * 0.1
+
+        # Adjust the limits with the buffer
+        x_min -= x_buffer
+        x_max += x_buffer
+        y_min -= y_buffer
+        y_max += y_buffer
+
+        # Create a subplot for each combination of 'taste' and 'time_group'
+        fig, axs = plt.subplots(len(tastes), len(time_groups), figsize=(15, 10))
+        for i, taste in enumerate(tastes):
+            for j, time_group in enumerate(time_groups):
+                ax = axs[i, j]
+                fits = df_exp_group[(df_exp_group['taste'] == taste) & (df_exp_group['time_group'] == time_group)]['pw_fit'].values
+                plt.sca(axs[i, j])
+                for fit in fits:
+                    fit.plot()
+                ax.set_xlim(x_min, x_max)
+                ax.set_ylim(y_min, y_max)
+                # Add x-axis label for the bottom row of subplots
+                if i == len(tastes) - 1:
+                    ax.set_xlabel(trial_col)
+                # Add y-axis label for the leftmost subplots
+                if j == 0:
+                    ax.set_ylabel(response_col)
+                # Add taste label for the rightmost subplots
+                if j == len(time_groups) - 1:
+                    ax.text(1.05, 0.5, taste, rotation=-90, size='large', weight='bold', transform=ax.transAxes)
+
+        # Set the subplot titles at the margins of the subplot grid
+        for ax, time_group in zip(axs[0], time_groups):
+            ax.set_title(f"Session: {time_group}")
+        plt.suptitle(f"Experiment Group: {exp_group} , {exp_name}", y=0.98)
+        plt.subplots_adjust(top=0.9)
+
+        if save_dir is not None:
+            fn = f'{exp_group}_{exp_name}_{trial_col}_{response_col}_piecewise_regression.png'
+            plt.savefig(os.path.join(save_dir, fn))
+            plt.close()
+        else:
+            plt.show()
+
+
+
+
+def plot_changepoint_histograms(changepoints_df):
+    """
+    Plot the histogram of the changepoints for each group.
+
+    Parameters
+    ----------
+    changepoints_df : pandas.DataFrame
+        Output from the detect_changepoints function.
+    """
+    # Unpack the list of changepoints into separate rows
+    df_long = changepoints_df.explode('changepoints').reset_index(drop=True)
+
+    for name, group in df_long.groupby('exp_group'):
+    # Create a FacetGrid with 'taste' dictating the rows and 'time_group' the columns
+        grid = sns.FacetGrid(group, row='taste', col='time_group', palette='Set1', margin_titles=True)
+
+    # Plot the histograms
+        grid.map_dataframe(sns.histplot, x='changepoints', bins=6, hue = 'exp_name', stat = "count", multiple = "stack", edgecolor='k')
+
+    # Add a legend
+        grid.add_legend()
+
+        plt.show()
+
+
+def plot_piecewise_individual_models(results_df, session_col, taste_col, condition_col, trial_col, response_col,
+                                     subject_col, save_dir):
+    results_df = results_df.copy()
+    results_df['session'] = results_df[session_col].astype(str)
+    results_df['trial'] = results_df[trial_col]
+    # Creating a FacetGrid
+    results_df.sort_values(by=[taste_col, condition_col, subject_col, 'trial'], inplace=True)
+    g = sns.FacetGrid(results_df, row=taste_col, col='session', hue=condition_col,
+                      row_order=['Suc', 'NaCl', 'CA', 'QHCl'], height=5, margin_titles=True)
+
+    # Plotting raw data points
+    g.map_dataframe(sns.scatterplot, x='trial', y=response_col, alpha=0.25)
+
+    # Plotting the models for each subject
+    g.map_dataframe(sns.lineplot, x=trial_col, y='prediction', style=subject_col, ci=None, linewidth=2)
+
+    g.set_axis_labels(y_var=response_col)
+    # Add a legend
+    g.add_legend(title_fontsize='x-large', fontsize='x-large')
+    plt.show()
+    sf = os.path.join(save_dir, 'piecewise_model_individual.png')
+    g.savefig(sf)
+
+
+def plot_piecewise_model(df, model, changepoint, trial_col, response_col, condition_col, taste_col, session_col, save_dir):
+    row_order = ORDERS['taste']
+    # Create a new variable representing trials after the changepoint
+    df['trial_after'] = np.where(df[trial_col] > changepoint, df[trial_col] - changepoint, 0)
+
+    # Generate the predicted values from the model
+    df['predicted'] = model.predict(df)
+
+    # Initialize a FacetGrid object
+    g = sns.FacetGrid(df, col=session_col, row=taste_col, hue=condition_col, row_order = row_order, height=5, aspect=1, margin_titles=True)
+
+    # Map the scatter plot for observed values
+    g.map(sns.scatterplot, trial_col, response_col, alpha=0.5)
+
+    # Map the line plot for predicted values
+    g.map(sns.lineplot, trial_col, 'predicted')
+
+    # Add a vertical line at the changepoint
+    for ax in g.axes.flat:
+        ax.axvline(x=changepoint, color='green', linestyle='--')
+
+    # Add legend
+    g.add_legend()
+
+    # Show the plot
+    plt.show()
+    sf = os.path.join(save_dir, 'piecewise_model.png')
+    g.savefig(sf)
+
+
+
+
 
 def plotGamma(group, name, save_dir, xax = 'time', yax = "gamma_mode", row = "session", col = "trial_bin", hue = "exp_group"):
     group = group.reset_index()
@@ -2060,7 +2209,7 @@ def plot_PSTHs(rec, unit, params, save_file=None, ax=None):
     if isinstance(unit, int):
         unit_name = 'unit%03d' % unit
     else:
-        unit_name = unit_name
+        unit_name = 'unit'
 
     ax.set_title('%s %s' % (os.path.basename(rec), unit_name))
     ax.legend()
