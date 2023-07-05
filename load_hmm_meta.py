@@ -6,6 +6,7 @@ import seaborn as sns
 import os
 import pandas as pd
 import pylab as plt
+import importlib
 
 rec_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'
 proj = blechpy.load_project(rec_dir)

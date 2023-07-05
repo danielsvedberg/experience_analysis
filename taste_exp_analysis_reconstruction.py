@@ -54,18 +54,14 @@ NB_decode[['Y','epoch']] = NB_decode.Y.str.split('_',expand=True)
 NB_decode['taste'] = NB_decode.trial_ID
 NB_decode['state_num'] = NB_decode['hmm_state'].astype(int)
 
+NB_decode = ana.add_session_trial(NB_decode, proj, trial_col='trial_num', trial_id='trial_ID')
+
 nplt.plot_NB_decoding(NB_decode,plotdir = HA.save_dir, trial_group_size = 24)
-
-###############################################################################
-
 
 NB_summary = NB_decode.groupby(['exp_name','time_group','trial_ID','prestim_state','rec_dir','hmm_state']).agg('mean').reset_index()
 
-[_,NB_meta_late,NB_decode_late,NB_best_hmms_late,NB_timings_late] = HA.analyze_NB_ID(overwrite = True, epoch = 'late')
-# NB_decode_late['taste'] = NB_decode.trial_ID
-# NB_decode_late['state_num'] = NB_decode['hmm_state'].astype(int)
-# nplt.plot_NB_decoding(NB_decode_late, plotdir = HA.save_dir, epoch = 'late', trial_group_size = 5)
-# NB_late_summary = NB_decode_late.groupby(['exp_name','time_group','trial_ID','prestim_state','rec_dir','hmm_state']).agg('mean').reset_index()
+nplt.plot_NB_decoding(NB_decode, plotdir=HA.save_dir, trial_group_size=20, trial_col='session_trial')
+nplt.plot_NB_decoding(NB_decode, plotdir=HA.save_dir, trial_group_size=5, trial_col='trial_num')
 
 ###############################################################################
 ###Naive Bayes timing##########################################################
@@ -111,8 +107,8 @@ NB_timings['session_trial'] = NB_timings.session_trial.astype(int) #make trial n
 NB_timings['time_group'] = NB_timings.time_group.astype(int) #make trial number an int
 
 # plot timing correlations grouped by session:
-#nplt.plot_NB_timing(NB_timings,HA.save_dir,trial_group_size = 24, trial_col = 'session_trial')
-#nplt.plot_NB_timing(NB_timings,HA.save_dir,trial_group_size = 6, trial_col = 'trial_num')
+nplt.plot_NB_timing(NB_timings, HA.save_dir, trial_group_size=20, trial_col='session_trial')
+nplt.plot_NB_timing(NB_timings, HA.save_dir, trial_group_size=5, trial_col='trial_num')
 
 early_timings = NB_timings.loc[NB_timings.epoch == 'early']
 early_timings = early_timings.groupby(['taste','exp_name','time_group']).filter(lambda group: len(group) >= 10)
@@ -149,7 +145,7 @@ NB_timings = NB_timings.reset_index()
 
 early_timings = NB_timings.loc[NB_timings.epoch == 'early']
 cngpts = ana.detect_changepoints(early_timings,['exp_name', 'time_group', 'exp_group', 'taste'], 't_start', 'trial_num')
-nplt.plot_changepoint_histograms(cngpts)
+nplt.plot_changepoint_histograms(cngpts, save_dir=HA.save_dir)
 
 ##############################################################################
 ###mixed LM trial split analysis #############################################
@@ -273,17 +269,30 @@ gamma_mode_df['trial_bin'] = gamma_mode_df.trial_group #rename trial_group colum
 gamma_mode_df['binned_time'] = gamma_mode_df.time_bin * 20
 gamma_mode_df['trial_bin'] = gamma_mode_df.trial_group #rename trial_group column to trial_bin
 gamma_mode_df['session'] = gamma_mode_df.time_group #rename time_group column to session
+gamma_mode_df['session_trial'] = gamma_mode_df.session_trial.astype(int)
 gamma_mode_df['session_trial_bin'] = gamma_mode_df.session_trial/20
 gamma_mode_df['session_trial_bin'] = gamma_mode_df['session_trial_bin'].astype(int)
 
-nplt.plotGammaPar(gamma_mode_df, xax = 'binned_time', yax = "gamma_mode", save_dir = HA.save_dir)
-nplt.plotGammaPar(gamma_mode_df, xax = 'binned_time', yax = "gamma_mode", hue = 'exp_group', row = 'session', col = 'session_trial_bin', save_dir = HA.save_dir)
-nplt.plotGammaPar(gamma_mode_df, groups = ['taste', 'exp_group'], xax = 'binned_time', yax = "gamma_mode", hue = None, row = 'session', col = 'session_trial_bin', save_dir = HA.save_dir)
-nplt.plotGammaPar(gamma_mode_df, groups = ['taste', 'exp_group'], xax = 'binned_time', yax = "gamma_mode", hue = None, row = 'session', col = 'trial_bin', save_dir = HA.save_dir)
-nplt.plotGammaPar(gamma_mode_df, groups = ['exp_group'], xax = 'binned_time', yax = "gamma_mode", hue = None, row = 'session', col = 'session_trial_bin', save_dir = HA.save_dir)
-nplt.plotGammaPar(gamma_mode_df, groups = ['exp_group'], xax = 'binned_time', yax = "gamma_mode", hue = None, row = 'session', col = 'trial_bin', save_dir = HA.save_dir)
-nplt.plotGamma(gamma_mode_df, save_dir = HA.save_dir, name = 'all_data', xax = 'binned_time', yax = "gamma_mode", hue = 'exp_group', row = 'session', col = 'trial_bin')
-nplt.plotGamma(gamma_mode_df, save_dir = HA.save_dir, name = 'all_data', xax = 'binned_time', yax = "gamma_mode", hue = 'exp_group', row = 'session', col = 'session_trial_bin')
+model_groups = ['exp_name', 'exp_group', 'time_group', 'taste']
+gam_pw = ana.fit_piecewise_regression(gamma_mode_df, model_groups, 'gamma_mode', 'trial')
+gam_pw = gam_pw.sort_values(['time_group'])
+gam_pw = gam_pw.sort_values(['converged'], ascending = False)
+nplt.plot_multiple_piecewise_regression2(gam_pw, save_dir=HA.save_dir)
+
+avg_gamma_mode_df = gamma_mode_df.groupby(['exp_name', 'exp_group', 'time_group', 'taste', 'trial']).mean().reset_index()
+avg_model_groups = ['exp_group', 'time_group', 'taste']
+gamavg_pw = ana.fit_piecewise_regression(avg_gamma_mode_df, avg_model_groups, 'gamma_mode', 'trial')
+gamavg_pw = gamavg_pw.sort_values(['time_group'])
+gamavg_pw = gamavg_pw.sort_values(['converged'], ascending = False)
+grvars = ['exp_group']
+nplt.plot_multiple_piecewise_regression(gamavg_pw, grvars=grvars, save_dir=HA.save_dir)
+
+
+nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='trial_bin', y_facs=['gamma_mode'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='trial')
+nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='session_trial_bin', y_facs=['gamma_mode'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='session_trial')
+
+
+
 
 
 

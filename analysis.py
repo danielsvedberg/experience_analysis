@@ -2564,18 +2564,22 @@ def add_session_trial(df, proj, trial_col = 'trial', trial_id = 'taste'):
     '''Adds session trial number to any df with columns containing rec_dir, trial number (of the taste),
     and taste or channel
     '''
-    trial_info = proj.get_trial_info()
+    df = df.copy()
+    trial_info = proj.get_trial_info().copy()
     trial_info['taste'] = trial_info['name']
     trial_info['trial'] = trial_info['taste_trial'] - 1
     trial_info['dig_in'] = trial_info['channel']
     trial_info['din'] = trial_info['channel']
     trial_info['session_trial'] = trial_info['trial_num'].astype(int)
     
-    trial_info[trial_col] = trial_info[trial_col].astype(int)
-    trial_info[trial_id] = trial_info[trial_id].astype(str)
+    trial_info[trial_col] = trial_info['trial'].astype(int)
+    trial_info[trial_id] = trial_info['taste'].astype(str)
     df[trial_col] = df[trial_col].astype(int)
     df[trial_id] = df[trial_id].astype(str)
-    
+    trial_info = trial_info.loc[(trial_info.taste != 'Spont')]
+    trial_info = trial_info.loc[(trial_info.channel >= 0)]
+    trial_info['session_trial'] = trial_info.groupby(['rec_dir'])['session_trial'].transform(lambda x: x - x.min())
+
     for_merge = trial_info[['rec_dir', trial_col, trial_id, 'session_trial']]
 
     out = df.merge(for_merge, on = ['rec_dir', trial_col, trial_id], how = 'left')
