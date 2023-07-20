@@ -10,7 +10,7 @@ Created on Tue Nov  8 13:17:30 2022
 import analysis as ana
 import blechpy
 import new_plotting as nplt
-import hmm_analysis as hmma 
+import hmm_analysis as hmma
 import seaborn as sns
 #import os
 import pandas as pd
@@ -36,7 +36,7 @@ HA.get_hmm_overview()#overwrite = True) #use overwrrite = True to debug
 HA.sort_hmms_by_BIC(overwrite = True)
 srt_df = HA.get_sorted_hmms()
 #HA.mark_early_and_late_states() #this is good, is writing in early and late states I think
-best_hmms = HA.get_best_hmms(sorting = 'best_BIC', overwrite = True)# sorting = 'params #4') #HA has no attribute project analysis #this is not getting the early and late states 
+best_hmms = HA.get_best_hmms(sorting = 'best_BIC', overwrite = True)# sorting = 'params #4') #HA has no attribute project analysis #this is not getting the early and late states
 #heads up, params #5 doesn't cover all animals, you want params #4
 #play around with state timings in mark_early_and_late_states()
 
@@ -100,7 +100,7 @@ for i in operating_columns:
     NB_timings[zscorename] = NB_timings.groupby(['exp_name', 'state_group'])[i].transform(lambda x: zscore(x))
     NB_timings[zscorename] = NB_timings[zscorename].fillna(0)
     #NB_timings[abszscorename] = abs(NB_timings[zscorename])
-    
+
 NB_timings = NB_timings.reset_index()
 NB_timings['trial-group'] = NB_timings['trial_group']
 NB_timings['session_trial'] = NB_timings.session_trial.astype(int) #make trial number an int
@@ -281,6 +281,23 @@ nplt.plot_multiple_piecewise_regression2(gam_pw, save_dir=HA.save_dir)
 
 avg_gamma_mode_df = gamma_mode_df.groupby(['exp_name', 'exp_group', 'time_group', 'taste', 'trial']).mean().reset_index()
 avg_model_groups = ['exp_group', 'time_group', 'taste']
+
+###ANOVAS
+import pingouin as pg
+avg_gamma_mode_df.reset_index(inplace = True)
+# We use a repeated measures ANOVA (rm_anova) function from pingouin
+# "Within" defines the repeated measures factor.
+# For a two-way ANOVA we specify both 'stimulus' and 'timepoint' as the within-subject variables,
+# and the 'condition' column as the between-subject variable
+avg_gamma_mode_df['exp_group'] = avg_gamma_mode_df['exp_group'].astype(str)
+aovs = []
+for name, group in avg_gamma_mode_df.groupby(['time_group']):
+    aov = pg.rm_anova(dv='gamma_mode', within=['trial_group', 'taste'], subject='exp_name', data=group)
+    aovs.append(aov)
+##MONEY MONEY MONEY
+
+
+
 gamavg_pw = ana.fit_piecewise_regression(avg_gamma_mode_df, avg_model_groups, 'gamma_mode', 'trial')
 gamavg_pw = gamavg_pw.sort_values(['time_group'])
 gamavg_pw = gamavg_pw.sort_values(['converged'], ascending = False)
