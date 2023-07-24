@@ -186,7 +186,6 @@ early_timings['exp_name'] = early_timings['exp_name'].astype('str')
 early_timings['taste'] = early_timings['taste'].astype('category')
 early_timings['exp_group'] = early_timings['exp_group'].astype('category')
 
-
 trial_col = 'trial_num'
 response_col = 't_end_zscore'
 model_cols = ['exp_group', 'time_group', 'taste']
@@ -273,44 +272,51 @@ gamma_mode_df['session_trial'] = gamma_mode_df.session_trial.astype(int)
 gamma_mode_df['session_trial_bin'] = gamma_mode_df.session_trial/20
 gamma_mode_df['session_trial_bin'] = gamma_mode_df['session_trial_bin'].astype(int)
 
+gamma_mode_pct_df = gamma_mode_df.groupby(['exp_name', 'exp_group', 'time_group', 'taste', 'trial', 'trial_group'])['gamma_mode'].apply(lambda c: (c>0.9).sum()/len(c)).reset_index()
+avg_gamma_mode_df = gamma_mode_df.groupby(['exp_name', 'exp_group', 'time_group', 'taste', 'trial']).mean().reset_index()
+avg_model_groups = ['exp_group', 'time_group', 'taste']
+
+###ANOVAS
+import pingouin as pg
+
+sw_aovs = []
+for name, group in avg_gamma_mode_df.groupby(['exp_group','time_group']):
+    aov = pg.rm_anova(dv='gamma_mode', within=['taste','session_trial_bin'], subject='exp_name', data=group)
+    pw = pg.pairwise_ttests(dv='gamma_mode', within=['taste','session_trial_bin'], subject='exp_name',padjust='holm', data=group)
+    sw_aovs.append(name)
+    sw_aovs.append(aov)
+    sw_aovs.append(pw)
+sw_aovs #so far best looking test
+
+aov_groups = ['exp_group','time_group']
+within = ['taste','trial_group']
+subject = 'exp_name'
+trial_col='session_trial'
+aov3 = ana.trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dv='gamma_mode', within=within, subject=subject, trial_col=trial_col, n_trial_groups=3)
+aov5 = ana.trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dv='gamma_mode', within=within, subject=subject, trial_col=trial_col, n_trial_groups=5) #best looking test
+aov6 = ana.trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dv='gamma_mode', within=within, subject=subject, trial_col=trial_col, n_trial_groups=6)
+
+
+
+avg_gamma_mode_df['pr(mode state)'] = avg_gamma_mode_df.gamma_mode
+avg_gamma_mode_df['trial bin'] = avg_gamma_mode_df.trial_bin
+avg_gamma_mode_df['session trial bin'] = avg_gamma_mode_df.session_trial_bin
+avg_gamma_mode_df['session_trial'] = avg_gamma_mode_df.session_trial.astype(int)
+nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='trial bin', y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='trial')
+nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='session trial bin', y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='session_trial')
+
+
 model_groups = ['exp_name', 'exp_group', 'time_group', 'taste']
 gam_pw = ana.fit_piecewise_regression(gamma_mode_df, model_groups, 'gamma_mode', 'trial')
 gam_pw = gam_pw.sort_values(['time_group'])
 gam_pw = gam_pw.sort_values(['converged'], ascending = False)
 nplt.plot_multiple_piecewise_regression2(gam_pw, save_dir=HA.save_dir)
 
-avg_gamma_mode_df = gamma_mode_df.groupby(['exp_name', 'exp_group', 'time_group', 'taste', 'trial']).mean().reset_index()
-avg_model_groups = ['exp_group', 'time_group', 'taste']
-
-###ANOVAS
-import pingouin as pg
-avg_gamma_mode_df.reset_index(inplace = True)
-# We use a repeated measures ANOVA (rm_anova) function from pingouin
-# "Within" defines the repeated measures factor.
-# For a two-way ANOVA we specify both 'stimulus' and 'timepoint' as the within-subject variables,
-# and the 'condition' column as the between-subject variable
-avg_gamma_mode_df['exp_group'] = avg_gamma_mode_df['exp_group'].astype(str)
-aovs = []
-for name, group in avg_gamma_mode_df.groupby(['time_group']):
-    aov = pg.rm_anova(dv='gamma_mode', within=['trial_group', 'taste'], subject='exp_name', data=group)
-    aovs.append(aov)
-##MONEY MONEY MONEY
-
-
-
 gamavg_pw = ana.fit_piecewise_regression(avg_gamma_mode_df, avg_model_groups, 'gamma_mode', 'trial')
 gamavg_pw = gamavg_pw.sort_values(['time_group'])
 gamavg_pw = gamavg_pw.sort_values(['converged'], ascending = False)
 grvars = ['exp_group']
 nplt.plot_multiple_piecewise_regression(gamavg_pw, grvars=grvars, save_dir=HA.save_dir)
-
-
-nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='trial_bin', y_facs=['gamma_mode'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='trial')
-nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='session_trial_bin', y_facs=['gamma_mode'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='session_trial')
-
-
-
-
 
 
 ### is max gamma probability of mode state correlated with accuracy? ##########

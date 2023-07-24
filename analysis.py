@@ -2043,6 +2043,8 @@ class HmmAnalysis(object):
             sorted_df['sort_method'] = 'auto'
 
         df = sorted_df.query('n_states > 2')
+        df = df.loc[((df.exp_name != 'DS33') | (df.rec_num !=2) | (df.n_states != 3) | (df.taste != 'CA'))]
+
         df = df.loc[((df.exp_name != 'DS40') | (df.rec_num !=2) | (df.n_states != 3))] #TODO: get rid of this bullshit hardcoding 
         df = df.loc[((df.exp_name != 'DS40') | (df.rec_num !=3) | (df.n_states != 3) | (df.taste != 'NaCl'))]
         df = df.loc[((df.exp_name != 'DS36') | (df.rec_num !=1) | (df.n_states != 3))]
@@ -2666,7 +2668,24 @@ def refit_hmms(sorted_df, base_params, all_units,log_file=None, rec_params={}):
         # handler.add_params(params)
         # handler.run(constraint_func=hmma.A_contrained)
 
+import pingouin as pg
+def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='trial', n_trial_groups=5):
+    df = df.copy()
+    df['trial_group'] = pd.cut(df[trial_col], n_trial_groups, labels=False)
 
+    res = []
+    for name, group in df.groupby(groups):
+        aov = pg.rm_anova(dv=dv, within=within, subject=subject, data=group)
+        pw = pg.pairwise_ttests(dv=dv, within=within, subject=subject, padjust='holm', data=group)
+        nm = '_'.join([str(x) for x in name])
+        aov['group'] = nm
+        pw['group'] = nm
+        aov['label'] = trial_col
+        pw['label'] = trial_col
+        res.append(aov)
+        res.append(pw)
+
+    return(res)
 def get_local_path(path):
     if ELF_DIR in path and not os.path.isdir(path) and os.path.isdir(MONO_DIR):
         out = path.replace(ELF_DIR, MONO_DIR)
