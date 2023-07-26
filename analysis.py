@@ -2669,23 +2669,43 @@ def refit_hmms(sorted_df, base_params, all_units,log_file=None, rec_params={}):
         # handler.run(constraint_func=hmma.A_contrained)
 
 import pingouin as pg
-def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='trial', n_trial_groups=5):
+def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='trial', n_trial_groups=5, save_dir=None):
     df = df.copy()
     df['trial_group'] = pd.cut(df[trial_col], n_trial_groups, labels=False)
 
-    res = []
+    aovs = []
+    pws = []
     for name, group in df.groupby(groups):
         aov = pg.rm_anova(dv=dv, within=within, subject=subject, data=group)
         pw = pg.pairwise_ttests(dv=dv, within=within, subject=subject, padjust='holm', data=group)
         nm = '_'.join([str(x) for x in name])
         aov['group'] = nm
         pw['group'] = nm
-        aov['label'] = trial_col
-        pw['label'] = trial_col
-        res.append(aov)
-        res.append(pw)
+        aov['trial_type'] = trial_col
+        pw['trial_type'] = trial_col
+        aov['n_trial_groups'] = str(n_trial_groups)
+        pw['n_trial_groups'] = str(n_trial_groups)
+        aovs.append(aov)
+        pws.append(pw)
 
-    return(res)
+    aovs = pd.concat(aovs)
+    pws = pd.concat(pws)
+
+    special_aov = aovs[['Source','F','p-GG-corr','group','trial_type','n_trial_groups']]
+    special_aov = special_aov.round(2)
+    save_suffix = '%s_%s_%s_%s_%s_special.csv' % (dv, '_'.join(groups), '_'.join(within), str(n_trial_groups), trial_col)
+    special_aov.to_csv(os.path.join(save_dir, 'trial_group_aov_%s' % save_suffix))
+
+    if save_dir is not None:
+        save_suffix = '%s_%s_%s_%s_%s.csv' % (dv, '_'.join(groups), '_'.join(within), str(n_trial_groups), trial_col)
+        aovname = 'trial_group_aov_%s' % save_suffix
+        posthocname = 'trial_group_posthoc_%s' % save_suffix
+        aovpath = os.path.join(save_dir, aovname)
+        posthocpath = os.path.join(save_dir, posthocname)
+        aovs.to_csv(aovpath)
+        pws.to_csv(posthocpath)
+
+    return(aovs, pws)
 def get_local_path(path):
     if ELF_DIR in path and not os.path.isdir(path) and os.path.isdir(MONO_DIR):
         out = path.replace(ELF_DIR, MONO_DIR)
@@ -2695,7 +2715,6 @@ def get_local_path(path):
         out = path
 
     return out
-
 
 def refit_anim(needed_hmms, anim, rec_group=None, custom_params=None):
     df = needed_hmms.query('exp_name == @anim')

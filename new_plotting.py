@@ -454,6 +454,72 @@ def plot_trialwise_rel(df, x_col, y_facs, sess_col='time_group', cond_col='exp_g
             print(sf2)
         plt.close('all')
 
+def plot_trialwise_rel2(df, y_facs, sess_col='time_group', cond_col='exp_group', save_dir=None, save_prefix=None, trial_col='trial', n_trial_groups = None):
+    df = df.copy()
+    if n_trial_groups is None:
+        if min(df[trial_col]) == 0:
+            n_trial_groups = max(df[trial_col]) + 1
+        else:
+            n_trial_groups = max(df[trial_col])
+
+    df['trial group'] = pd.cut(df[trial_col], n_trial_groups, labels=False).astype('int') #create x axis index
+    df['tg_start'] = df.groupby(['trial group'])[trial_col].transform('min') + 1 #create label of trial # starting each trial group
+    df['tg_end'] = df.groupby(['trial group'])[trial_col].transform('max') + 1 #create label of trial # ending each trial group
+    df['trials'] = df.tg_start.astype(str) + '-' + df.tg_end.astype(str) #create label of trial # range for each trial group
+    df['session'] = df[sess_col]
+    df['condition'] = df[cond_col]
+
+    df = df.copy()
+    sns.set_theme(style='ticks', font_scale=1.5)
+    cols = ['trial group', 'trials']
+    triallabs = df[cols].reset_index(drop=True).drop_duplicates().sort_values(by=['trial group'])
+
+    for y_col in y_facs:
+        df['taste'] = pd.Categorical(df['taste'], ['Suc', 'NaCl', 'CA', 'QHCl'])
+        g = sns.relplot(kind='line', data=df,
+                        x='trial group', y=y_col, col='taste', row='session', hue='condition', style='condition',
+                        markers=True, err_style='band', ci=95, height=4, aspect=1,
+                        linewidth=3,
+                        facet_kws={"margin_titles": True})
+        g.set_titles(row_template='{row_name}')
+
+        n_groups = int(max(df['trial group']))
+        xt = np.arange(0, n_groups + 1)
+        xend = n_groups + 0.25
+        g.set(xlim=(-0.25, xend), xticks=xt)  # , xlabel=trial_col)
+        g.set_xticklabels(triallabs['trials'], rotation=45)
+        if y_col == 'p(correct)' or y_col == 'pr(mode state)':
+            g.set(ylim=(-0.1, 1.1), yticks=[0, 0.25, 0.5, 0.75, 1])
+
+        if save_dir:
+            nm1 = save_prefix + '_' + str(n_trial_groups) + '_' + trial_col + '_VS_' + y_col + '_Rel.png'
+            sf = os.path.join(save_dir, nm1)
+            g.savefig(sf)
+            print(sf)
+        plt.close('all')
+
+        # plot with tastes aggregated into one row
+        df2 = df.copy()
+        df2['taste'] = 'All Tastes'
+        h = sns.relplot(kind='line', data=df2,
+                        x='trial group', y=y_col, row='session', col='taste', hue='condition', style='condition',
+                        markers=True, err_style='band', ci=95,
+                        linewidth=3, height=5, aspect=1.5,
+                        facet_kws={"margin_titles": True})
+        h.set_titles(row_template='{row_name}')
+        h.set(xlim=(-0.25, xend), xticks=xt)  # , xlabel=trial_col)
+        h.set_xticklabels(triallabs['trials'], rotation=45)
+
+        if y_col == 'p(correct)' or y_col == 'pr(mode state)':
+            h.set(ylim=(-0.1, 1.1), yticks=[0, 0.25, 0.5, 0.75, 1])
+
+        if save_dir:
+            nm2 = save_prefix + '_' + str(n_trial_groups) + '_' + trial_col + '_VS_' + y_col + '_all_tsts_Rel.png'
+            sf2 = os.path.join(save_dir, nm2)
+            h.savefig(sf2)
+            print(sf2)
+        plt.close('all')
+
 
 def plot_trialwise_lm(df, x_col, y_facs, hue='condition', col='session', row='taste', save_dir=None, save_prefix=None):
     row_order = ['Suc', 'NaCl', 'CA', 'QHCl']

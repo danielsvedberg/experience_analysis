@@ -277,34 +277,47 @@ avg_gamma_mode_df = gamma_mode_df.groupby(['exp_name', 'exp_group', 'time_group'
 avg_model_groups = ['exp_group', 'time_group', 'taste']
 
 ###ANOVAS
-import pingouin as pg
-
-sw_aovs = []
-for name, group in avg_gamma_mode_df.groupby(['exp_group','time_group']):
-    aov = pg.rm_anova(dv='gamma_mode', within=['taste','session_trial_bin'], subject='exp_name', data=group)
-    pw = pg.pairwise_ttests(dv='gamma_mode', within=['taste','session_trial_bin'], subject='exp_name',padjust='holm', data=group)
-    sw_aovs.append(name)
-    sw_aovs.append(aov)
-    sw_aovs.append(pw)
-sw_aovs #so far best looking test
-
-aov_groups = ['exp_group','time_group']
+aov_groups = ['time_group','exp_group']
 within = ['taste','trial_group']
 subject = 'exp_name'
 trial_col='session_trial'
-aov3 = ana.trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dv='gamma_mode', within=within, subject=subject, trial_col=trial_col, n_trial_groups=3)
-aov5 = ana.trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dv='gamma_mode', within=within, subject=subject, trial_col=trial_col, n_trial_groups=5) #best looking test
-aov6 = ana.trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dv='gamma_mode', within=within, subject=subject, trial_col=trial_col, n_trial_groups=6)
+trlgrps = [3,4,5,6]
+iteraovs = []
+iterpws = []
+for i in trlgrps:
+    aovs, pws = ana.trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dv='gamma_mode', within=within, subject=subject, trial_col=trial_col, n_trial_groups=i, save_dir=HA.save_dir)
+    iteraovs.append(aovs)
+    iterpws.append(pws)
 
+sessaovs = pd.concat(iteraovs)
 
+trial_col = 'trial'
+iteraovs2 = []
+iterpws2 = []
+trlgrps = [3,4,5,6]
+for i in trlgrps:
+    aovs, pws = ana.trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dv='gamma_mode', within=within, subject=subject, trial_col=trial_col, n_trial_groups=i, save_dir=HA.save_dir)
+    iteraovs2.append(aovs)
+    iterpws2.append(pws)
+
+trlaovs = pd.concat(iteraovs2)
+
+allaovs = pd.concat([sessaovs, trlaovs])
+sn = 'all_anova_tests_gamma_mode.csv'
+sp = os.path.join(HA.save_dir, sn)
+allaovs.to_csv(sp)
 
 avg_gamma_mode_df['pr(mode state)'] = avg_gamma_mode_df.gamma_mode
 avg_gamma_mode_df['trial bin'] = avg_gamma_mode_df.trial_bin
 avg_gamma_mode_df['session trial bin'] = avg_gamma_mode_df.session_trial_bin
 avg_gamma_mode_df['session_trial'] = avg_gamma_mode_df.session_trial.astype(int)
-nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='trial bin', y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='trial')
-nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='session trial bin', y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='session_trial')
-
+#nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='trial bin', y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='trial')
+#nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='session trial bin', y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='session_trial')
+trial_cols = ['trial', 'session_trial']
+trial_groups = [3,4,5,6]
+for i in trial_groups:
+    for j in trial_cols:
+        nplt.plot_trialwise_rel2(avg_gamma_mode_df, y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col=j, n_trial_groups=i)
 
 model_groups = ['exp_name', 'exp_group', 'time_group', 'taste']
 gam_pw = ana.fit_piecewise_regression(gamma_mode_df, model_groups, 'gamma_mode', 'trial')
