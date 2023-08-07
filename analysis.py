@@ -2721,10 +2721,11 @@ def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='tri
     for name, group in df.groupby(groups):
         aov = pg.rm_anova(dv=dv, within=within, subject=subject, data=group)
         pw = pg.pairwise_ttests(dv=dv, within=['trial_group'], subject=['taste_sub'], padjust='holm', data=group)
-        nm = '_'.join([str(x) for x in name])
 
-        extra_cols = ['group', 'trial_type', 'n_trial_groups', 'dependent_var']
-        extra_col_data = [nm, trial_col, str(n_trial_groups), dv]
+        aov[groups] = name
+        pw[groups] = name
+        extra_cols = ['trial_type', 'n_trial_groups', 'dependent_var']
+        extra_col_data = [trial_col, str(n_trial_groups), dv]
         aov[extra_cols] = extra_col_data
         pw[extra_cols] = extra_col_data
 
@@ -2741,9 +2742,19 @@ def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='tri
         aovpath = os.path.join(save_dir, aovname)
         posthocpath = os.path.join(save_dir, posthocname)
 
-        special_aov = aovs[['Source', 'F', 'p-GG-corr', 'group', 'trial_type', 'n_trial_groups']]
+        aov_cols = ['Source', 'F', 'p-GG-corr', 'trial_type', 'n_trial_groups']
+        pw_cols = ['Contrast', 'A', 'B', 'T', 'p-unc', 'p-corr', 'trial_type', 'n_trial_groups']
+
+        if len(groups) > 1:
+            aov_cols = aov_cols + groups
+            pw_cols = pw_cols + groups
+        else:
+            aov_cols.append(groups[0])
+            pw_cols.append(groups[0])
+
+        special_aov = aovs[aov_cols]
         special_aov = special_aov.round(3)
-        special_ph = pws[['Contrast', 'A', 'B', 'T', 'p-unc', 'p-corr', 'group', 'trial_type', 'n_trial_groups']]
+        special_ph = pws[pw_cols]
         special_ph = special_ph.round(3)
         special_aov.to_csv(aovpath)
         special_ph.to_csv(posthocpath)
