@@ -477,8 +477,8 @@ def plot_trialwise_rel2(df, y_facs, sess_col='time_group', cond_col='exp_group',
     for y_col in y_facs:
         df['taste'] = pd.Categorical(df['taste'], ['Suc', 'NaCl', 'CA', 'QHCl'])
         g = sns.relplot(kind='line', data=df,
-                        x='trial group', y=y_col, col='taste', row='session', hue='condition', style='condition',
-                        markers=True, err_style='band', ci=95, height=4, aspect=1,
+                        x='trial group', y=y_col, col='session', row='taste', hue='condition', style='condition',
+                        markers=True, err_style='band', ci=95, height=4, aspect=0.75,
                         linewidth=3,
                         facet_kws={"margin_titles": True})
         g.set_titles(row_template='{row_name}')
@@ -502,9 +502,9 @@ def plot_trialwise_rel2(df, y_facs, sess_col='time_group', cond_col='exp_group',
         df2 = df.copy()
         df2['taste'] = 'All Tastes'
         h = sns.relplot(kind='line', data=df2,
-                        x='trial group', y=y_col, row='session', col='taste', hue='condition', style='condition',
+                        x='trial group', y=y_col, row='taste', col='session', hue='condition', style='condition',
                         markers=True, err_style='band', ci=95,
-                        linewidth=3, height=5, aspect=1.5,
+                        linewidth=3, height=5, aspect=0.8,
                         facet_kws={"margin_titles": True})
         h.set_titles(row_template='{row_name}')
         h.set(xlim=(-0.25, xend), xticks=xt)  # , xlabel=trial_col)

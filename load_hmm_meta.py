@@ -21,14 +21,16 @@ PA.process_single_units()#overwrite = True) #maybe run
 #PA.run(overwrite = True)
 
 HA = ana.HmmAnalysis(proj)
-HA.get_hmm_overview()#overwrite = True) #use overwrrite = True to debug
-#HA.sort_hmms_by_params()#overwrite = True)
-HA.sort_hmms_by_BIC(overwrite = True)
+HA.get_hmm_overview(overwrite = False) #use overwrrite = True to debug
+sorted = HA.sort_hmms_by_AIC(overwrite=False)
+
+#HA.sort_hmms_by_BIC(overwrite = True) #undo this
 srt_df = HA.get_sorted_hmms()
 #HA.mark_early_and_late_states() #this is good, is writing in early and late states I think
-best_hmms = HA.get_best_hmms(sorting = 'best_BIC', overwrite=False)
+best_hmms = HA.get_best_hmms(sorting='best_AIC', overwrite=False) #undo this
 
-NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite = False, parallel = True) #run with overwrite
+NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite=False, parallel=True) #run with overwrite
+
 NB_decode[['Y','epoch']] = NB_decode.Y.str.split('_',expand=True)
 NB_decode['taste'] = NB_decode.trial_ID
 NB_decode['state_num'] = NB_decode['hmm_state'].astype(int)

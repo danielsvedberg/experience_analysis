@@ -1052,18 +1052,19 @@ class HmmAnalysis(object):
         else:
             ho = None
             print('aggregating hmm data...')
-            #pbar = tqdm(total=self.project._exp_info.shape[0]*4)
+
             for i, row in self.project._exp_info.iterrows():
                 exp = load_experiment(row['exp_dir'])
                 for rec_dir in exp.recording_dirs:
                     print('processing %s' % os.path.basename(rec_dir))
                     h5_file = hmma.get_hmm_h5(rec_dir)
                     if h5_file is None:
-                        #pbar.update(1)
+
                         continue
 
                     handler = phmm.HmmHandler(rec_dir)
-                    df = handler.get_data_overview().copy()
+                    #df = handler.get_data_overview().copy()
+                    df = handler.get_overview_w_AIC().copy()
                     df['rec_dir'] = rec_dir
                     if ho is None:
                         ho = df
@@ -2056,7 +2057,23 @@ class HmmAnalysis(object):
 
         sorted_df.loc[minima, 'sorting'] = 'best_BIC'
         self.write_sorted_hmms(sorted_df)
-        
+
+    def sort_hmms_by_AIC(self, overwrite=False):
+        sorted_df = self.get_sorted_hmms()
+        if sorted_df is None or overwrite is True:
+            sorted_df = self.get_hmm_overview()
+            sorted_df['sorting'] = 'rejected'
+            sorted_df['sort_method'] = 'auto'
+
+        df = sorted_df.query('n_states > 2')
+
+        minima = []
+        for name, group in df.groupby(['exp_name', 'rec_group', 'taste']):
+            minima.append(group.AIC.idxmin())
+
+        sorted_df.loc[minima, 'sorting'] = 'best_AIC'
+
+        self.write_sorted_hmms(sorted_df)
 
 def organize_hmms(sorted_df, plot_dir):
     req_params = {'dt': 0.001, 'unit_type': 'single', 'time_end': 2000}
@@ -2672,12 +2689,12 @@ import pingouin as pg
 def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='trial', n_trial_groups=5, save_dir=None):
     df = df.copy()
     df['trial_group'] = pd.cut(df[trial_col], n_trial_groups, labels=False)
-
+    df['taste_sub'] = df['exp_name'] + '_' + df['taste']
     aovs = []
     pws = []
     for name, group in df.groupby(groups):
         aov = pg.rm_anova(dv=dv, within=within, subject=subject, data=group)
-        pw = pg.pairwise_ttests(dv=dv, within=within, subject=subject, padjust='holm', data=group)
+        pw = pg.pairwise_ttests(dv=dv, within=['trial_group'], subject=['taste_sub'], padjust='holm', data=group)
         nm = '_'.join([str(x) for x in name])
         aov['group'] = nm
         pw['group'] = nm
@@ -2695,6 +2712,11 @@ def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='tri
     special_aov = special_aov.round(2)
     save_suffix = '%s_%s_%s_%s_%s_special.csv' % (dv, '_'.join(groups), '_'.join(within), str(n_trial_groups), trial_col)
     special_aov.to_csv(os.path.join(save_dir, 'trial_group_aov_%s' % save_suffix))
+
+    special_ph = pws[['Contrast','A','B','T','p-unc','p-corr','group','trial_type','n_trial_groups']]
+    special_ph = special_ph.round(2)
+    special_ph.to_csv(os.path.join(save_dir, 'trial_group_posthoc_%s' % save_suffix))
+
 
     if save_dir is not None:
         save_suffix = '%s_%s_%s_%s_%s.csv' % (dv, '_'.join(groups), '_'.join(within), str(n_trial_groups), trial_col)

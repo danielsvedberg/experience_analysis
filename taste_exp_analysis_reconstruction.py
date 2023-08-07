@@ -56,7 +56,7 @@ NB_decode['state_num'] = NB_decode['hmm_state'].astype(int)
 
 NB_decode = ana.add_session_trial(NB_decode, proj, trial_col='trial_num', trial_id='trial_ID')
 
-nplt.plot_NB_decoding(NB_decode,plotdir = HA.save_dir, trial_group_size = 24)
+nplt.plot_NB_decoding(NB_decode,plotdir = HA.save_dir, trial_group_size = 20)
 
 NB_summary = NB_decode.groupby(['exp_name','time_group','trial_ID','prestim_state','rec_dir','hmm_state']).agg('mean').reset_index()
 
@@ -64,7 +64,7 @@ nplt.plot_NB_decoding(NB_decode, plotdir=HA.save_dir, trial_group_size=20, trial
 nplt.plot_NB_decoding(NB_decode, plotdir=HA.save_dir, trial_group_size=5, trial_col='trial_num')
 
 ###############################################################################
-###Naive Bayes timing##########################################################
+###Naive Bayes timing preprocessing##########################################################
 
 NB_meta_,NB_decode,NB_best_,NB_timings = HA.analyze_NB_ID(overwrite = False) #run with no overwrite, make sure to not overwrite NB_meta and NB_decode if you have them
 NB_decode[['Y','epoch']] = NB_decode.Y.str.split('_',expand=True)
@@ -92,6 +92,10 @@ operating_columns = ['t_start','t_end','t_med', 'duration']
 
 #remove all trials with less than 3 states
 NB_timings = NB_timings.groupby(['rec_dir','taste','session_trial']).filter(lambda x: len(x) >= 3)
+
+###Naive Bayes timing ANOVA###
+
+###Naive Bayes timing plotting##########################################################
 
 from scipy.stats import zscore
 for i in operating_columns:
@@ -303,7 +307,7 @@ for i in trlgrps:
 trlaovs = pd.concat(iteraovs2)
 
 allaovs = pd.concat([sessaovs, trlaovs])
-sn = 'all_anova_tests_gamma_mode.csv'
+sn = 'all_anova_tests_gamma_mode_AIC.csv'
 sp = os.path.join(HA.save_dir, sn)
 allaovs.to_csv(sp)
 
@@ -317,7 +321,7 @@ trial_cols = ['trial', 'session_trial']
 trial_groups = [3,4,5,6]
 for i in trial_groups:
     for j in trial_cols:
-        nplt.plot_trialwise_rel2(avg_gamma_mode_df, y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col=j, n_trial_groups=i)
+        nplt.plot_trialwise_rel2(avg_gamma_mode_df, y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode_AIC', trial_col=j, n_trial_groups=i)
 
 model_groups = ['exp_name', 'exp_group', 'time_group', 'taste']
 gam_pw = ana.fit_piecewise_regression(gamma_mode_df, model_groups, 'gamma_mode', 'trial')
