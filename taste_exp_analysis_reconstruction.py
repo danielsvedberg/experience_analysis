@@ -43,20 +43,14 @@ best_hmms = HA.get_best_hmms(sorting = 'best_BIC', overwrite = True)# sorting = 
 sns.set(style = 'white', font_scale = 1.5, rc={"figure.figsize":(10, 10)})
 ###############################################################################
 ###NAIVE BAYES CLASSIFICATION##################################################
-NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite = False, parallel = True)
-
-NB_meta_save = NB_meta
-NB_decode_save = NB_decode
-#NB_decode = NB_decode.drop(columns = ['index']).drop_duplicates()
-
-NB_meta_,NB_decode,NB_best_,NB_timings = HA.analyze_NB_ID(overwrite = False) #run with no overwrite, make sure to not overwrite NB_meta and NB_decode if you have them
+[],NB_decode,[],[] = HA.analyze_NB_ID(overwrite=False) #run with no overwrite, make sure to not overwrite NB_meta and NB_decode if you have them
 NB_decode[['Y','epoch']] = NB_decode.Y.str.split('_',expand=True)
 NB_decode['taste'] = NB_decode.trial_ID
 NB_decode['state_num'] = NB_decode['hmm_state'].astype(int)
 
 NB_decode = ana.add_session_trial(NB_decode, proj, trial_col='trial_num', trial_id='trial_ID')
 
-nplt.plot_NB_decoding(NB_decode,plotdir = HA.save_dir, trial_group_size = 20)
+nplt.plot_NB_decoding(NB_decode,plotdir=HA.save_dir, trial_group_size=20)
 
 NB_summary = NB_decode.groupby(['exp_name','time_group','trial_ID','prestim_state','rec_dir','hmm_state']).agg('mean').reset_index()
 
@@ -65,51 +59,16 @@ nplt.plot_NB_decoding(NB_decode, plotdir=HA.save_dir, trial_group_size=5, trial_
 
 ###############################################################################
 ###Naive Bayes timing preprocessing##########################################################
-
-NB_meta_,NB_decode,NB_best_,NB_timings = HA.analyze_NB_ID(overwrite = False) #run with no overwrite, make sure to not overwrite NB_meta and NB_decode if you have them
-NB_decode[['Y','epoch']] = NB_decode.Y.str.split('_',expand=True)
-NB_decode['state_num'] = NB_decode['hmm_state'].astype('int64')
-NB_decode['taste'] = NB_decode['trial_ID']
-grcols = ['rec_dir','trial_num','taste','state_num']
-NB_decsub = NB_decode[grcols+['p_correct']].drop_duplicates()
-
-NB_timings = NB_timings.merge(NB_decsub, on = grcols, how = 'left')
-NB_timings = NB_timings.drop_duplicates()
-NB_timings[['Y','epoch']] = NB_timings.state_group.str.split('_',expand=True)
-avg_timing = NB_timings.groupby(['exp_name','taste', 'state_group']).mean()[['t_start','t_end','t_med','duration']]
-avg_timing = avg_timing.rename(columns = lambda x : 'avg_'+x)
-
-
-NB_timings = pd.merge(NB_timings, avg_timing, on = ['exp_name', 'taste','state_group'], how = 'left').drop_duplicates()
-NB_timings = NB_timings.reset_index()
-idxcols1 = list(NB_timings.loc[:,'exp_name':'state_num'].columns)
-idxcols2 = list(NB_timings.loc[:, 'pos_in_trial':].columns)
-idxcols = idxcols1 + idxcols2
-NB_timings = NB_timings.set_index(idxcols)
-NB_timings = NB_timings.reset_index()
-NB_timings = NB_timings.set_index(['exp_name','taste', 'state_group','session_trial','time_group'])
-operating_columns = ['t_start','t_end','t_med', 'duration']
-
-#remove all trials with less than 3 states
-NB_timings = NB_timings.groupby(['rec_dir','taste','session_trial']).filter(lambda x: len(x) >= 3)
+NB_timings = hmma.getNBTimings(HA)
 
 ###Naive Bayes timing ANOVA###
+aov_groups = ['time_group','exp_group','epoch']
+within = ['taste']
+subject = 'exp_name'
+dvcols = ['t_start','t_end','t_med','duration', 't_start_zscore', 't_end_zscore', 't_med_zscore', 'duration_zscore']
+NB_aov, NB_ph = ana.iter_trial_group_anova(NB_timings, aov_groups,dvcols, within, subject, trial_cols=['trial_num', 'session_trial'], save_dir=HA.save_dir, save_suffix='NB_timings')
 
 ###Naive Bayes timing plotting##########################################################
-
-from scipy.stats import zscore
-for i in operating_columns:
-    zscorename = i+'_zscore'
-    abszscorename = i+'_absZscore'
-    NB_timings[zscorename] = NB_timings.groupby(['exp_name', 'state_group'])[i].transform(lambda x: zscore(x))
-    NB_timings[zscorename] = NB_timings[zscorename].fillna(0)
-    #NB_timings[abszscorename] = abs(NB_timings[zscorename])
-
-NB_timings = NB_timings.reset_index()
-NB_timings['trial-group'] = NB_timings['trial_group']
-NB_timings['session_trial'] = NB_timings.session_trial.astype(int) #make trial number an int
-NB_timings['time_group'] = NB_timings.time_group.astype(int) #make trial number an int
-
 # plot timing correlations grouped by session:
 nplt.plot_NB_timing(NB_timings, HA.save_dir, trial_group_size=20, trial_col='session_trial')
 nplt.plot_NB_timing(NB_timings, HA.save_dir, trial_group_size=5, trial_col='trial_num')
@@ -153,34 +112,7 @@ nplt.plot_changepoint_histograms(cngpts, save_dir=HA.save_dir)
 
 ##############################################################################
 ###mixed LM trial split analysis #############################################
-NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite = False, parallel = True) #run with overwrite
-
-NB_decode['state_num'] = NB_decode['hmm_state'].astype('int64')
-NB_decode['taste'] = NB_decode['trial_ID']
-grcols = ['rec_dir','trial_num','taste','state_num']
-NB_decsub = NB_decode[grcols+['p_correct']].drop_duplicates()
-
-NB_timings = NB_timings.merge(NB_decsub, on = grcols, how = 'left')
-NB_timings = NB_timings.drop_duplicates()
-NB_timings[['Y','epoch']] = NB_timings.state_group.str.split('_',expand=True)
-avg_timing = NB_timings.groupby(['exp_name','taste', 'state_group']).mean()[['t_start','t_end','t_med','duration']]
-avg_timing = avg_timing.rename(columns = lambda x : 'avg_'+x)
-
-
-NB_timings = pd.merge(NB_timings, avg_timing, on = ['exp_name', 'taste','state_group'], how = 'left').drop_duplicates()
-NB_timings = NB_timings.reset_index()
-idxcols1 = list(NB_timings.loc[:,'exp_name':'state_num'].columns)
-idxcols2 = list(NB_timings.loc[:, 'pos_in_trial':].columns)
-idxcols = idxcols1 + idxcols2
-NB_timings = NB_timings.set_index(idxcols)
-NB_timings = NB_timings.reset_index()
-from scipy.stats import zscore
-for i in operating_columns:
-    zscorename = i+'_zscore'
-    abszscorename = i+'_absZscore'
-    NB_timings[zscorename] = NB_timings.groupby(['exp_name', 'state_group'])[i].transform(lambda x: zscore(x))
-    NB_timings[zscorename] = NB_timings[zscorename].fillna(0)
-
+NB_timings = hmma.getNBtimings(HA)
 fit_groups = ['exp_group', 'time_group']
 model_groups = ['exp_name','taste']
 grouping = fit_groups + model_groups
@@ -199,7 +131,6 @@ taste_col = 'taste'
 session_col = 'time_group'
 condition_col = 'exp_group'
 model_groups = ['exp_group', 'time_group', 'taste', 'exp_name']
-
 
 results_df = ana.find_changepoints_individual(early_timings, model_groups, fit_groups, trial_col, response_col)
 nplt.plot_piecewise_individual_models(results_df,session_col,taste_col,condition_col,trial_col,response_col, subject_col, HA.save_dir)
@@ -228,10 +159,6 @@ nplt.plotRsquared(NB_corrs,yfacs,save_dir = HA.save_dir, save_prefix = 'NB_timin
 groupings = ['time_group','exp_group','state_group','taste']
 NB_corrs_tst = hmma.analyze_state_correlations(df, groupings,'trial_num', features)
 nplt.plotRsquared(NB_corrs_tst,yfacs, row = 'taste', save_dir = HA.save_dir, save_prefix = 'NB_timing')
-
-
-
-
 
 ###############################################################################
 ###LR ANALYSIS
@@ -284,45 +211,24 @@ avg_model_groups = ['exp_group', 'time_group', 'taste']
 aov_groups = ['time_group','exp_group']
 within = ['taste','trial_group']
 subject = 'exp_name'
-trial_col='session_trial'
-trlgrps = [3,4,5,6]
-iteraovs = []
-iterpws = []
-for i in trlgrps:
-    aovs, pws = ana.trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dv='gamma_mode', within=within, subject=subject, trial_col=trial_col, n_trial_groups=i, save_dir=HA.save_dir)
-    iteraovs.append(aovs)
-    iterpws.append(pws)
 
-sessaovs = pd.concat(iteraovs)
+gm_aov, gm_ph = ana.iter_trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dep_vars='gamma_mode', within=within, save_dir=HA.save_dir)
 
-trial_col = 'trial'
-iteraovs2 = []
-iterpws2 = []
-trlgrps = [3,4,5,6]
-for i in trlgrps:
-    aovs, pws = ana.trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dv='gamma_mode', within=within, subject=subject, trial_col=trial_col, n_trial_groups=i, save_dir=HA.save_dir)
-    iteraovs2.append(aovs)
-    iterpws2.append(pws)
-
-trlaovs = pd.concat(iteraovs2)
-
-allaovs = pd.concat([sessaovs, trlaovs])
-sn = 'all_anova_tests_gamma_mode_AIC.csv'
-sp = os.path.join(HA.save_dir, sn)
-allaovs.to_csv(sp)
-
+### plot gamma mode probability over time #####################################
 avg_gamma_mode_df['pr(mode state)'] = avg_gamma_mode_df.gamma_mode
 avg_gamma_mode_df['trial bin'] = avg_gamma_mode_df.trial_bin
 avg_gamma_mode_df['session trial bin'] = avg_gamma_mode_df.session_trial_bin
 avg_gamma_mode_df['session_trial'] = avg_gamma_mode_df.session_trial.astype(int)
-#nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='trial bin', y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='trial')
-#nplt.plot_trialwise_rel(avg_gamma_mode_df, x_col='session trial bin', y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode', trial_col='session_trial')
+
 trial_cols = ['trial', 'session_trial']
 trial_groups = [3,4,5,6]
 for i in trial_groups:
     for j in trial_cols:
         nplt.plot_trialwise_rel2(avg_gamma_mode_df, y_facs=['pr(mode state)'], save_dir=HA.save_dir, save_prefix='gamma_mode_AIC', trial_col=j, n_trial_groups=i)
 
+#TODO: create plotting function for ANOVAs
+
+### perform piecewise regression of gamma mode and plot over trials ############
 model_groups = ['exp_name', 'exp_group', 'time_group', 'taste']
 gam_pw = ana.fit_piecewise_regression(gamma_mode_df, model_groups, 'gamma_mode', 'trial')
 gam_pw = gam_pw.sort_values(['time_group'])
@@ -334,7 +240,6 @@ gamavg_pw = gamavg_pw.sort_values(['time_group'])
 gamavg_pw = gamavg_pw.sort_values(['converged'], ascending = False)
 grvars = ['exp_group']
 nplt.plot_multiple_piecewise_regression(gamavg_pw, grvars=grvars, save_dir=HA.save_dir)
-
 
 ### is max gamma probability of mode state correlated with accuracy? ##########
 maxgammadf = hmma.getMaxGamma(best_hmms, trial_group = 5)

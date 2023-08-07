@@ -1783,6 +1783,47 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
             
     return pd.DataFrame(out)
 
+def getNBTimings(HA):
+    NB_meta, NB_decode, NB_best, NB_timings = HA.analyze_NB_ID(
+        overwrite=False)  # run with no overwrite, make sure to not overwrite NB_meta and NB_decode if you have them
+    NB_decode[['Y', 'epoch']] = NB_decode.Y.str.split('_', expand=True)
+    NB_decode['state_num'] = NB_decode['hmm_state'].astype('int64')
+    NB_decode['taste'] = NB_decode['trial_ID']
+    grcols = ['rec_dir', 'trial_num', 'taste', 'state_num']
+    NB_decsub = NB_decode[grcols + ['p_correct']].drop_duplicates()
+    NB_timings = NB_timings.merge(NB_decsub, on=grcols, how='left')
+    NB_timings = NB_timings.drop_duplicates()
+    NB_timings[['Y', 'epoch']] = NB_timings.state_group.str.split('_', expand=True)
+    avg_timing = NB_timings.groupby(['exp_name', 'taste', 'state_group']).mean()[
+        ['t_start', 't_end', 't_med', 'duration']]
+    avg_timing = avg_timing.rename(columns=lambda x: 'avg_' + x)
+
+    NB_timings = pd.merge(NB_timings, avg_timing, on=['exp_name', 'taste', 'state_group'], how='left').drop_duplicates()
+    NB_timings['epoch'] = NB_timings['epoch'].fillna('prestim')
+
+    NB_timings = NB_timings.reset_index()
+    idxcols1 = list(NB_timings.loc[:, 'exp_name':'state_num'].columns)
+    idxcols2 = list(NB_timings.loc[:, 'pos_in_trial':].columns)
+    idxcols = idxcols1 + idxcols2
+    NB_timings = NB_timings.set_index(idxcols)
+    NB_timings = NB_timings.reset_index()
+
+    # remove all trials with less than 3 states
+    NB_timings = NB_timings.groupby(['rec_dir', 'taste', 'session_trial']).filter(lambda x: len(x) >= 3)
+
+    NB_timings = NB_timings.set_index(['exp_name', 'taste', 'state_group', 'session_trial', 'time_group'])
+    operating_columns = ['t_start', 't_end', 't_med', 'duration']
+
+    for i in operating_columns:
+        zscorename = i + '_zscore'
+        NB_timings[zscorename] = NB_timings.groupby(['exp_name', 'state_group'])[i].transform(lambda x: scistats.zscore(x))
+        NB_timings[zscorename] = NB_timings[zscorename].fillna(0)
+
+    NB_timings = NB_timings.reset_index()
+    NB_timings['session_trial'] = NB_timings.session_trial.astype(int)  # make trial number an int
+    NB_timings['time_group'] = NB_timings.time_group.astype(int)  # make trial number an int
+
+    return NB_timings
 
 def getMaxGamma(best_hmms, trial_group = 5):
     def maxgamma(row):

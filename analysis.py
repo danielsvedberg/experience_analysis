@@ -21,7 +21,7 @@ from scipy.stats import mannwhitneyu, spearmanr, sem, f_oneway, rankdata, pearso
 from blechpy import load_project, load_dataset, load_experiment
 from blechpy.plotting import data_plot as dplt
 from copy import deepcopy
-from blechpy.analysis import spike_analysis as sas, poissonHMM as phmm 
+from blechpy.analysis import spike_analysis as sas, poissonHMM as phmm
 from blechpy.dio import h5io
 from scipy.stats import sem
 from blechpy.utils import write_tools as wt
@@ -34,12 +34,12 @@ from pushbullet_tools import push_message as pm
 
 # PAL_MAP = {'Water': -1, 'Saccharin': -1, 'Quinine': 1,
 #            'Citric Acid': 2, 'NaCl': 3}
-           
+
 PAL_MAP = {'Spont': -1, 'Suc': 1, 'QHCl': 4,
            'CA': 3, 'NaCl': 2}
 
-ELECTRODES_IN_GC = {'DS31':'both','DS33':'both','DS36':'both','DS39':'both','DS40':'both', 'DS41':'both', 'DS41':'both', 'DS42':'both','DS44':'both','DS45':'both','DS46':'both','DS47':'both'}
-
+ELECTRODES_IN_GC = {'DS31': 'both', 'DS33': 'both', 'DS36': 'both', 'DS39': 'both', 'DS40': 'both', 'DS41': 'both',
+                    'DS41': 'both', 'DS42': 'both', 'DS44': 'both', 'DS45': 'both', 'DS46': 'both', 'DS47': 'both'}
 
 ANALYSIS_PARAMS = {'taste_responsive': {'win_size': 750, 'alpha': 0.05},
                    'pal_responsive': {'win_size': 250, 'step_size': 25,
@@ -47,7 +47,7 @@ ANALYSIS_PARAMS = {'taste_responsive': {'win_size': 750, 'alpha': 0.05},
                    'baseline_comparison': {'win_size': 1500, 'alpha': 0.01},
                    'response_comparison': {'win_size': 250, 'step_size': 250,
                                            'time_win': [0, 1500], 'alpha': 0.05,
-                                           'n_boot':10000},
+                                           'n_boot': 10000},
                    'psth': {'win_size': 250, 'step_size': 25, 'smoothing_win': 3,
                             'plot_window': [-1000, 2000]},
                    'pca': {'win_size': 750, 'step_size': 750,
@@ -64,6 +64,7 @@ elif LOCAL_MACHINE == 'StealthElf':
 
 DATA_DIR = '/media/dsvedberg/T7'
 
+
 def get_file_dirs(animID):
     anim_dir = os.path.join(DATA_DIR, animID)
     fd = [os.path.join(anim_dir, x) for x in os.listdir(anim_dir)]
@@ -79,7 +80,7 @@ def get_file_dirs(animID):
 
 def update_params(new, old):
     out = deepcopy(old)
-    for k,v in new.items():
+    for k, v in new.items():
         if isinstance(v, dict) and k in out:
             out[k].update(v)
         else:
@@ -128,7 +129,7 @@ class ProjectAnalysis(object):
 
         return all_units, held_df
 
-    def get_unit_info(self, overwrite = False):
+    def get_unit_info(self, overwrite=False):
         save_dir = self.save_dir
         all_units_file = self.files['all_units']
         held_units_file = self.files['held_units']
@@ -138,7 +139,7 @@ class ProjectAnalysis(object):
         all_units = feather.read_dataframe(all_units_file)
         held_df = feather.read_dataframe(held_units_file)
         if 'time_group' not in all_units.columns or overwrite == True:
-            all_units = apply_groups_from_proj(all_units,self.project)
+            all_units = apply_groups_from_proj(all_units, self.project)
             self.write_unit_info(all_units=all_units)
 
         if 'time_group' not in held_df.columns or overwrite == True:
@@ -212,7 +213,7 @@ class ProjectAnalysis(object):
             data = np.load(save_file)
             return data
         else:
-            #rec_map = {'preCTA': 'postCTA', 'ctaTrain': 'ctaTest'}
+            # rec_map = {'preCTA': 'postCTA', 'ctaTrain': 'ctaTest'}
             all_units = all_units.dropna(subset=['held_unit_name'])
             all_units = all_units[all_units['area'] == 'GC']
             # learn_map = self.project._exp_info.set_index('exp_name')['CTA_learned']
@@ -220,7 +221,7 @@ class ProjectAnalysis(object):
 
             # Output structures
             alpha = params['response_comparison']['alpha']
-            labels = [] # List of tuples: (exp_group, exp_name, cta_group, held_unit_name, taste)
+            labels = []  # List of tuples: (exp_group, exp_name, cta_group, held_unit_name, taste)
             pvals = []
             differences = []
             sem_diffs = []
@@ -238,18 +239,19 @@ class ProjectAnalysis(object):
                         else:
                             unit_id2 = post_row.index[0]
                             post_row = post_row.to_dict(orient='records')[0]
-    
+
                         rec1 = row['rec_dir']
                         rec2 = post_row['rec_dir']
                         unit1 = row['unit_num']
-                        unit2= post_row['unit_num']
+                        unit2 = post_row['unit_num']
                         exp_group = row['exp_group']
                         exp_name = row['exp_name']
-                        print('Comparing Held Unit %s, %s vs %s' % (held_unit_name, row['rec_name'], post_row['rec_name']))
-    
+                        print('Comparing Held Unit %s, %s vs %s' % (
+                            held_unit_name, row['rec_name'], post_row['rec_name']))
+
                         tastes, pvs, tstat, md, md_sem, ctime, dtime = \
-                                compare_taste_responses(rec1, unit1, rec2, unit2,
-                                                        params, method='anova')
+                            compare_taste_responses(rec1, unit1, rec2, unit2,
+                                                    params, method='anova')
                         l = [(exp_group, exp_name,
                               held_unit_name, t) for t in tastes]
                         labels.extend(l)
@@ -261,26 +263,26 @@ class ProjectAnalysis(object):
                             comp_time = ctime
                         elif not np.array_equal(ctime, comp_time):
                             raise ValueError('Times dont match')
-    
+
                         if diff_time is None:
                             diff_time = dtime
                         elif not np.array_equal(dtime, diff_time):
                             raise ValueError('Times dont match')
-    
+
                         for i, tst in enumerate(tastes):
                             plot_dir = os.path.join(save_dir, 'Held_Unit_Plots', tst)
                             new_plot_dir = os.path.join(plot_dir, 'clean_plots')
                             if not os.path.isdir(plot_dir):
                                 os.makedirs(plot_dir)
-    
+
                             if not os.path.isdir(new_plot_dir):
                                 os.makedirs(new_plot_dir)
-    
+
                             fig_file = os.path.join(plot_dir, 'Held_Unit_%s-%s.svg' % (held_unit_name, tst))
                             new_fn = os.path.join(new_plot_dir,
                                                   'Held_Unit_%s-%s.svg' %
                                                   (held_unit_name, tst))
-    
+
                             plt.plot_held_unit_comparison(rec1, unit1, rec2, unit2,
                                                           pvs[i], params, held_unit_name,
                                                           exp_name, exp_group, tst,
@@ -290,7 +292,7 @@ class ProjectAnalysis(object):
                                                            exp_name, exp_group, tst,
                                                            save_file=new_fn)
 
-            labels = np.vstack(labels) # exp_group, exp_name, cta_group, held_unit_name, taste
+            labels = np.vstack(labels)  # exp_group, exp_name, cta_group, held_unit_name, taste
             pvals = np.vstack(pvals)
             test_stats = np.vstack(test_stats)
             differences = np.vstack(differences)
@@ -318,7 +320,7 @@ class ProjectAnalysis(object):
 
         alpha = params['response_comparison']['alpha']
         n_boot = params['response_comparison']['n_boot']
-        labels = data['labels'] # exp_group, exp_name, held_unit_name, taste
+        labels = data['labels']  # exp_group, exp_name, held_unit_name, taste
         pvals = data['pvals']
         comp_time = data['comp_time']
         mean_diff = data['mean_diff']
@@ -340,7 +342,7 @@ class ProjectAnalysis(object):
                                           save_file=heatmap_file, t_start=0)
         for tst in tastes:
             df = all_df[all_df['taste'] == tst]
-            idx = np.where(labels[:,-1] == tst)[0]
+            idx = np.where(labels[:, -1] == tst)[0]
             l = labels[idx, :]
             p = pvals[idx, :]
             md = mean_diff[idx, :]
@@ -395,18 +397,17 @@ class ProjectAnalysis(object):
             if not os.path.isdir(anim_dir):
                 os.makedirs(anim_dir)
 
-            animals = np.unique(l[:,1])
+            animals = np.unique(l[:, 1])
             for anim in animals:
-                fn = os.path.join(anim_dir, '%s_%s_responses_changed.svg' % (anim,tst))
-                a_idx = np.where(l[:,1] == anim)[0]
-                a_l = l[a_idx,:]
+                fn = os.path.join(anim_dir, '%s_%s_responses_changed.svg' % (anim, tst))
+                a_idx = np.where(l[:, 1] == anim)[0]
+                a_l = l[a_idx, :]
                 a_p = p[a_idx, :]
                 a_md = md[a_idx, :]
                 a_sd = sd[a_idx, :]
                 plt.plot_held_percent_changed(a_l, comp_time, a_p, diff_time,
                                               a_md, a_sd, alpha, anim + ': ' + tst,
                                               save_file=fn)
-
 
         return
 
@@ -432,7 +433,7 @@ class ProjectAnalysis(object):
             os.remove(resp_file)
 
         fn = os.path.join(save_dir, 'unit_firing_rates.svg')
-        [all_units,held_df] = self.get_unit_info()
+        [all_units, held_df] = self.get_unit_info()
         nplt.plot_unit_firing_rates(all_units, save_file=fn)
 
         all_units = all_units[all_units['single_unit']]
@@ -447,7 +448,7 @@ class ProjectAnalysis(object):
         df = resp_units.query('exclude == False and taste != "Spont"')
         nplt.plot_taste_responsive_units(df, fn)
 
-        pal_units = all_units#[all_units.rec_name.str.contains('4taste')].copy()
+        pal_units = all_units  # [all_units.rec_name.str.contains('4taste')].copy()
         plot_dir = os.path.join(save_dir, 'single_unit_plots')
         if not os.path.isdir(plot_dir):
             os.mkdir(plot_dir)
@@ -458,7 +459,7 @@ class ProjectAnalysis(object):
         print('-' * 80)
         print('Processing taste discrimination and palatability')
         print('-' * 80)
-        pal_units = pal_units.apply(foo, axis=1) #causes problem
+        pal_units = pal_units.apply(foo, axis=1)  # causes problem
         pal_units['taste_discriminative'] = pal_units['taste_discriminative'].astype('bool')
         pal_units['exclude'] = pal_units.apply(agg.apply_exclude, axis=1)
         feather.write_dataframe(pal_units, pal_unit_file)
@@ -477,15 +478,15 @@ class ProjectAnalysis(object):
         params = self.get_params()
         # For responsive, plot 
         if 'time_group' not in resp_units.columns or 'time_group' not in pal_units.columns:
-            time_map = {'preCTA' : 'preCTA', 'ctaTrain': 'preCTA', 'ctaTest':
-                        'postCTA', 'postCTA': 'postCTA'}
+            time_map = {'preCTA': 'preCTA', 'ctaTrain': 'preCTA', 'ctaTest':
+                'postCTA', 'postCTA': 'postCTA'}
             resp_units['time_group'] = resp_units.rec_group.map(time_map)
             pal_units['time_group'] = pal_units.rec_group.map(time_map)
 
         tmp_grp = resp_units.groupby(['exp_group', 'time_group', 'taste'])['taste_responsive']
         resp_df = tmp_grp.apply(lambda x: 100 * np.sum(x) / len(x)).reset_index()
-        #plt.plot_taste_responsive(resp_df, resp_file)
-        #plt.plot_taste_discriminative(pal_units, discrim_file)
+        # plt.plot_taste_responsive(resp_df, resp_file)
+        # plt.plot_taste_discriminative(pal_units, discrim_file)
         plt.plot_aggregate_spearman(pal_units, spearman_file)
         plt.plot_aggregate_pearson(pal_units, pearson_file)
 
@@ -494,7 +495,7 @@ class ProjectAnalysis(object):
         resp_time = os.path.join(save_dir, 'Taste_responsive_over_time.svg')
         resp_data = os.path.join(save_dir, 'taste_responsive_pvals.npz')
         pal_data = os.path.join(save_dir, 'palatability_data.npz')
-        #plt.plot_mean_spearman(pal_data, spear_mean)
+        # plt.plot_mean_spearman(pal_data, spear_mean)
         nplt.plot_mean_spearman_correlation(pal_data, self.project, spear_mean)
         plt.plot_mean_pearson(pal_data, pear_mean)
         alpha = params['taste_responsive']['alpha']
@@ -512,7 +513,8 @@ class ProjectAnalysis(object):
         if not os.path.isdir(save_dir):
             os.mkdir(save_dir)
 
-        if os.path.isfile(pc_data_file) and os.path.isfile(dist_data_file) and os.path.isfile(other_dist_file) and not overwrite:
+        if os.path.isfile(pc_data_file) and os.path.isfile(dist_data_file) and os.path.isfile(
+                other_dist_file) and not overwrite:
             pc_data = feather.read_dataframe(pc_data_file)
             dist_data = feather.read_dataframe(dist_data_file)
             other_dist_data = feather.read_dataframe(other_dist_file)
@@ -538,14 +540,14 @@ class ProjectAnalysis(object):
         grp = held_units.groupby(['exp_name', 'exp_group', 'time_group'])
         pc_data = grp.apply(lambda x: pop.apply_pca_analysis(x, params)).reset_index().drop(columns=['level_3'])
         pc_data['time'] = pc_data['time'].astype('int')
-        pc_data['time'] = pc_data.time.apply(lambda x: 'Early (0-750ms)' if x <=750 else 'Late (750-1500ms)')
+        pc_data['time'] = pc_data.time.apply(lambda x: 'Early (0-750ms)' if x <= 750 else 'Late (750-1500ms)')
         grp = pc_data.groupby(['exp_name', 'exp_group', 'time_group', 'time'])
         dist_data = grp.apply(pop.apply_pc_distances).reset_index()
         pc_dist_metrics = grp.apply(pop.apply_pc_dist_metric).reset_index(drop=True)
         mds_dist_metrics = grp.apply(pop.apply_mds_dist_metric).reset_index(drop=True)
         dist_metrics = pd.merge(pc_dist_metrics, mds_dist_metrics,
                                 on=['exp_name', 'exp_group', 'time_group',
-                                    'time', 'taste','trial', 'n_cells', 'PC1',
+                                    'time', 'taste', 'trial', 'n_cells', 'PC1',
                                     'PC2', 'MDS1', 'MDS2'])
         dist_metrics = agg.apply_grouping_cols(dist_metrics, self.project)
         pc_data = agg.apply_grouping_cols(pc_data, self.project)
@@ -605,67 +607,68 @@ class ProjectAnalysis(object):
         nplt.plot_saccharin_consumption(self.project, fn)
 
     def run(self, overwrite=False):
-        #self.fix_areas()
-        #self.fix_palatability()
-        #self.detect_held_units(overwrite=overwrite, raw_waves=True)
+        # self.fix_areas()
+        # self.fix_palatability()
+        # self.detect_held_units(overwrite=overwrite, raw_waves=True)
         self.analyze_response_changes(overwrite=overwrite)
         self.make_aggregate_held_unit_plots()
         self.process_single_units(overwrite=overwrite)
         self.make_aggregate_single_unit_plots()
         self.pca_analysis(overwrite=overwrite)
         self.plot_pca_data()
-        #self.plot_saccharin_consumption()
+        # self.plot_saccharin_consumption()
 
 
 def apply_info_from_rec_dir(row):
     rd1 = row['rec1']
     rd2 = row['rec2']
-    
-    try: 
-        row['held_over'] = 'd_'+rd1['rec_num']+'_'+rd2['rec_num']
+
+    try:
+        row['held_over'] = 'd_' + rd1['rec_num'] + '_' + rd2['rec_num']
         row['time_group'] = None
     except:
-        raise ValueError('Doesnt fit into group')      
-        
+        raise ValueError('Doesnt fit into group')
+
     rec = os.path.basename(rd1).split('_')
     row['exp_name'] = rec[0]
     row['rec_group'] = 'None'
     return row
 
-def apply_groups_from_proj(df,proj):
-    
-    cols = ['exp_name','exp_group', 'rec_num','rec_group','rec_day', 'time_group']
+
+def apply_groups_from_proj(df, proj):
+    cols = ['exp_name', 'exp_group', 'rec_num', 'rec_group', 'rec_day', 'time_group']
     for i in cols:
         try:
             df.pop(i)
         except:
             pass
     rec_info = proj.get_rec_info()
-    sel = rec_info[['rec_dir','exp_name','exp_group','rec_num']]
+    sel = rec_info[['rec_dir', 'exp_name', 'exp_group', 'rec_num']]
     sel['time_group'] = sel['rec_num'].astype('str')
-    sel['rec_group']=sel['exp_group']+'_'+sel['time_group']
-    
-    df = df.merge(sel,how='inner', on=['rec_dir'])
+    sel['rec_group'] = sel['exp_group'] + '_' + sel['time_group']
+
+    df = df.merge(sel, how='inner', on=['rec_dir'])
     df = df.drop_duplicates()
     return df
-    
-#TODO: fix merge so it can handle the overwrite or whatever
-def apply_info_from_all_units(held_df,all_units):
+
+
+# TODO: fix merge so it can handle the overwrite or whatever
+def apply_info_from_all_units(held_df, all_units):
     try:
-        sel = all_units[['rec_dir','rec_num']]
+        sel = all_units[['rec_dir', 'rec_num']]
         sel1 = sel.rename(columns={'rec_dir': 'rec1', 'rec_num': 'r1num'})
         sel1 = sel1.drop_duplicates()
-        sel2 = sel.rename(columns={'rec_dir':'rec2', 'rec_num':'r2num'})
+        sel2 = sel.rename(columns={'rec_dir': 'rec2', 'rec_num': 'r2num'})
         sel2 = sel2.drop_duplicates()
         try:
             held_df.pop('r1num')
             held_df.pop('r2num')
         except:
             pass
-        held_df = pd.merge(held_df, sel1,how="inner", on=['rec1'])
+        held_df = pd.merge(held_df, sel1, how="inner", on=['rec1'])
         held_df = pd.merge(held_df, sel2, how="inner", on=['rec2'])
-        held_df['held_over'] = 'd_'+held_df['r1num'].astype(str)+'_'+held_df['r2num'].astype(str)
-        
+        held_df['held_over'] = 'd_' + held_df['r1num'].astype(str) + '_' + held_df['r2num'].astype(str)
+
         held_df['time_group'] = None
 
         # rd1 = row['rec1']
@@ -673,10 +676,9 @@ def apply_info_from_all_units(held_df,all_units):
         # rn1 = all_units['rec_num'].loc[all_units.rec_dir == rd1]
         # rn2 = all_units['rec_num'].loc[all_units.rec_dir == rd2]
     except:
-        raise ValueError('Doesnt fit into group')  
+        raise ValueError('Doesnt fit into group')
 
     return held_df
-
 
 
 def apply_discrim_and_pal(row, params, save_file, plot_dir):
@@ -755,7 +757,7 @@ def apply_discrim_and_pal(row, params, save_file, plot_dir):
         p_rs = np.zeros((n_bins,))
         p_ps = np.ones((n_bins,))
         for i, t in enumerate(time):
-            if all(responses[:,i] == 0):
+            if all(responses[:, i] == 0):
                 continue
             else:
                 response_ranks = rankdata(responses[:, i])
@@ -808,7 +810,7 @@ def apply_discrim_and_pal(row, params, save_file, plot_dir):
         psth_fn = '%s_%s_psth.svg' % (rec_name, unit_name)
         psth_file = os.path.join(plot_dir, 'PSTHs', psth_fn)
         corr_file = os.path.join(plot_dir, 'Palatability', psth_fn.replace('psth', 'corr'))
-        nplt.plot_PSTHs(rec, unit, params, save_file=psth_file) #causes problem
+        nplt.plot_PSTHs(rec, unit, params, save_file=psth_file)  # causes problem
         plt.plot_palatability_correlation(rec_name, unit_name, time, s_rs, s_ps,
                                           p_rs, p_ps, corr_file)
 
@@ -852,9 +854,9 @@ def apply_taste_responsive(row, params, data_file):
     if p > alpha:
         return row
 
-    baseline = fr[:,0]
-    fr = fr[:,1:]
-    fr = [fr[:,i] for i in range(fr.shape[1])]
+    baseline = fr[:, 0]
+    fr = fr[:, 1:]
+    fr = [fr[:, i] for i in range(fr.shape[1])]
     time = time[1:]
     n_bins = len(time)
     # Now use Dunnett's to compare each time bin to baseline
@@ -865,7 +867,7 @@ def apply_taste_responsive(row, params, data_file):
                   row['time_group'], row['taste'])
 
     if os.path.isfile(data_file):
-        data = np.load(data_file,allow_pickle=True)
+        data = np.load(data_file, allow_pickle=True)
         labels = data['labels']
         PV = data['pvals']
         labels = np.vstack((labels, this_label))
@@ -941,7 +943,7 @@ def _deprecated_compare_taste_responses(rec1, unit1, rec2, unit2, params):
         # diff, sem_diff = sas.get_mean_difference(fr1, fr2)
         # ^This looked worse, going back
 
-        #Store stuff
+        # Store stuff
         out_pvals.append(pvals)
         out_ustats.append(ustats)
         out_diff.append(diff)
@@ -996,14 +998,14 @@ class HmmAnalysis(object):
         self.base_params = {'unit_type': 'single', 'dt': 0.001,
                             'max_iter': 500, 'n_repeats': 20, 'time_start': -500,
                             'time_end': 2500, 'n_states': 4, 'area': 'GC',
-                            'hmm_class':'PoissonHMM', 'threshold': 1e-15}
+                            'hmm_class': 'PoissonHMM', 'threshold': 1e-15}
         # base params changed 8/4/20: max_iter 1000 -> 500, time_end 2000 -> 1500, n_states=2
         # changed 8/6/20: n_states->3
         # Changed 8/10/20: time_end-> 1750 & n_states -> 2
 
     def fit(self):
         params = self.base_params
-        #params = [{'n_states': i+2, **tmp.copy()} for i in range(2)]
+        # params = [{'n_states': i+2, **tmp.copy()} for i in range(2)]
         save_file = self.files['hmm_overview']
         fit_df = None
         for i, row in self.project._exp_info.iterrows():
@@ -1040,7 +1042,7 @@ class HmmAnalysis(object):
         PA = ProjectAnalysis(self.project)
         all_units, held_units = PA.get_unit_info()
         refit_hmms(sorted_df, base_params, all_units, log_file=common_log)
-        #ho = self.get_hmm_overview(overwrite=True)
+        # ho = self.get_hmm_overview(overwrite=True)
         return
 
     def get_hmm_overview(self, overwrite=False):
@@ -1059,11 +1061,10 @@ class HmmAnalysis(object):
                     print('processing %s' % os.path.basename(rec_dir))
                     h5_file = hmma.get_hmm_h5(rec_dir)
                     if h5_file is None:
-
                         continue
 
                     handler = phmm.HmmHandler(rec_dir)
-                    #df = handler.get_data_overview().copy()
+                    # df = handler.get_data_overview().copy()
                     df = handler.get_overview_w_AIC().copy()
                     df['rec_dir'] = rec_dir
                     if ho is None:
@@ -1071,9 +1072,9 @@ class HmmAnalysis(object):
                     else:
                         ho = ho.append(df, ignore_index=True)
 
-                    #pbar.update(1)
+                    # pbar.update(1)
 
-            #pbar.close()
+            # pbar.close()
             feather.write_dataframe(ho, self.files['hmm_overview'])
 
         if not 'exp_name' in ho.columns:
@@ -1180,7 +1181,7 @@ class HmmAnalysis(object):
             if l == '\n' or l == '':
                 continue
 
-            vals = l.replace('\n','').split('\t')
+            vals = l.replace('\n', '').split('\t')
             exp_name = vals[0]
             rec_group = vals[1]
             hmm_id = int(vals[2])
@@ -1202,18 +1203,19 @@ class HmmAnalysis(object):
 
         self.write_sorted_hmms(sorted_df)
         return sorted_df
+
     def get_best_hmms(self, overwrite=False, sorting='best', save_dir=None):
         best_file = self.files['best_hmms']
         if save_dir is not None:
             best_file = os.path.join(save_dir, os.path.basename(best_file))
-        
+
         bf = os.path.isfile(best_file)
         if bf and not overwrite:
             best_hmms = feather.read_dataframe(best_file)
             return best_hmms
 
-        df = self.get_sorted_hmms() 
-        all_units, _ = ProjectAnalysis(self.project).get_unit_info() #get unit info fails to pull DS41
+        df = self.get_sorted_hmms()
+        all_units, _ = ProjectAnalysis(self.project).get_unit_info()  # get unit info fails to pull DS41
         out_df = hmma.make_best_hmm_list(all_units, df, sorting=sorting)
         out_df = agg.apply_grouping_cols(out_df, self.project)
         feather.write_dataframe(out_df, best_file)
@@ -1223,11 +1225,11 @@ class HmmAnalysis(object):
         '''kwargs should be column & value and will be used to manually re-sort
         HMMs and mark then as "best", "rejected" or "refit"
         '''
-        qry = ' and '.join(['{} == "{}"'.format(k,v) for k,v in kwargs.items()])
-        nqry = ' or '.join(['{} != "{}"'.format(k,v) for k,v in kwargs.items()])
+        qry = ' and '.join(['{} == "{}"'.format(k, v) for k, v in kwargs.items()])
+        nqry = ' or '.join(['{} != "{}"'.format(k, v) for k, v in kwargs.items()])
         sorted_hmms = self.get_sorted_hmms()
         j = None
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             tmp = (sorted_hmms[k] == v)
             if j is None:
                 j = tmp
@@ -1235,11 +1237,11 @@ class HmmAnalysis(object):
                 j = j & tmp
 
         old_sorting = sorted_hmms.loc[j, 'sorting'].unique()
-        print('-'*80)
+        print('-' * 80)
         print('Marking HMMs as %s' % sorting)
         print(sorted_hmms.loc[j][['exp_name', 'rec_group', 'taste', 'hmm_id',
                                   'sorting', 'sort_method']])
-        print('-'*80)
+        print('-' * 80)
         sorted_hmms.loc[j, 'sorting'] = sorting
         sorted_hmms.loc[j, 'sort_method'] = 'manual'
         # make sure there is only 1 best for each rec_dir & taste
@@ -1263,7 +1265,7 @@ class HmmAnalysis(object):
              (hmm_df['rec_group'] == rec_group) &
              (hmm_df['hmm_id'] == hmm_id))
 
-        print('-'*80)
+        print('-' * 80)
         print('Setting state for HMMs: %s %s %s' % (exp_name, rec_group, hmm_id))
         if early_state is not None:
             print('    - setting early_state to state #%i' % early_state)
@@ -1275,7 +1277,7 @@ class HmmAnalysis(object):
 
         print('Saving dataframe...')
         self.write_sorted_hmms(hmm_df)
-        print('-'*80)
+        print('-' * 80)
 
     def plot_sorted_hmms(self, overwrite=False, skip_tags=[],
                          sorting_tag=None, save_dir=None):
@@ -1296,7 +1298,7 @@ class HmmAnalysis(object):
             tags = sorted_hmms.sorting.unique()
             plot_dirs = {x: os.path.join(save_dir, x) for x in tags}
 
-        for k,v in plot_dirs.items():
+        for k, v in plot_dirs.items():
             if os.path.isdir(v) and overwrite:
                 shutil.rmtree(v)
 
@@ -1308,7 +1310,7 @@ class HmmAnalysis(object):
             fn = '%s_%s_HMM%i-%s.svg' % (row['exp_name'], row['rec_group'],
                                          row['hmm_id'], row['taste'])
 
-            #print(f'plotting {fn}...')
+            # print(f'plotting {fn}...')
             if row['sorting'] not in plot_dirs.keys():
                 pbar.update()
                 continue
@@ -1373,7 +1375,7 @@ class HmmAnalysis(object):
         grpby = sorted_df.groupby(['exp_name', 'rec_group', 'taste'])
         counter = 0
         total = sorted_df.shape[0]
-        #pbar = tqdm(total=sorted_df.shape[0])
+        # pbar = tqdm(total=sorted_df.shape[0])
         for name, group in grpby:
             anim_dir = os.path.join(plot_dir, '_'.join(name))
             if not os.path.isdir(anim_dir):
@@ -1385,155 +1387,158 @@ class HmmAnalysis(object):
                 fn = '_'.join(name) + '_HMM#%s.svg' % row['hmm_id']
                 fn = os.path.join(anim_dir, fn)
                 if os.path.isfile(fn) and not overwrite:
-                    #pbar.update()
+                    # pbar.update()
                     continue
 
-                #print('Plotting HMMs for %s' % ('_'.join(name)))
+                # print('Plotting HMMs for %s' % ('_'.join(name)))
                 plt.plot_hmm(row['rec_dir'], row['hmm_id'], save_file=fn)
-                #pbar.update()
+                # pbar.update()
 
-        #pbar.close()
-        
-    def plot_grouped_BIC(self): #TODO: get rid of hard coding
-        #params: list of params 
+        # pbar.close()
+
+    def plot_grouped_BIC(self):  # TODO: get rid of hard coding
+        # params: list of params
         srt_df = self.get_sorted_hmms()
         srt_df = srt_df.query('time_start==-250')
-        srt_df = srt_df.loc[srt_df.groupby(['taste','exp_group','time_group','n_states','exp_name'])['threshold'].idxmin()]
-        
+        srt_df = srt_df.loc[
+            srt_df.groupby(['taste', 'exp_group', 'time_group', 'n_states', 'exp_name'])['threshold'].idxmin()]
+
         BIC_grp_file = os.path.join(self.save_dir, 'grouped_BIC_comparison.svg')
-        nplt.plot_grouped_BIC(srt_df, save_file = BIC_grp_file)
-        
+        nplt.plot_grouped_BIC(srt_df, save_file=BIC_grp_file)
+
     def plot_best_BIC(self):
         srt_df = self.get_sorted_hmms()
         srt_df = srt_df.query('time_start==-250')
-        srt_df = srt_df.loc[srt_df.groupby(['taste','exp_group','time_group','n_states','exp_name'])['threshold'].idxmin()]
-        srt_df = srt_df.loc[srt_df.groupby(['taste','exp_group','time_group','exp_name'])['BIC'].idxmin()]
-        
+        srt_df = srt_df.loc[
+            srt_df.groupby(['taste', 'exp_group', 'time_group', 'n_states', 'exp_name'])['threshold'].idxmin()]
+        srt_df = srt_df.loc[srt_df.groupby(['taste', 'exp_group', 'time_group', 'exp_name'])['BIC'].idxmin()]
+
         file = os.path.join(self.save_dir, "best_BIC_comparison.svg")
-        nplt.plot_best_BIC(srt_df, save_file = file)
+        nplt.plot_best_BIC(srt_df, save_file=file)
 
     def plot_BIC_comparison(self):
         ho = self.get_hmm_overview()
         BIC_file = os.path.join(self.save_dir, 'bic_comparison.svg')
         nplt.plot_BIC(ho, self.project, save_file=BIC_file)
 
-
-    def analyze_NB_ID(self, overwrite = True, epoch = None, parallel = False):
+    def analyze_NB_ID(self, overwrite=True, epoch=None, parallel=False):
         '''
         critical function for pizza talk decoding analysis of HMM states
         '''
         if overwrite is True:
-            best_hmms = self.get_best_hmms(sorting = "best_BIC")
+            best_hmms = self.get_best_hmms(sorting="best_BIC")
             all_units, _ = ProjectAnalysis(self.project).get_unit_info()
-            
+
             if parallel == True:
                 NB_res, NB_meta = hmma.analyze_NB_state_classification_parallel(best_hmms, all_units)
             else:
-                NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms, all_units)#, epoch = epoch, prestim = True)
-                
-            decode_data = hmma.process_NB_classification(NB_meta,NB_res)
-            
+                NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms,
+                                                                       all_units)  # , epoch = epoch, prestim = True)
+
+            decode_data = hmma.process_NB_classification(NB_meta, NB_res)
+
             best_cop = best_hmms
             decode_data = decode_data.reset_index(drop=True)
-            
-            fm = decode_data[['exp_name','time_group','trial_ID','Y','hmm_state','hmm_id']].drop_duplicates()
-            fm = fm.pivot(index = ['exp_name','time_group','trial_ID','hmm_id'], columns = 'Y', values = 'hmm_state')
+
+            fm = decode_data[['exp_name', 'time_group', 'trial_ID', 'Y', 'hmm_state', 'hmm_id']].drop_duplicates()
+            fm = fm.pivot(index=['exp_name', 'time_group', 'trial_ID', 'hmm_id'], columns='Y', values='hmm_state')
             fm = fm.fillna(0)
-            ecols = fm.loc[:,fm.columns.str.endswith('early')].astype(int)
-            fm['early'] = ecols.sum(skipna = False,axis = 1)
-            
-            lcols = fm.loc[:,fm.columns.str.endswith('late')].astype(int)
-            fm['late'] = lcols.sum(skipna = False, axis = 1)
-            fm = fm[['prestim','early', 'late']].reset_index()
-            
+            ecols = fm.loc[:, fm.columns.str.endswith('early')].astype(int)
+            fm['early'] = ecols.sum(skipna=False, axis=1)
+
+            lcols = fm.loc[:, fm.columns.str.endswith('late')].astype(int)
+            fm['late'] = lcols.sum(skipna=False, axis=1)
+            fm = fm[['prestim', 'early', 'late']].reset_index()
+
             try:
-                best_cop = best_cop.drop(columns = ['ID_state','trial_ID'])
+                best_cop = best_cop.drop(columns=['ID_state', 'trial_ID'])
             except:
                 print('good')
-                
+
             best_cop['time_group'] = best_cop.time_group.astype(int)
             best_cop['hmm_id'] = best_cop.hmm_id.astype(int)
             fm['time_group'] = fm.time_group.astype(int)
             fm['hmm_id'] = fm.hmm_id.astype(int)
-            best_hmms = best_cop.merge(fm, on=["exp_name","time_group","hmm_id"])
+            best_hmms = best_cop.merge(fm, on=["exp_name", "time_group", "hmm_id"])
             best_hmms = best_hmms.drop_duplicates()
-            
-            timings = hmma.analyze_classified_hmm_state_timing(best_hmms,decode_data, min_dur = 50)
+
+            timings = hmma.analyze_classified_hmm_state_timing(best_hmms, decode_data, min_dur=50)
             proj = self.project
             trial_info = proj.get_trial_info()
-            trial_info = trial_info.rename(columns = {'name':'taste', 'trial_num':'session_trial', 'taste_trial':'trial_num'})
-            trial_info = trial_info[['trial_num','taste','off_time', 'session_trial','rec_dir']]
+            trial_info = trial_info.rename(
+                columns={'name': 'taste', 'trial_num': 'session_trial', 'taste_trial': 'trial_num'})
+            trial_info = trial_info[['trial_num', 'taste', 'off_time', 'session_trial', 'rec_dir']]
             trial_info['trial_num'] = trial_info['trial_num'] - 1
-            timings = pd.merge(timings, trial_info, on = ['rec_dir','taste', 'trial_num'], how = 'left')
+            timings = pd.merge(timings, trial_info, on=['rec_dir', 'taste', 'trial_num'], how='left')
             timings = timings.drop_duplicates()
-            timings['session_trial'] = timings.groupby(['rec_dir'])['session_trial'].transform(lambda x: x-x.min())
-            
+            timings['session_trial'] = timings.groupby(['rec_dir'])['session_trial'].transform(lambda x: x - x.min())
+
             save_dir = self.save_dir
             ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')
             self.files['early_ID_timing'] = ID_timing_sf
             feather.write_dataframe(timings, ID_timing_sf)
-            
-            ID_decode_sf = os.path.join(save_dir,'ID_decode.feather')
+
+            ID_decode_sf = os.path.join(save_dir, 'ID_decode.feather')
             self.files['decode'] = ID_decode_sf
-            feather.write_dataframe(decode_data,ID_decode_sf)
-            
-            #TODO: consolidate output of this function so it's the same when saved or not
-            #NB_meta.drop(columns = ['hmm_state'])
+            feather.write_dataframe(decode_data, ID_decode_sf)
+
+            # TODO: consolidate output of this function so it's the same when saved or not
+            # NB_meta.drop(columns = ['hmm_state'])
             best_file = self.files['best_hmms']
             feather.write_dataframe(best_hmms, best_file)
-            
-            return NB_meta,decode_data,best_hmms,timings
-        
+
+            return NB_meta, decode_data, best_hmms, timings
+
         else:
             save_dir = self.save_dir
-            
-            ID_decode_sf = os.path.join(save_dir,'ID_decode.feather')
+
+            ID_decode_sf = os.path.join(save_dir, 'ID_decode.feather')
             decode_data = feather.read_dataframe(ID_decode_sf)
-            
+
             ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')
             timings = feather.read_dataframe(ID_timing_sf)
             best_hmms = ['need to run with overwrite to get best_hmms']
             NB_meta = ['need to run with overwrite to get NB_meta']
-            
+
             return NB_meta, decode_data, best_hmms, timings
 
     def analyze_pal_linear_regression(self):
-        best_hmms = self.get_best_hmms(sorting = 'best_BIC')
+        best_hmms = self.get_best_hmms(sorting='best_BIC')
         all_units, _ = ProjectAnalysis(self.project).get_unit_info()
         pal_map = {'taste': ['QHCl', 'CA', 'NaCl', 'Suc'],
-                   'palatability':[1,2,3,4]}
+                   'palatability': [1, 2, 3, 4]}
         pal_map = pd.DataFrame(pal_map)
-        best_hmms = best_hmms.drop(columns = ['palatability'])
-        best_hmms = best_hmms.merge(pal_map, on = 'taste')
-        
-        results = hmma.LinReg_pal_classification(best_hmms,all_units)
+        best_hmms = best_hmms.drop(columns=['palatability'])
+        best_hmms = best_hmms.merge(pal_map, on='taste')
+
+        results = hmma.LinReg_pal_classification(best_hmms, all_units)
         linreg_meta, all_trls = hmma.process_LinReg_pal_classification(results)
-       
+
         pal_states = all_trls
-        pal_states = pal_states[['rec_dir','Y','hmm_state','hmm_id']].drop_duplicates()
-        pal_states.hmm_id= pal_states.hmm_id.astype(int)
-        pal_states = pal_states.rename(columns = {"hmm_state":"pal_state"})
-        best_hmms = pd.merge(best_hmms,pal_states, on=["rec_dir","hmm_id"])
-        best_hmms = best_hmms.rename(columns = {"Y":"pal_rating"})
-        
+        pal_states = pal_states[['rec_dir', 'Y', 'hmm_state', 'hmm_id']].drop_duplicates()
+        pal_states.hmm_id = pal_states.hmm_id.astype(int)
+        pal_states = pal_states.rename(columns={"hmm_state": "pal_state"})
+        best_hmms = pd.merge(best_hmms, pal_states, on=["rec_dir", "hmm_id"])
+        best_hmms = best_hmms.rename(columns={"Y": "pal_rating"})
+
         all_trls['hmm_id'] = all_trls['hmm_id'].astype(int)
-        mod = best_hmms[['rec_dir','exp_name','exp_group','time_group','taste','hmm_id']].drop_duplicates()
-        all_trls = all_trls.merge(mod, on= ['rec_dir','hmm_id'])
-        
-        all_trls = all_trls.rename(columns = {'trial':'trial_num', 'Y':'trial_ID'})
+        mod = best_hmms[['rec_dir', 'exp_name', 'exp_group', 'time_group', 'taste', 'hmm_id']].drop_duplicates()
+        all_trls = all_trls.merge(mod, on=['rec_dir', 'hmm_id'])
+
+        all_trls = all_trls.rename(columns={'trial': 'trial_num', 'Y': 'trial_ID'})
         all_trls['prestim_state'] = False
-        timings = hmma.analyze_classified_hmm_state_timing(best_hmms,all_trls,'pal_state',min_dur = 50)
+        timings = hmma.analyze_classified_hmm_state_timing(best_hmms, all_trls, 'pal_state', min_dur=50)
         timings = timings.loc[timings.state_group == 'pal_state']
-        
-        mf = all_trls[['rec_dir','trial_num','hmm_id', 'Y_pred']]
-        timings = timings.merge(mf, on = ['rec_dir', 'trial_num', 'hmm_id'])
+
+        mf = all_trls[['rec_dir', 'trial_num', 'hmm_id', 'Y_pred']]
+        timings = timings.merge(mf, on=['rec_dir', 'trial_num', 'hmm_id'])
         timings = timings.loc[timings.pos_in_trial != 0]
         timings = timings.loc[timings.t_start > 0]
-        
+
         return timings, all_trls, results, linreg_meta
-       
+
     def analyze_hmms(self, overwrite=False, save_dir=None):
-        all_units, _  = ProjectAnalysis(self.project).get_unit_info()
+        all_units, _ = ProjectAnalysis(self.project).get_unit_info()
         coding_file = self.files['hmm_coding']
         timing_file = self.files['hmm_timings']
         confusion_file = self.files['hmm_confusion']
@@ -1547,16 +1552,15 @@ class HmmAnalysis(object):
         else:
             save_dir = self.save_dir
 
-
         best_hmms = self.get_best_hmms(save_dir=save_dir)
         timing_stats = timing_file.replace('feather', 'txt')
-        #coding analyses
+        # coding analyses
         if os.path.isfile(coding_file) and not overwrite:
             coding = feather.read_dataframe(coding_file)
         else:
             coding = hmma.analyze_hmm_state_coding(best_hmms, all_units)
-        #end of coding analysis    
-        
+        # end of coding analysis
+
         if os.path.isfile(timing_file) and not overwrite:
             timings = feather.read_dataframe(timing_file)
         else:
@@ -1570,7 +1574,7 @@ class HmmAnalysis(object):
         #                                                   single_unit=True,
         #                                                   repeats=50)
         #     feather.write_dataframe(confusion, confusion_file)
-        coding,confusion = None,None
+        coding, confusion = None, None
 
         if not os.path.isfile(timing_stats) or overwrite:
             descrip = hmma.describe_hmm_state_timings(timings)
@@ -1578,7 +1582,7 @@ class HmmAnalysis(object):
                 print(descrip, file=f)
 
         return coding, timings, confusion
-        #after this do plot hmm timing 03/10/20
+        # after this do plot hmm timing 03/10/20
 
     def plot_hmm_timing(self, save_dir=None):
         if save_dir is None:
@@ -1597,7 +1601,7 @@ class HmmAnalysis(object):
 
         os.mkdir(plot_dir)
 
-        corr_file = os.path.join(plot_dir, 'timing_correlations.svg')#looks good 03/05/22
+        corr_file = os.path.join(plot_dir, 'timing_correlations.svg')  # looks good 03/05/22
         nplt.plot_timing_correlations(df, save_file=corr_file)
         corr_file = os.path.join(plot_dir, 'timing_correlations-exclude.svg')
         nplt.plot_timing_correlations(df, save_file=corr_file)
@@ -1607,12 +1611,12 @@ class HmmAnalysis(object):
 
         dist_file = os.path.join(plot_dir, 'late_start_distributions.svg')
         nplt.plot_timing_distributions(df, state='late', value_col='t_start', save_file=dist_file)
-        
+
         comp_file = os.path.join(plot_dir, 'timing_comparison.svg')
         nplt.plot_timing_data(df, save_file=comp_file, group_col='exp_group')
-        
-        tb_file = os.path.join(plot_dir,'trial_group_comparison.svg')
-        nplt.plot_intraday_timing(df, save_file = tb_file,group_col = 'trial_group')
+
+        tb_file = os.path.join(plot_dir, 'trial_group_comparison.svg')
+        nplt.plot_intraday_timing(df, save_file=tb_file, group_col='trial_group')
 
         # dist_file = os.path.join(plot_dir, 'Suc_late_start_distributions.svg')
         # nplt.plot_timing_distributions(df.query('taste == "Suc"'),
@@ -1624,7 +1628,7 @@ class HmmAnalysis(object):
             fn1 = os.path.join(plot_dir, f'{taste}_early_end_distributions.svg')
             nplt.plot_timing_distributions(grp, state='early',
                                            value_col='t_end', save_file=fn1)
-            
+
             fn1 = os.path.join(plot_dir, f'{taste}_late_start_distributions.svg')
             nplt.plot_timing_distributions(grp, state='late',
                                            value_col='t_start', save_file=fn1)
@@ -1633,8 +1637,7 @@ class HmmAnalysis(object):
             comp_file = os.path.join(plot_dir, f'{taste}_timing_comparison.svg')
             nplt.plot_timing_data(grp, save_file=comp_file, group_col='exp_group')
             tb_file = os.path.join(plot_dir, f'{taste}_trial_group_comparision.svg')
-            nplt.plot_intraday_timing(grp, save_file = tb_file, group_col = 'trial_group')
-
+            nplt.plot_intraday_timing(grp, save_file=tb_file, group_col='trial_group')
 
     def plot_hmm_confusion(self, save_dir=None):
         if save_dir is None:
@@ -1642,9 +1645,9 @@ class HmmAnalysis(object):
 
         _, _, confusion = self.analyze_hmms(save_dir=save_dir)
         confusion['exclude'] = confusion.apply(lambda x: True if
-                                               (x['exp_group'] == 'GFP' and
-                                                x['cta_group'] == 'No CTA')
-                                               else False, axis=1)
+        (x['exp_group'] == 'GFP' and
+         x['cta_group'] == 'No CTA')
+        else False, axis=1)
         plot_dir = os.path.join(save_dir, 'confusion_analysis')
         if os.path.isdir(plot_dir):
             shutil.rmtree(plot_dir)
@@ -1681,9 +1684,9 @@ class HmmAnalysis(object):
 
         coding, _, _ = self.analyze_hmms(save_dir=save_dir)
         coding['exclude'] = coding.apply(lambda x: True if
-                                         (x['exp_group'] == 'GFP' and
-                                          x['cta_group'] == 'No CTA')
-                                         else False, axis=1)
+        (x['exp_group'] == 'GFP' and
+         x['cta_group'] == 'No CTA')
+        else False, axis=1)
         plot_dir = os.path.join(save_dir, 'coding_analysis')
         if os.path.isdir(plot_dir):
             shutil.rmtree(plot_dir)
@@ -1712,7 +1715,6 @@ class HmmAnalysis(object):
         comp_file = os.path.join(plot_dir, 'coding_comparison-CTA-exclude.svg')
         nplt.plot_coding_data(exc_df, save_file=comp_file, group_col='cta_group')
 
-
     def plot_hmm_coding_and_timing(self, save_dir=None):
         if save_dir is None:
             save_dir = self.save_dir
@@ -1736,7 +1738,8 @@ class HmmAnalysis(object):
         plt.plot_median_gamma_probs(df, prob_fn.replace('.png', '-exclude.svg'))
 
         plt.plot_hmm_sequence_heatmap(best_hmms, 'exp_group', seq_fn)
-        plt.plot_hmm_sequence_heatmap(best_hmms.query('taste=="Saccharin" and exclude == False'), 'exp_group', sacc_seq_fn)
+        plt.plot_hmm_sequence_heatmap(best_hmms.query('taste=="Saccharin" and exclude == False'), 'exp_group',
+                                      sacc_seq_fn)
         plt.plot_hmm_sequence_heatmap(best_hmms, 'cta_group', seq_cta_fn)
         plt.plot_hmm_sequence_heatmap(best_hmms.query('taste=="Saccharin"'), 'cta_group', sacc_seq_cta_fn)
         unit_fn = os.path.join(save_dir, 'Unit_Info.txt')
@@ -1745,22 +1748,22 @@ class HmmAnalysis(object):
             all_units = all_units.query('single_unit == True and area == "GC"')
             held_units = held_units.query('area == "GC"')
             out = ['All Unit Counts']
-            out.append('-'*80)
+            out.append('-' * 80)
             a_count = all_units.groupby(['exp_group', 'exp_name',
                                          'rec_group'])['unit_num'].count()
             held_units = held_units.dropna(subset=['held_unit_name'])
             h_count = held_units.groupby(['exp_group', 'exp_name', 'held_over'])['held'].count()
             out.append(repr(a_count))
-            out.append('='*80)
+            out.append('=' * 80)
             out.append('')
             out.append('Held Unit Counts')
-            out.append('-'*80)
+            out.append('-' * 80)
             out.append(repr(h_count))
             print('\n'.join(out), file=f)
 
     def process_fitted_hmms(self, overwrite=False, hmm_plots=False):
         with pm.push_alert(success_msg='HMM Processing Complete! :D'):
-            #ho = self.get_hmm_overview(overwrite=overwrite)
+            # ho = self.get_hmm_overview(overwrite=overwrite)
             ho = self.get_hmm_overview(overwrite=False)
             self.sort_hmms_by_params(overwrite=overwrite)
             self.mark_early_and_late_states()
@@ -1868,7 +1871,7 @@ class HmmAnalysis(object):
         sorted_df = self.get_sorted_hmms()
         df = sorted_df.query('sorting == @sorting')
         name, group = next(iter(df.groupby(param_cols)))
-        summary = ['-'*80,
+        summary = ['-' * 80,
                    'parameter set: %s' % sorting,
                    '# of states: %i' % name[0],
                    'time: %i to %i' % (name[1], name[2]),
@@ -1878,7 +1881,7 @@ class HmmAnalysis(object):
                    'n_trials: %i' % name[6],
                    'notes: %s' % name[7],
                    '# of HMMs: %i' % len(group),
-                   '-'*80]
+                   '-' * 80]
         with open(os.path.join(save_dir, 'HMM_parameters.txt'), 'w') as f:
             f.write('\n'.join(summary))
 
@@ -1895,7 +1898,7 @@ class HmmAnalysis(object):
         param_keys = ['dt', 'n_states', 'n_trials', 'time_start', 'time_end',
                       'unit_type', 'notes']
         df = sorted_df[sorted_df.notes.str.contains('sequential')]
-        qstr = ' and '.join(['{} == "{}"'.format(k,v) for k,v in req_params.items()])
+        qstr = ' and '.join(['{} == "{}"'.format(k, v) for k, v in req_params.items()])
         df = df.query(qstr)
         for (exp_name, rec_group, taste), group in df.groupby(['exp_name',
                                                                'rec_group',
@@ -1925,7 +1928,7 @@ class HmmAnalysis(object):
                 elif len(pyr_grp) > 3:
                     g2 = pyr_grp.query('n_states == 2')['log_likelihood'].idxmax()
                     g3 = pyr_grp.query('n_states == 3')['log_likelihood'].idxmax()
-                    pyr_grp = pyr_grp.loc[[g2,g3]]
+                    pyr_grp = pyr_grp.loc[[g2, g3]]
                     tmp_grp = tmp_grp.copy()
                     tmp_grp = tmp_grp.append(pyr_grp.copy())
                 else:
@@ -1945,21 +1948,22 @@ class HmmAnalysis(object):
         sorted_df['sorting'] = 'rejected'
         sorted_df['sort_method'] = 'auto'
         self.write_sorted_hmms(sorted_df)
-        
 
     def mark_early_and_late_states(self):
         ho = self.get_sorted_hmms()
+
         def apply_states(row):
             h5 = hmma.get_hmm_h5(row['rec_dir'])
             hmm, _, _ = phmm.load_hmm_from_hdf5(h5, row['hmm_id'])
             tmp = hmma.choose_bsln_early_late_states(hmm)
             return pd.Series({'bsln_state': tmp[0], 'early_state': tmp[1], 'late_state': tmp[2]})
 
-        ho[['bsln_state','early_state', 'late_state']] = ho.apply(apply_states, axis=1)
+        ho[['bsln_state', 'early_state', 'late_state']] = ho.apply(apply_states, axis=1)
         self.write_sorted_hmms(ho)
-    
+
     def mark_poss_epochs(self):
         ho = self.get_sorted_hmms()
+
         def apply_states(row):
             if row.n_states > 2:
                 h5 = hmma.get_hmm_h5(row['rec_dir'])
@@ -1968,11 +1972,13 @@ class HmmAnalysis(object):
                 return pd.Series({'bsln_state': tmp[0], 'early_state': tmp[1], 'late_state': tmp[2]})
             else:
                 return pd.Series({'bsln_state': 'nan', 'early_state': 'nan', 'late_state': 'nan'})
-        ho[['bsln_state','early_state', 'late_state']] = ho.apply(apply_states, axis=1)
+
+        ho[['bsln_state', 'early_state', 'late_state']] = ho.apply(apply_states, axis=1)
         self.write_sorted_hmms(ho)
-    
+
     def mark_4_states(self):
         ho = self.get_sorted_hmms()
+
         def apply_states(row):
             h5 = hmma.get_hmm_h5(row['rec_dir'])
             hmm, _, _ = phmm.load_hmm_from_hdf5(h5, row['hmm_id'])
@@ -1984,7 +1990,7 @@ class HmmAnalysis(object):
 
     def iterhmms(self, **kwargs):
         ho = self.get_sorted_hmms()
-        qstr = ' and '.join([f'{k} == "{v}"' for k,v in kwargs.items()])
+        qstr = ' and '.join([f'{k} == "{v}"' for k, v in kwargs.items()])
         if qstr != '':
             ho = ho.query(qstr)
 
@@ -1993,8 +1999,9 @@ class HmmAnalysis(object):
             hmm, _, params = phmm.load_hmm_from_hdf5(h5, row['hmm_id'])
             yield i, hmm, params, row
 
-    def sort_hmms_by_params(self, overwrite=False): #after, look at df and figure out parameter set label I want to analyze
-    #then I can use the function process_sorted_hmms() and then it should work
+    def sort_hmms_by_params(self,
+                            overwrite=False):  # after, look at df and figure out parameter set label I want to analyze
+        # then I can use the function process_sorted_hmms() and then it should work
         sorted_df = self.get_sorted_hmms()
         print(sorted_df)
         if sorted_df is None or overwrite:
@@ -2003,27 +2010,27 @@ class HmmAnalysis(object):
         sorted_df['sorting'] = 'rejected'
         sorted_df['sort_method'] = 'auto'
         met_params = sorted_df.query('time_start==-250')
-                                #'taste != "Spont"')
-                                #'(notes == "sequential - final") |' #required params must edit
-                               #      ' (notes == "sequential - low thresh") |'
-                                #     ' (notes == "sequential - BIC test")')
+        # 'taste != "Spont"')
+        # '(notes == "sequential - final") |' #required params must edit
+        #      ' (notes == "sequential - low thresh") |'
+        #     ' (notes == "sequential - BIC test")')
         param_cols = ['n_states', 'time_start', 'time_end', 'area',
                       'unit_type', 'dt', 'notes']
         param_num = 0
         for name, group in met_params.groupby(param_cols):
             param_label = ('%i states, %i to %i ms, %s %s units, '
                            'dt = %g, notes: %s' % name)
-            summary = ['-'*80,
+            summary = ['-' * 80,
                        'parameter #: %i' % param_num,
                        '# of states: %i' % name[0],
                        'time: %i to %i' % (name[1], name[2]),
-                       #'area: %s' % name[3],
+                       # 'area: %s' % name[3],
                        'unit type: %s' % name[4],
                        'dt: %g' % name[5],
-                       #'n_trials: %i' % name[6],
+                       # 'n_trials: %i' % name[6],
                        'notes: %s' % name[6],
                        '# of HMMs: %i' % len(group),
-                       '-'*80]
+                       '-' * 80]
             print('\n'.join(summary))
             # if len(group) < 30:
             #     param_num += 1
@@ -2036,7 +2043,7 @@ class HmmAnalysis(object):
 
         self.write_sorted_hmms(sorted_df)
 
-    def sort_hmms_by_BIC(self, overwrite = False):
+    def sort_hmms_by_BIC(self, overwrite=False):
         sorted_df = self.get_sorted_hmms()
         if sorted_df is None or overwrite is True:
             sorted_df = self.get_hmm_overview()
@@ -2044,13 +2051,14 @@ class HmmAnalysis(object):
             sorted_df['sort_method'] = 'auto'
 
         df = sorted_df.query('n_states > 2')
-        df = df.loc[((df.exp_name != 'DS33') | (df.rec_num !=2) | (df.n_states != 3) | (df.taste != 'CA'))]
+        df = df.loc[((df.exp_name != 'DS33') | (df.rec_num != 2) | (df.n_states != 3) | (df.taste != 'CA'))]
 
-        df = df.loc[((df.exp_name != 'DS40') | (df.rec_num !=2) | (df.n_states != 3))] #TODO: get rid of this bullshit hardcoding 
-        df = df.loc[((df.exp_name != 'DS40') | (df.rec_num !=3) | (df.n_states != 3) | (df.taste != 'NaCl'))]
-        df = df.loc[((df.exp_name != 'DS36') | (df.rec_num !=1) | (df.n_states != 3))]
-        df = df.loc[((df.exp_name != 'DS36') | (df.rec_num !=2) | (df.n_states != 3))]
-        
+        df = df.loc[((df.exp_name != 'DS40') | (df.rec_num != 2) | (
+                df.n_states != 3))]  # TODO: get rid of this bullshit hardcoding
+        df = df.loc[((df.exp_name != 'DS40') | (df.rec_num != 3) | (df.n_states != 3) | (df.taste != 'NaCl'))]
+        df = df.loc[((df.exp_name != 'DS36') | (df.rec_num != 1) | (df.n_states != 3))]
+        df = df.loc[((df.exp_name != 'DS36') | (df.rec_num != 2) | (df.n_states != 3))]
+
         minima = []
         for name, group in df.groupby(['exp_name', 'rec_group', 'taste']):
             minima.append(group.BIC.idxmin())
@@ -2075,13 +2083,14 @@ class HmmAnalysis(object):
 
         self.write_sorted_hmms(sorted_df)
 
+
 def organize_hmms(sorted_df, plot_dir):
     req_params = {'dt': 0.001, 'unit_type': 'single', 'time_end': 2000}
-    qstr = ' and '.join(['{} == "{}"'.format(k,v) for k,v in req_params.items()])
+    qstr = ' and '.join(['{} == "{}"'.format(k, v) for k, v in req_params.items()])
     sorted_df = sorted_df.query(qstr)
     sorted_df = sorted_df[(sorted_df.notes.str.contains('sequential - final') |
                            sorted_df.notes.str.contains('sequential - fixed 2'))]
-    for n_states in np.arange(2,4):
+    for n_states in np.arange(2, 4):
         txt_fn = os.path.join(plot_dir, '%i-state_hmm_table.txt' % n_states)
         save_dir = os.path.join(plot_dir, '%i-state_HMMs' % n_states)
         if not os.path.isdir(save_dir):
@@ -2092,10 +2101,10 @@ def organize_hmms(sorted_df, plot_dir):
         # go through put early and late states in. Split rec_groups by empty
         # space
         with open(txt_fn, 'w') as f:
-            for i,row in df.iterrows():
+            for i, row in df.iterrows():
                 out_str = '\t'.join([row['exp_name'], row['rec_group'],
                                      str(row['hmm_id']), row['taste'],
-                                     str(n_states-2), str(n_states-1)])
+                                     str(n_states - 2), str(n_states - 1)])
                 print(out_str, file=f)
 
                 fn = '%s_%s_%s_HMM%i.png' % (row['exp_name'], row['rec_group'],
@@ -2125,7 +2134,7 @@ def get_saccharin_consumption(anim_dir):
         else:
             return 'Water'
 
-    drinks = dat.bottle_tests.iloc[1:].copy() # Drop first day of water dep
+    drinks = dat.bottle_tests.iloc[1:].copy()  # Drop first day of water dep
     drinks['Substance'] = drinks['Substance'].apply(fix)
     if not any(drinks.Substance == 'Saccharin'):
         return None
@@ -2134,17 +2143,16 @@ def get_saccharin_consumption(anim_dir):
     if len(ctaTrain) == 0:
         mean_water = drinks[drinks.Substance == 'Water']['Change (g)'].astype('float').mean()
         mean_sacc = drinks[drinks.Substance == 'Saccharin']['Change (g)'].astype('float').mean()
-        return mean_sacc/mean_water
-
+        return mean_sacc / mean_water
 
     ctaDay = ctaTrain[0]['Test Time']
-    a = ctaDay.replace(hour=0,minute=0,second=0)
-    b = ctaDay.replace(hour=23,minute=59,second=59)
+    a = ctaDay.replace(hour=0, minute=0, second=0)
+    b = ctaDay.replace(hour=23, minute=59, second=59)
     tmp2 = drinks.truncate(after=a).append(drinks.truncate(before=b))
     mean_water = tmp2[tmp2.Substance == 'Water']['Change (g)'].astype('float').mean()
     mean_sacc = tmp2[tmp2.Substance == 'Saccharin']['Change (g)'].astype('float').mean()
     # tmp2['Norm Change'] = (tmp2['Change (g)'] / mean(water))
-    return mean_sacc/mean_water
+    return mean_sacc / mean_water
 
 
 # def apply_consumption_to_project(proj):
@@ -2178,7 +2186,7 @@ class Analysis(object):
 
     def run(self):
         pass
- 
+
 
 def compare_taste_responses(rec1, unit1, rec2, unit2, params, method='bootstrap'):
     bin_size = params['response_comparison']['win_size']
@@ -2233,13 +2241,13 @@ def compare_taste_responses(rec1, unit1, rec2, unit2, params, method='bootstrap'
                 ustats[i] = u
         elif method.lower() == 'bootstrap':
             nt = len(t1)
-            tmp_lbls = np.vstack(fr1.shape[0]*['u1'] + fr2.shape[0]*['u2'])
-            tmp_data = np.vstack((fr1,fr2))
+            tmp_lbls = np.vstack(fr1.shape[0] * ['u1'] + fr2.shape[0] * ['u2'])
+            tmp_data = np.vstack((fr1, fr2))
             pvals, ustats, _ = stats.permutation_test(tmp_lbls, tmp_data,
                                                       alpha)
 
         # apply bonferroni correction
-        pvals = pvals*nt
+        pvals = pvals * nt
 
         # Compute mean difference using psth parameters
         pt1, psth1, base1 = agg.get_psth(rec1, unit1, ch1, params, remove_baseline=True)
@@ -2254,7 +2262,7 @@ def compare_taste_responses(rec1, unit1, rec2, unit2, params, method='bootstrap'
         # zpsth2 = (psth2-base2[0])/base2[1]
         diff, sem_diff = sas.get_mean_difference(psth1, psth2)
 
-        #Store stuff
+        # Store stuff
         out_pvals.append(pvals)
         out_ustats.append(ustats)
         out_diff.append(diff)
@@ -2263,9 +2271,10 @@ def compare_taste_responses(rec1, unit1, rec2, unit2, params, method='bootstrap'
 
     return out_labels, out_pvals, out_ustats, out_diff, out_diff_sem, bin_time, pt1
 
-#get_sorted_hmms eventually gets rec group from here
+
+# get_sorted_hmms eventually gets rec group from here
 # def parse_rec(rd): #this gave me the most problems
-    
+
 #     if rd[-1] == os.sep:
 #         rd = rd[:-1]
 #     parsed = os.path.basename(rd).split('_')
@@ -2277,7 +2286,7 @@ def compare_taste_responses(rec1, unit1, rec2, unit2, params, method='bootstrap'
 #     #     rec_group = 'Exposure_2'
 #     elif nm in E3:
 #         rec_group = 'Exposure_3'
-    
+
 #     # rec_group = parsed[-3]
 #     # if rec_group == 'SaccTest':
 #     #     rec_group = 'ctaTest'
@@ -2327,6 +2336,7 @@ import pandas as pd
 from piecewise_regression import Fit
 from multiprocessing import Pool, cpu_count
 
+
 def fit_group(args):
     try:
         name, group, response_col, trial_col = args
@@ -2367,7 +2377,7 @@ def find_changepoints_individual(df, model_groups, fit_groups, trial_col, respon
     all_results = []
     df = df.copy()
     df['combined_fit_group'] = df[fit_groups].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
-    df[trial_col] = df[trial_col]+1
+    df[trial_col] = df[trial_col] + 1
     for combo, sub_df in df.groupby(model_groups):
         print(combo)
         sub_df = sub_df.copy()
@@ -2384,8 +2394,10 @@ def find_changepoints_individual(df, model_groups, fit_groups, trial_col, respon
             sub_df["after_split"] = sub_df[trial_col] >= changepoint
             formula = f"{response_col} ~ {trial_col} * after_split"
             model = smf.mixedlm(formula, data=sub_df, groups=sub_df['combined_fit_group'])
-            try: result = model.fit()
-            except: continue
+            try:
+                result = model.fit()
+            except:
+                continue
 
             num_params = len(result.params)  # number of parameters
             log_likelihood = result.llf  # log-likelihood of the model
@@ -2398,14 +2410,16 @@ def find_changepoints_individual(df, model_groups, fit_groups, trial_col, respon
                 best_result = result
 
         best_subdf = sub_df
-        try: best_subdf['prediction'] = best_result.fittedvalues
-        except: Exception("warning: no changepoint found for " + str(combo))
+        try:
+            best_subdf['prediction'] = best_result.fittedvalues
+        except:
+            Exception("warning: no changepoint found for " + str(combo))
         best_subdf['best_changepoint'] = best_changepoint
         all_results.append(best_subdf)
 
-
     results_df = pd.concat(all_results)
     return results_df
+
 
 def find_changepoint(df, trial_col, response_col, model_cols, fit_groups):
     min_aic = np.inf
@@ -2458,10 +2472,12 @@ def find_changepoint(df, trial_col, response_col, model_cols, fit_groups):
 
     return best_model, best_changepoint
 
+
 import statsmodels.api as sm
 from statsmodels.formula.api import ols
 from statsmodels.stats.anova import anova_lm
 from statsmodels.stats.multitest import multipletests
+
 
 def split_test(df, fit_groups, model_groups, trial_col, value_col):
     results = []
@@ -2501,9 +2517,11 @@ def split_test(df, fit_groups, model_groups, trial_col, value_col):
     results_df = pd.DataFrame(results)
 
     # apply Bonferroni correction
-    results_df['reject'], results_df['p_value_corrected'], _, _ = multipletests(results_df['p_value'], method='bonferroni')
+    results_df['reject'], results_df['p_value_corrected'], _, _ = multipletests(results_df['p_value'],
+                                                                                method='bonferroni')
 
     return results_df
+
 
 # Usage example:
 # results = split_test(df, ['subject_group', 'date'], ['subject'], 'trial_index', 'measurement')
@@ -2511,6 +2529,7 @@ def split_test(df, fit_groups, model_groups, trial_col, value_col):
 
 
 import ruptures as rpt
+
 
 def detect_changepoints(df, group_list, data_col, time_col):
     """
@@ -2535,7 +2554,7 @@ def detect_changepoints(df, group_list, data_col, time_col):
         and the other columns are 'changepoints' and 'bic'.
     """
     all_results = []  # Will hold DataFrames for each group
-    
+
     for key, group in df.groupby(group_list):
         if len(group) < 10:
             continue  # Skip groups with fewer than 10 observations
@@ -2544,42 +2563,41 @@ def detect_changepoints(df, group_list, data_col, time_col):
         algo = rpt.Pelt(model=model).fit(group[data_col].values)  # Fit model to data
         result = algo.predict(pen=1)  # Predict the changepoints. "pen" is the penalty value.
         # Associate changepoints with their corresponding time values
-        changepoints_time = [group[time_col].values[i-1] for i in result[:-1]]
-        
+        changepoints_time = [group[time_col].values[i - 1] for i in result[:-1]]
+
         # Calculate BIC
         n = len(group)  # Number of observations
         k = len(result) - 1  # Number of parameters in the model (number of changepoints)
-        residuals = np.concatenate(([group[data_col].values[result[i-1]:result[i]] - 
-                                     np.mean(group[data_col].values[result[i-1]:result[i]]) 
+        residuals = np.concatenate(([group[data_col].values[result[i - 1]:result[i]] -
+                                     np.mean(group[data_col].values[result[i - 1]:result[i]])
                                      for i in range(1, len(result))]))
-        sigma_sq = np.sum(residuals**2) / n  # Estimate of the error variance
-        bic = n*np.log(sigma_sq) + k*np.log(n)  # BIC formula
-        
+        sigma_sq = np.sum(residuals ** 2) / n  # Estimate of the error variance
+        bic = n * np.log(sigma_sq) + k * np.log(n)  # BIC formula
+
         # Create a DataFrame for this group
         group_df = pd.DataFrame({
             'changepoints': [changepoints_time],
             'bic': [bic]
         }, index=[key])
-        
+
         all_results.append(group_df)
-    
+
     # Concatenate all group DataFrames
     results_df = pd.concat(all_results)
-    
+
     # Reset index and rename columns
     results_df.reset_index(inplace=True)
-    
+
     # If the index was a MultiIndex, it will be a tuple now
     if isinstance(key, tuple):
         for i, col_name in enumerate(group_list):
             results_df[col_name] = results_df['index'].apply(lambda x: x[i])
         results_df.drop(columns='index', inplace=True)
-    
+
     return results_df
 
-    
 
-def add_session_trial(df, proj, trial_col = 'trial', trial_id = 'taste'):
+def add_session_trial(df, proj, trial_col='trial', trial_id='taste'):
     '''Adds session trial number to any df with columns containing rec_dir, trial number (of the taste),
     and taste or channel
     '''
@@ -2590,7 +2608,7 @@ def add_session_trial(df, proj, trial_col = 'trial', trial_id = 'taste'):
     trial_info['dig_in'] = trial_info['channel']
     trial_info['din'] = trial_info['channel']
     trial_info['session_trial'] = trial_info['trial_num'].astype(int)
-    
+
     trial_info[trial_col] = trial_info['trial'].astype(int)
     trial_info[trial_id] = trial_info['taste'].astype(str)
     df[trial_col] = df[trial_col].astype(int)
@@ -2601,12 +2619,12 @@ def add_session_trial(df, proj, trial_col = 'trial', trial_id = 'taste'):
 
     for_merge = trial_info[['rec_dir', trial_col, trial_id, 'session_trial']]
 
-    out = df.merge(for_merge, on = ['rec_dir', trial_col, trial_id], how = 'left')
+    out = df.merge(for_merge, on=['rec_dir', trial_col, trial_id], how='left')
     out['session_trial'] = out.groupby(['rec_dir'])['session_trial'].transform(lambda x: x - x.min())
-    return(out)
-    
+    return (out)
 
-def refit_hmms(sorted_df, base_params, all_units,log_file=None, rec_params={}):
+
+def refit_hmms(sorted_df, base_params, all_units, log_file=None, rec_params={}):
     '''re-wrtitten 8/4/20
     edited 8/10/20
     '''
@@ -2620,10 +2638,10 @@ def refit_hmms(sorted_df, base_params, all_units,log_file=None, rec_params={}):
     base_params = {'n_trials': 15, 'unit_type': 'single', 'dt': 0.001,
                    'max_iter': 200, 'n_repeats': 50, 'time_start': -250,
                    'time_end': 2000, 'n_states': 3, 'area': 'GC',
-                   'hmm_class': 'PoissonHMM', 'threshold':1e-6, 'notes': 'sequential - fixed'}
+                   'hmm_class': 'PoissonHMM', 'threshold': 1e-6, 'notes': 'sequential - fixed'}
     id_params = ['taste', 'n_trials', 'unit_type', 'dt', 'time_start',
                  'time_end', 'n_states', 'area']
-    #for rec, group in needed_df.groupby(['rec_dir']):
+    # for rec, group in needed_df.groupby(['rec_dir']):
     for rec, group in best_hmms.groupby(['rec_dir']):
         if log_file is not None:
             with open(log_file, 'r+') as f:
@@ -2639,7 +2657,7 @@ def refit_hmms(sorted_df, base_params, all_units,log_file=None, rec_params={}):
         print('Processing %s' % rec)
         params = base_params.copy()
         if rec in rec_params.keys():
-            for k,v in rec_params[rec].items():
+            for k, v in rec_params[rec].items():
                 params[k] = v
 
         handler = phmm.HmmHandler(rec)
@@ -2661,19 +2679,19 @@ def refit_hmms(sorted_df, base_params, all_units,log_file=None, rec_params={}):
 
         #     handler.delete_hmm(**{x:p[x] for x in id_params})
         #     handler.add_params(p)
-        #tastes = group['taste'].to_list()
-        #params['taste'] = tastes
-        #for i, row in group.iterrows():
+        # tastes = group['taste'].to_list()
+        # params['taste'] = tastes
+        # for i, row in group.iterrows():
         #    if np.isnan(row['hmm_id']):
         #        p = params.copy()
         #        p['taste'] = row['taste']
         #        p['channel'] = row['channel']
         #        plist.append(p)
 
-        #p = params.copy()
-        #p['time_end'] = 1750
-        #plist.append(p)
-        #handler.run(constraint_func=hmma.PI_A_constrained)
+        # p = params.copy()
+        # p['time_end'] = 1750
+        # plist.append(p)
+        # handler.run(constraint_func=hmma.PI_A_constrained)
         handler.add_params(plist)
         handler.run(constraint_func=hmma.sequential_constrained)
 
@@ -2685,49 +2703,91 @@ def refit_hmms(sorted_df, base_params, all_units,log_file=None, rec_params={}):
         # handler.add_params(params)
         # handler.run(constraint_func=hmma.A_contrained)
 
+
 import pingouin as pg
+
+
 def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='trial', n_trial_groups=5, save_dir=None):
     df = df.copy()
     df['trial_group'] = pd.cut(df[trial_col], n_trial_groups, labels=False)
+
+    if 'trial_group' not in within:
+        within.append('trial_group')
+
     df['taste_sub'] = df['exp_name'] + '_' + df['taste']
+
     aovs = []
     pws = []
     for name, group in df.groupby(groups):
         aov = pg.rm_anova(dv=dv, within=within, subject=subject, data=group)
         pw = pg.pairwise_ttests(dv=dv, within=['trial_group'], subject=['taste_sub'], padjust='holm', data=group)
         nm = '_'.join([str(x) for x in name])
-        aov['group'] = nm
-        pw['group'] = nm
-        aov['trial_type'] = trial_col
-        pw['trial_type'] = trial_col
-        aov['n_trial_groups'] = str(n_trial_groups)
-        pw['n_trial_groups'] = str(n_trial_groups)
+
+        extra_cols = ['group', 'trial_type', 'n_trial_groups', 'dependent_var']
+        extra_col_data = [nm, trial_col, str(n_trial_groups), dv]
+        aov[extra_cols] = extra_col_data
+        pw[extra_cols] = extra_col_data
+
         aovs.append(aov)
         pws.append(pw)
 
     aovs = pd.concat(aovs)
     pws = pd.concat(pws)
 
-    special_aov = aovs[['Source','F','p-GG-corr','group','trial_type','n_trial_groups']]
-    special_aov = special_aov.round(2)
-    save_suffix = '%s_%s_%s_%s_%s_special.csv' % (dv, '_'.join(groups), '_'.join(within), str(n_trial_groups), trial_col)
-    special_aov.to_csv(os.path.join(save_dir, 'trial_group_aov_%s' % save_suffix))
-
-    special_ph = pws[['Contrast','A','B','T','p-unc','p-corr','group','trial_type','n_trial_groups']]
-    special_ph = special_ph.round(2)
-    special_ph.to_csv(os.path.join(save_dir, 'trial_group_posthoc_%s' % save_suffix))
-
-
     if save_dir is not None:
         save_suffix = '%s_%s_%s_%s_%s.csv' % (dv, '_'.join(groups), '_'.join(within), str(n_trial_groups), trial_col)
-        aovname = 'trial_group_aov_%s' % save_suffix
-        posthocname = 'trial_group_posthoc_%s' % save_suffix
+        aovname = 'aov_%s' % save_suffix
+        posthocname = 'posthoc_%s' % save_suffix
         aovpath = os.path.join(save_dir, aovname)
         posthocpath = os.path.join(save_dir, posthocname)
-        aovs.to_csv(aovpath)
-        pws.to_csv(posthocpath)
 
-    return(aovs, pws)
+        special_aov = aovs[['Source', 'F', 'p-GG-corr', 'group', 'trial_type', 'n_trial_groups']]
+        special_aov = special_aov.round(3)
+        special_ph = pws[['Contrast', 'A', 'B', 'T', 'p-unc', 'p-corr', 'group', 'trial_type', 'n_trial_groups']]
+        special_ph = special_ph.round(3)
+        special_aov.to_csv(aovpath)
+        special_ph.to_csv(posthocpath)
+
+    return (aovs, pws)
+
+
+def iter_trial_group_anova(df, groups, dep_vars, within, subject='exp_name', trial_cols=None,
+                           n_trial_groups=None, save_dir=None, save_suffix=None):
+    if type(dep_vars) is not list: # if only one dependent variable is passed, make it a list
+        dep_vars = [dep_vars]
+
+    if trial_cols is None: # if no trial columns are passed, use the default
+        trial_cols = ['trial', 'session_trial']
+    if n_trial_groups is None: # if no n_trial_groups are passed, use the default
+        n_trial_groups = [3, 4, 5, 6]
+
+    aov_df = []
+    ph_df = []
+    for k in dep_vars:
+        for i in trial_cols:
+            for j in n_trial_groups:
+                aov, ph = trial_group_anova(df, groups, k, within, subject=subject, trial_col=i, n_trial_groups=j,
+                                            save_dir=save_dir)
+                aov_df.append(aov)
+                ph_df.append(ph)
+    aov_df = pd.concat(aov_df)
+    ph_df = pd.concat(ph_df)
+
+    if save_suffix is None:
+        if len(dep_vars) > 1:
+            save_suffix = '_'.join(dep_vars)
+        else:
+            save_suffix = dep_vars[0]
+
+    if save_dir is not None:
+        aov_filename = '%s_all_ANOVA.csv' % save_suffix
+        ph_filename = '%s_all_posthoc.csv' % save_suffix
+        aov_df.to_csv(os.path.join(save_dir, aov_filename))
+        ph_df.to_csv(os.path.join(save_dir, ph_filename))
+
+    return aov_df, ph_df
+
+
 def get_local_path(path):
     if ELF_DIR in path and not os.path.isdir(path) and os.path.isdir(MONO_DIR):
         out = path.replace(ELF_DIR, MONO_DIR)
@@ -2738,15 +2798,16 @@ def get_local_path(path):
 
     return out
 
+
 def refit_anim(needed_hmms, anim, rec_group=None, custom_params=None):
     df = needed_hmms.query('exp_name == @anim')
     base_params = {'n_trials': 15, 'unit_type': 'single', 'dt': 0.001,
                    'max_iter': 200, 'n_repeats': 50, 'time_start': -250,
                    'time_end': 2000, 'n_states': 3, 'area': 'GC',
-                   'hmm_class': 'PoissonHMM', 'threshold':1e-6,
+                   'hmm_class': 'PoissonHMM', 'threshold': 1e-6,
                    'notes': 'sequential - final'}
     if custom_params is not None:
-        for k,v in custom_params.items():
+        for k, v in custom_params.items():
             base_params[k] = v
 
     for rec_dir, group in df.groupby(['rec_dir']):
@@ -2785,7 +2846,7 @@ def fit_anim_hmms(anim):
     base_params = {'n_trials': 15, 'unit_type': 'single', 'dt': 0.001,
                    'max_iter': 200, 'n_repeats': 50, 'time_start': -250,
                    'time_end': 2000, 'n_states': 3, 'area': 'GC',
-                   'hmm_class': 'PoissonHMM', 'threshold':1e-10,
+                   'hmm_class': 'PoissonHMM', 'threshold': 1e-10,
                    'notes': 'sequential - low thresh'}
 
     for rec_dir in file_dirs:
@@ -2828,7 +2889,7 @@ def fit_hmms_for_BIC_test(proj, all_units, min_states=2, max_states=6):
     base_params = {'n_trials': 15, 'unit_type': 'single', 'dt': 0.001,
                    'max_iter': 200, 'n_repeats': 50, 'time_start': -250,
                    'time_end': 2000, 'area': 'GC',
-                   'hmm_class': 'PoissonHMM', 'threshold':1e-6,
+                   'hmm_class': 'PoissonHMM', 'threshold': 1e-6,
                    'notes': 'sequential - BIC test'}
 
     for i, row in proj._exp_info.iterrows():
@@ -2859,8 +2920,7 @@ def fit_hmms_for_BIC_test(proj, all_units, min_states=2, max_states=6):
 
 
 def final_refits(needed_hmms):
-
-    #TODO: RN24 preCTA Quinine A constrained 2-state, single unit
+    # TODO: RN24 preCTA Quinine A constrained 2-state, single unit
 
     refit_anim(needed_hmms, 'RN25', rec_group='ctaTest')
     refit_anim(needed_hmms, 'RN25', rec_group='ctaTrain')
@@ -2877,8 +2937,7 @@ def fit_full_hmms(needed_hmms, h5_file):
     base_params = {'n_trials': 15, 'unit_type': 'single', 'dt': 0.001,
                    'max_iter': 500, 'n_repeats': 25, 'time_start': -250,
                    'time_end': 2000, 'n_states': 2, 'area': 'GC',
-                   'hmm_class': 'ConstrainedHMM', 'threshold':1e-5}
-
+                   'hmm_class': 'ConstrainedHMM', 'threshold': 1e-5}
 
     handler = hmma.CustomHandler(h5_file)
     for (exp_name, rec_group, rec_dir), group in needed_hmms.groupby(['exp_name', 'rec_group', 'rec_dir']):
@@ -2914,6 +2973,7 @@ def get_hmm_firing_rate_PCs(best_hmms):
                 row_id = np.vstack(row_id)
 
         # TODO: Finish this
+
 
 def get_hmm_trial_info(HA, sorting='params #5'):
     out = []
@@ -2962,13 +3022,14 @@ def apply_unit_firing_rates(df):
 
         bidx = np.where(t < 0)[0]
         ridx = np.where(t > 0)[0]
-        baseline = np.mean(np.sum(spikes[:,bidx], axis=1))
-        response = np.mean(np.sum(spikes[:,ridx], axis=1))
+        baseline = np.mean(np.sum(spikes[:, bidx], axis=1))
+        response = np.mean(np.sum(spikes[:, ridx], axis=1))
         return pd.Series({'baseline_firing': baseline, 'response_firing': response})
 
     df[['baseline_firing', 'response_firing']] = df.apply(get_firing_rates, axis=1)
     df['norm_response_firing'] = df.eval('response_firing - baseline_firing')
     return df
+
 
 def consolidate_results():
     save_dir = os.path.join(os.path.expanduser('~'), 'Dropbox', 'Harmonia',
@@ -2981,7 +3042,7 @@ def consolidate_results():
            'plots': os.path.join(save_dir, 'plots'),
            'stats': os.path.join(save_dir, 'stats')}
 
-    for k,v in sds.items():
+    for k, v in sds.items():
         os.mkdir(v)
 
     proj_dir = DATA_DIR
@@ -2989,7 +3050,7 @@ def consolidate_results():
     PA = ProjectAnalysis(proj)
     HA = HmmAnalysis(proj)
 
-    d1 = os.path.join(PA.save_dir,'single_unit_responses')
+    d1 = os.path.join(PA.save_dir, 'single_unit_responses')
     d2 = os.path.join(PA.save_dir, 'mds_analysis')
     d3 = os.path.join(HA.save_dir, 'coding_analysis')
     d4 = os.path.join(HA.save_dir, 'confusion_analysis')
@@ -2998,87 +3059,87 @@ def consolidate_results():
     d7 = os.path.join(d6, 'Held_Unit_Plots')
     d8 = os.path.join(PA.save_dir, 'pca_analysis')
     files = [
-             os.path.join(d1, 'unit_taste_responsivity.feather'),
-             os.path.join(d1, 'unit_pal_discrim.feather'),
-             os.path.join(d1, 'palatability_data.npz'),
-             os.path.join(d8, 'pc_data.feather'),
-             os.path.join(d8, 'pc_dQ_v_dN_data.feather'),
-             # Taste responsive
-             os.path.join(d1, 'unit_firing_rates.svg'),
-             os.path.join(d1, 'unit_firing_rates.txt'),
-             os.path.join(d1, 'taste_responsive.svg'),
-             os.path.join(d1, 'taste_responsive-stats.svg'),
-             os.path.join(d1, 'taste_responsive-stats.txt'),
-             # Pal responsive
-             os.path.join(d1, 'Mean_Spearman.svg'),
-             os.path.join(d1, 'Mean_Spearman-comparison.svg'),
-             os.path.join(d1, 'Mean_Spearman-comparison.txt'),
-             os.path.join(d1, 'Mean_Spearman-simple_comparison.svg'),
-             os.path.join(d1, 'Mean_Spearman-simple_comparison.txt'),
-             os.path.join(d1, 'Mean_Spearman-differences.svg'),
-             os.path.join(d1, 'palatability_spearman_corr.svg'),
-             os.path.join(d1, 'palatability_spearman_corr.txt'),
-             # Taste discriminative
-             os.path.join(d1, 'taste_discriminative.svg'),
-             os.path.join(d1, 'taste_discriminative_comparison.txt'),
-             os.path.join(d1, 'taste_discriminative_comparison.svg'),
-             os.path.join(d1, 'Taste_responsive_over_time-Saccharin.svg'),
-             # MDS analysis
-             os.path.join(d2, 'Saccharin_MDS_distances.svg'),
-             os.path.join(d2, 'Saccharin_MDS_distances.txt'),
-             os.path.join(d2, 'Saccharin_MDS_distances-alternate.svg'),
-             os.path.join(d2, 'Saccharin_MDS_distances-alternate.txt'),
-             os.path.join(d2, 'FullDim_MDS_distances.svg'),
-             os.path.join(d2, 'FullDim_MDS_distances.txt'),
-             # HMM identity and palatability coding
-             os.path.join(d3, 'coding_correlations-exclude.svg'),
-             os.path.join(d3, 'coding_comparison-exclude.svg'),
-             os.path.join(d3, 'coding_comparison-exclude.txt'),
-             # HMM identity and palatability confusion
-             os.path.join(d4, 'confusion_correlations-exclude.svg'),
-             os.path.join(d4, 'confusion_comparison-exclude.svg'),
-             os.path.join(d4, 'confusion_comparison-exclude.txt'),
-             os.path.join(d4, 'confusion_differences.svg'),
-             # HMM transition timing
-             os.path.join(d5, 'timing_correlations-exclude.svg'),
-             os.path.join(d5, 'early_end_distributions.svg'),
-             os.path.join(d5, 'early_end_distributions.txt'),
-             os.path.join(d5, 'late_start_distributions.svg'),
-             os.path.join(d5, 'late_start_distributions.txt'),
-             os.path.join(d5, 'Saccharin_early_end_distributions.svg'),
-             os.path.join(d5, 'Saccharin_early_end_distributions.txt'),
-             os.path.join(d5, 'Citric Acid_early_end_distributions.svg'),
-             os.path.join(d5, 'Citric Acid_early_end_distributions.txt'),
-             os.path.join(d5, 'Quinine_early_end_distributions.svg'),
-             os.path.join(d5, 'Quinine_early_end_distributions.txt'),
-             os.path.join(d5, 'NaCl_early_end_distributions.svg'),
-             os.path.join(d5, 'NaCl_early_end_distributions.txt'),
-             os.path.join(d5, 'Saccharin_late_start_distributions.svg'),
-             os.path.join(d5, 'Saccharin_late_start_distributions.txt'),
-             os.path.join(d5, 'Saccharin_timing_comparison-exclude.svg'),
-             os.path.join(d5, 'Saccharin_timing_comparison-exclude.txt'),
-             os.path.join(HA.save_dir, 'HMM_Median_Gamma_Probs.png'),
-             os.path.join(HA.save_dir, 'HMM_Median_Gamma_Probs-exclude.svg'),
-             os.path.join(HA.save_dir, 'HMM_parameters.txt'),
-             os.path.join(HA.save_dir, 'hmm_trial_breakdown.svg'),
-             os.path.join(HA.save_dir, 'hmm_trial_breakdown.txt'),
-             os.path.join(proj_dir, 'Stk11_Project_project.p'),
-             *HA.files.values(),
-             *PA.files.values(),
-             HA.files['hmm_timings'].replace('.feather', '.txt'),
-             os.path.join(HA.save_dir, 'bic_comparison.svg'),
-             os.path.join(HA.save_dir, 'Saccharin_Sequences.svg'),
-             # Held Unit Response changes
-             os.path.join(d6, 'Saccharin_responses_changed-exclude.txt'),
-             os.path.join(d6, 'Saccharin_responses_changed-Cre_v_BadGFP.txt'),
-             os.path.join(d6, 'Saccharin_responses_changed-GFP_v_GFP.txt'),
-             os.path.join(d7, 'Saccharin_responses_changed-exclude.svg'),
-             os.path.join(d7, 'Saccharin_responses_changed-Cre_v_BadGFP.svg'),
-             os.path.join(d7, 'Saccharin_responses_changed-GFP_v_GFP.svg'),
-             os.path.join(HA.save_dir, 'hmm_trial_breakdown.feather'),
-             os.path.join(PA.save_dir, 'Saccharin_consumption.svg'),
-             os.path.join(PA.save_dir, 'Saccharin_consumption.txt')
-            ]
+        os.path.join(d1, 'unit_taste_responsivity.feather'),
+        os.path.join(d1, 'unit_pal_discrim.feather'),
+        os.path.join(d1, 'palatability_data.npz'),
+        os.path.join(d8, 'pc_data.feather'),
+        os.path.join(d8, 'pc_dQ_v_dN_data.feather'),
+        # Taste responsive
+        os.path.join(d1, 'unit_firing_rates.svg'),
+        os.path.join(d1, 'unit_firing_rates.txt'),
+        os.path.join(d1, 'taste_responsive.svg'),
+        os.path.join(d1, 'taste_responsive-stats.svg'),
+        os.path.join(d1, 'taste_responsive-stats.txt'),
+        # Pal responsive
+        os.path.join(d1, 'Mean_Spearman.svg'),
+        os.path.join(d1, 'Mean_Spearman-comparison.svg'),
+        os.path.join(d1, 'Mean_Spearman-comparison.txt'),
+        os.path.join(d1, 'Mean_Spearman-simple_comparison.svg'),
+        os.path.join(d1, 'Mean_Spearman-simple_comparison.txt'),
+        os.path.join(d1, 'Mean_Spearman-differences.svg'),
+        os.path.join(d1, 'palatability_spearman_corr.svg'),
+        os.path.join(d1, 'palatability_spearman_corr.txt'),
+        # Taste discriminative
+        os.path.join(d1, 'taste_discriminative.svg'),
+        os.path.join(d1, 'taste_discriminative_comparison.txt'),
+        os.path.join(d1, 'taste_discriminative_comparison.svg'),
+        os.path.join(d1, 'Taste_responsive_over_time-Saccharin.svg'),
+        # MDS analysis
+        os.path.join(d2, 'Saccharin_MDS_distances.svg'),
+        os.path.join(d2, 'Saccharin_MDS_distances.txt'),
+        os.path.join(d2, 'Saccharin_MDS_distances-alternate.svg'),
+        os.path.join(d2, 'Saccharin_MDS_distances-alternate.txt'),
+        os.path.join(d2, 'FullDim_MDS_distances.svg'),
+        os.path.join(d2, 'FullDim_MDS_distances.txt'),
+        # HMM identity and palatability coding
+        os.path.join(d3, 'coding_correlations-exclude.svg'),
+        os.path.join(d3, 'coding_comparison-exclude.svg'),
+        os.path.join(d3, 'coding_comparison-exclude.txt'),
+        # HMM identity and palatability confusion
+        os.path.join(d4, 'confusion_correlations-exclude.svg'),
+        os.path.join(d4, 'confusion_comparison-exclude.svg'),
+        os.path.join(d4, 'confusion_comparison-exclude.txt'),
+        os.path.join(d4, 'confusion_differences.svg'),
+        # HMM transition timing
+        os.path.join(d5, 'timing_correlations-exclude.svg'),
+        os.path.join(d5, 'early_end_distributions.svg'),
+        os.path.join(d5, 'early_end_distributions.txt'),
+        os.path.join(d5, 'late_start_distributions.svg'),
+        os.path.join(d5, 'late_start_distributions.txt'),
+        os.path.join(d5, 'Saccharin_early_end_distributions.svg'),
+        os.path.join(d5, 'Saccharin_early_end_distributions.txt'),
+        os.path.join(d5, 'Citric Acid_early_end_distributions.svg'),
+        os.path.join(d5, 'Citric Acid_early_end_distributions.txt'),
+        os.path.join(d5, 'Quinine_early_end_distributions.svg'),
+        os.path.join(d5, 'Quinine_early_end_distributions.txt'),
+        os.path.join(d5, 'NaCl_early_end_distributions.svg'),
+        os.path.join(d5, 'NaCl_early_end_distributions.txt'),
+        os.path.join(d5, 'Saccharin_late_start_distributions.svg'),
+        os.path.join(d5, 'Saccharin_late_start_distributions.txt'),
+        os.path.join(d5, 'Saccharin_timing_comparison-exclude.svg'),
+        os.path.join(d5, 'Saccharin_timing_comparison-exclude.txt'),
+        os.path.join(HA.save_dir, 'HMM_Median_Gamma_Probs.png'),
+        os.path.join(HA.save_dir, 'HMM_Median_Gamma_Probs-exclude.svg'),
+        os.path.join(HA.save_dir, 'HMM_parameters.txt'),
+        os.path.join(HA.save_dir, 'hmm_trial_breakdown.svg'),
+        os.path.join(HA.save_dir, 'hmm_trial_breakdown.txt'),
+        os.path.join(proj_dir, 'Stk11_Project_project.p'),
+        *HA.files.values(),
+        *PA.files.values(),
+        HA.files['hmm_timings'].replace('.feather', '.txt'),
+        os.path.join(HA.save_dir, 'bic_comparison.svg'),
+        os.path.join(HA.save_dir, 'Saccharin_Sequences.svg'),
+        # Held Unit Response changes
+        os.path.join(d6, 'Saccharin_responses_changed-exclude.txt'),
+        os.path.join(d6, 'Saccharin_responses_changed-Cre_v_BadGFP.txt'),
+        os.path.join(d6, 'Saccharin_responses_changed-GFP_v_GFP.txt'),
+        os.path.join(d7, 'Saccharin_responses_changed-exclude.svg'),
+        os.path.join(d7, 'Saccharin_responses_changed-Cre_v_BadGFP.svg'),
+        os.path.join(d7, 'Saccharin_responses_changed-GFP_v_GFP.svg'),
+        os.path.join(HA.save_dir, 'hmm_trial_breakdown.feather'),
+        os.path.join(PA.save_dir, 'Saccharin_consumption.svg'),
+        os.path.join(PA.save_dir, 'Saccharin_consumption.txt')
+    ]
 
     ext_map = {'feather': 'data', 'npy': 'data', 'npz': 'data', 'p': 'data',
                'svg': 'plots', 'png': 'plots', 'txt': 'stats', 'json': 'data'}
@@ -3097,5 +3158,5 @@ def consolidate_results():
         print(f'Missing file: {f}\n')
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     print('Hello World')
