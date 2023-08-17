@@ -18,18 +18,10 @@ import os
 
 # you need to make a project analysis using blechpy.project() first
 # rec_dir =  '/media/dsvedberg/Ubuntu Disk/taste_experience'
-rec_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'
+rec_dir = '/media/dsvedber g/Ubuntu Disk/taste_experience_resorts'
 proj = blechpy.load_project(rec_dir)
-proj.make_rec_info_table()  # run this in case you changed around project stuff
-
 PA = ana.ProjectAnalysis(proj)
-
-PA.detect_held_units()  # overwrite = True) #this part also gets the all units file
 [all_units, held_df] = PA.get_unit_info()  # overwrite = True) #run and check for correct area then run get best hmm
-
-PA.process_single_units()  # overwrite = True) #maybe run
-# PA.run(overwrite = True)
-
 HA = ana.HmmAnalysis(proj)
 HA.get_hmm_overview()  # overwrite = True) #use overwrrite = True to debug
 # HA.sort_hmms_by_params()#overwrite = True)
@@ -71,7 +63,7 @@ nplt.plot_NB_decoding(NB_decode, plotdir=HA.save_dir, trial_group_size=5, trial_
 
 
 ###############################################################################
-###Naive Bayes timing preprocessing##########################################################
+###Naive Bayes timing##########################################################
 NB_timings = hmma.getNBTimings(HA)
 
 ###Naive Bayes timing ANOVA###
@@ -86,11 +78,9 @@ time_aov, time_ph = ana.iter_trial_group_anova(NB_timings, aov_groups, dvcols, w
 time_plot_aov = time_aov.loc[(time_aov.Source == 'trial_group')].reset_index(drop=True)
 time_plot_aov['F'] = time_plot_aov['F'].fillna(0)
 sns.set(font_scale=1, style='white')
-sns.catplot(data=time_plot_aov, x='n_trial_groups', y='F', hue='exp_group', col='time_group', row='trial_type', kind='boxen', margin_titles=True, aspect = 0.5)
-plt.show()
+sns.catplot(data=time_plot_aov, x='n_trial_groups', y='F', hue='exp_group', col='time_group', row='trial_type', kind='boxen', margin_titles=True, aspect=0.5)
 
-sns.catplot(data=time_plot_aov, x='n_trial_groups', y='p-GG-corr', hue='exp_group', col='time_group', row='trial_type', kind='boxen', margin_titles=True, aspect = 0.5)
-plt.show()
+sns.catplot(data=time_plot_aov, x='n_trial_groups', y='p-GG-corr', hue='exp_group', col='time_group', row='trial_type', kind='boxen', margin_titles=True, aspect=0.5)
 
 ###Naive Bayes timing plotting##########################################################
 # plot timing correlations grouped by session:
@@ -212,60 +202,20 @@ HA.plot_hmm_timing()
 ### is mean gamma probability of mode state correlated with accuracy? #########
 # get gamma probability of mode state for each bin
 gamma_mode_df = hmma.binstate(best_hmms)  # TODO get session trial number in here
-gamma_mode_df = ana.add_session_trial(gamma_mode_df, proj)
-gamma_mode_df = hmma.add_trial_group(gamma_mode_df, 5)
-# rebin every 50ms into a bin
+gamma_mode_df = ana.add_session_trial(gamma_mode_df, proj)# rebin every 50ms into a bin
 gamma_mode_df['time_bin'] = gamma_mode_df.time.astype(int) / 20
 gamma_mode_df['time_bin'] = gamma_mode_df['time_bin'].astype(int)
-gamma_mode_df['trial_bin'] = gamma_mode_df.trial_group  # rename trial_group column to trial_bin
 gamma_mode_df['binned_time'] = gamma_mode_df.time_bin * 20
-gamma_mode_df['trial_bin'] = gamma_mode_df.trial_group  # rename trial_group column to trial_bin
 gamma_mode_df['session'] = gamma_mode_df.time_group  # rename time_group column to session
 gamma_mode_df['session_trial'] = gamma_mode_df.session_trial.astype(int)
-gamma_mode_df['session_trial_bin'] = gamma_mode_df.session_trial / 20
-gamma_mode_df['session_trial_bin'] = gamma_mode_df['session_trial_bin'].astype(int)
 
 gamma_mode_pct_df = gamma_mode_df.groupby(['exp_name', 'exp_group', 'time_group', 'taste', 'trial', 'trial_group'])[
     'gamma_mode'].apply(lambda c: (c > 0.9).sum() / len(c)).reset_index()
 avg_gamma_mode_df = gamma_mode_df.groupby(
     ['exp_name', 'exp_group', 'time_group', 'taste', 'trial']).mean().reset_index()
 avg_model_groups = ['exp_group', 'time_group', 'taste']
-
-###ANOVAS
-aov_groups = ['time_group', 'exp_group']
-within = ['taste', 'trial_group']
-subject = 'exp_name'
-
-gm_aov, gm_ph = ana.iter_trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dep_vars='gamma_mode', within=within,
-                                           save_dir=HA.save_dir)
-
-gm_plt_aov = gm_aov.loc[gm_aov.Source == 'trial_group']
-
-sns.catplot(data=gm_plt_aov, x='n_trial_groups', y='F', hue='exp_group', col='time_group', row = 'trial_type', margin_titles=True, aspect = 0.5)
-plt.show()
-
-sns.catplot(data=gm_plt_aov, x='n_trial_groups', y='p-GG-corr', hue='exp_group', col='time_group', row='trial_type', margin_titles=True, aspect = 0.5)
-plt.show()
-
-### Aggregating all ANOVAS for plotting #######################################
-gm_plt_aov['epoch'] = 'all'
-super_aov = pd.concat([gm_plt_aov, NB_plot_aov, time_plot_aov])
-super_aov['trial_type'] = super_aov['trial_type'].replace('trial_num', 'trial')
-super_aov['trial_type'] = super_aov['trial_type'].replace('trial', 'taste_trial')
-super_aov['time_group'] = super_aov['time_group'].astype(int)
-
-sns.set(font_scale=1, style='white')
-g = sns.catplot(data=super_aov, x='n_trial_groups', y='F', hue='exp_group', col='time_group', row = 'trial_type', margin_titles=True, aspect = 0.5, kind='boxen')
-g.savefig(os.path.join(HA.save_dir, 'timing_gammamode_Fval_vs_splitnum.png'))
-
-p = sns.catplot(data=super_aov, x='n_trial_groups', y='p-GG-corr', hue='exp_group', col='time_group', row='trial_type', margin_titles=True, aspect = 0.5, kind='boxen')
-p.savefig(os.path.join(HA.save_dir, 'timing_gammamode_Pval_vs_splitnum.png'))
-
-
 ### plot gamma mode probability over time #####################################
 avg_gamma_mode_df['pr(mode state)'] = avg_gamma_mode_df.gamma_mode
-avg_gamma_mode_df['trial bin'] = avg_gamma_mode_df.trial_bin
-avg_gamma_mode_df['session trial bin'] = avg_gamma_mode_df.session_trial_bin
 avg_gamma_mode_df['session_trial'] = avg_gamma_mode_df.session_trial.astype(int)
 
 trial_cols = ['trial', 'session_trial']
@@ -274,6 +224,84 @@ for i in trial_groups:
     for j in trial_cols:
         nplt.plot_trialwise_rel2(avg_gamma_mode_df, y_facs=['pr(mode state)'], save_dir=HA.save_dir,
                                  save_prefix='gamma_mode_AIC', trial_col=j, n_trial_groups=i)
+
+### gamma mode ANOVAS
+aov_groups = ['time_group', 'exp_group']
+within = ['taste']
+subject = 'exp_name'
+dvcols = 'gamma_mode'
+
+gm_aov, gm_ph = ana.iter_trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dep_vars=dvcols, within=within,
+                                           save_dir=HA.save_dir)
+
+gm_plt_aov = gm_aov.loc[gm_aov.Source == 'trial_group']
+
+gm_plt_aov['session'] = gm_plt_aov.time_group
+gm_plt_aov['trial_type'] = gm_plt_aov['trial_type'].replace('trial', 'taste_trial')
+gm_plt_aov = gm_plt_aov.reset_index(drop=True)
+g = sns.relplot(data=gm_plt_aov, x='n_trial_groups', y='F', hue='exp_group', col='session', row='exp_group', style='trial_type', facet_kws={'margin_titles':True}, aspect=0.8, kind='line')
+g.savefig(HA.save_dir + '/gamma_mode_FvalComparison.png')
+
+g = sns.relplot(data=gm_plt_aov, x='n_trial_groups', y='MS', hue='exp_group', col='session', row='exp_group', style='trial_type', facet_kws={'margin_titles':True}, aspect=0.8, kind='line')
+g.savefig(HA.save_dir + '/gamma_mode_MSvalComparison.png')
+
+sns.catplot(data=gm_plt_aov, x='n_trial_groups', y='p-GG-corr', hue='exp_group', col='time_group', row='trial_type', margin_titles=True, aspect = 0.5)
+plt.show()
+
+### Aggregating all ANOVAS for plotting #######################################
+NB_decode_AOV_file = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts/taste_experience_resorts_analysis/hmm_analysis/NB_decode_all_ANOVA.csv'
+gamma_mode_AOV_file = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts/taste_experience_resorts_analysis/hmm_analysis/gamma_mode_all_ANOVA.csv'
+timing_AOV_file = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts/taste_experience_resorts_analysis/hmm_analysis/NB_timings_all_ANOVA.csv'
+
+NB_aov = pd.read_csv(NB_decode_AOV_file)
+
+time_aov = pd.read_csv(timing_AOV_file)
+
+gm_aov = pd.read_csv(gamma_mode_AOV_file)
+gm_aov['epoch'] = 'all'
+
+super_aov = pd.concat([gm_aov, NB_aov, time_aov])
+super_aov = super_aov.reset_index(drop=True)
+super_aov = super_aov.loc[super_aov['Source'] == 'trial_group']
+super_aov = super_aov.loc[super_aov['epoch'] != 'prestim']
+super_aov['trial_type'] = super_aov['trial_type'].replace('trial_num', 'trial')
+super_aov['trial_type'] = super_aov['trial_type'].replace('trial', 'taste_trial')
+super_aov[['time_group', 'n_trial_groups']] = super_aov[['time_group', 'n_trial_groups']].astype(int)
+super_aov['session'] = super_aov['time_group']
+super_aov['significant'] = super_aov['p-GG-corr'] < 0.05
+
+p = sns.catplot(data=super_aov, x='n_trial_groups', y='p-GG-corr', hue='exp_group', col='session', row='trial_type', margin_titles=True, aspect=1, height=5, kind='swarm', dodge=True)
+for ax in p.axes.flat:
+    ax.axhline(0.05, ls='--', color='gray')
+p.savefig(os.path.join(HA.save_dir, 'all_measures_Pval_vs_splitnum.png'))
+
+sns.set(font_scale=1, style='white')
+g = sns.catplot(data=super_aov, x='n_trial_groups', y='F', hue='exp_group', col='session', row = 'trial_type', margin_titles=True, aspect=0.5, kind='boxen')
+g.savefig(os.path.join(HA.save_dir, 'all_measures_Fval_vs_splitnum.png'))
+
+p = sns.catplot(data=super_aov, x='n_trial_groups', y='ng2', hue='exp_group', col='session', row='trial_type', margin_titles=True, aspect=0.5, height=5, kind='boxen')
+p.savefig(os.path.join(HA.save_dir, 'all_measures_eta_vs_splitnum.png'))
+
+p = sns.catplot(data=super_aov, x='n_trial_groups', y='MS', hue='exp_group', col='session', row='trial_type', margin_titles=True, aspect=0.5, height=5, kind='boxen')
+p.savefig(os.path.join(HA.save_dir, 'all_measures_MS_vs_splitnum.png'))
+
+super_aov['metric_significant'] = super_aov.groupby(['epoch','dependent_var','n_trial_groups','trial_type'])['p-GG-corr'].transform(lambda x: (x < 0.05).any())
+sig_aov = super_aov.loc[super_aov['metric_significant']]
+sig_aov['variable'] = '\n' + sig_aov['dependent_var'] + '|' + sig_aov['epoch'] + '_epoch'
+
+sig_eta_aov = sig_aov.loc[sig_aov['p-GG-corr'] < 0.05]
+g = sns.relplot(data=sig_eta_aov, x='n_trial_groups', y='ng2',style='trial_type', markers = True, col='session', facet_kws={'margin_titles':True}, aspect=0.8, height=6, kind='line')
+g.savefig(os.path.join(HA.save_dir, 'sig_measures_eta_vs_session.png'))
+
+g = sns.relplot(data=sig_aov, x='session', y='p-GG-corr', hue='exp_group',style='trial_type', col='variable', row='n_trial_groups', facet_kws={'margin_titles':True}, aspect=1, height=4, kind='line')
+for ax in g.axes.flat:
+    ax.axhline(0.05, ls='--', color='gray')
+g.savefig(os.path.join(HA.save_dir, 'sig_measures_Pval_vs_session.png'))
+
+g = sns.relplot(data=sig_aov, x='n_trial_groups', y='F', hue='exp_group',style='trial_type',marker=True, col='variable', row='session', facet_kws={'margin_titles':True}, linewidth=2, aspect=1, height=4, kind='line')
+g.set(ylim=(0,20))
+g.savefig(os.path.join(HA.save_dir, 'sig_measures_F_vs_session.png'))
+
 
 # TODO: create plotting function for ANOVAs
 

@@ -79,7 +79,7 @@ def get_all_units(proj):
 
 def find_held_units(proj, percent_criterion=95, raw_waves=False):
     all_units = get_all_units(proj)
-    sing_units = all_units[all_units['single_unit'] == True]
+    sing_units = all_units[all_units['single_unit']==True]
     sing_units['intra_J3'] = sing_units.apply(lambda x: get_unit_J3(x['rec_dir'],
                                                                     x['unit_name'],
                                                                     raw_waves=raw_waves),

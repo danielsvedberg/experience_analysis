@@ -19,6 +19,7 @@ from collections import Counter
 import aggregation as agg
 import itertools
 from statistics import median
+import analysis as ana
 from more_itertools import flatten
 
 def deduce_state_order(best_paths):
@@ -1809,7 +1810,7 @@ def getNBTimings(HA):
     NB_timings = NB_timings.reset_index()
 
     # remove all trials with less than 3 states
-    NB_timings = NB_timings.groupby(['rec_dir', 'taste', 'session_trial']).filter(lambda x: len(x) >= 3)
+    NB_timings = NB_timings.groupby(['rec_dir', 'taste', 'session_trial']).filter(lambda x: len(x) >= 2)
 
     NB_timings = NB_timings.set_index(['exp_name', 'taste', 'state_group', 'session_trial', 'time_group'])
     operating_columns = ['t_start', 't_end', 't_med', 'duration']
@@ -1846,7 +1847,6 @@ def getMaxGamma(best_hmms, trial_group = 5):
         return(outdf)
     out = best_hmms.apply(lambda x: maxgamma(x), axis = 1).tolist()
     out = pd.concat(out)
-    
 
     return out
 
@@ -1859,7 +1859,7 @@ def getModeHmm(hmm):
     mode_gamma = gamma[:,mode_seqs,np.arange(gamma.shape[2])]
     return mode_seqs, mode_gamma
 
-def binstate(best_hmms, statefunc = getModeHmm):
+def binstate_deprecated(best_hmms, statefunc=getModeHmm):
     def getbinstateprob(row):
         h5_file = get_hmm_h5(row['rec_dir']) #get hmm file name
         hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row["hmm_id"]) #load hmm
@@ -1868,18 +1868,28 @@ def binstate(best_hmms, statefunc = getModeHmm):
         rowids = hmm.stat_arrays['row_id']
         time = hmm.stat_arrays['time']
         colnames  =['hmm_id','dig_in','taste','trial']
-        outdf = pd.DataFrame(rowids,columns = colnames)
+        outdf = pd.DataFrame(rowids,columns=colnames)
         nmcols = ['exp_name','exp_group','rec_group','time_group', 'rec_dir']
         outdf[nmcols] = row[nmcols]
         colnames = outdf.columns
-        gammadf = pd.DataFrame(mode_gamma,columns = time) 
-        outdf = pd.concat([outdf,gammadf], axis = 1)
-        outdf = pd.melt(outdf,id_vars = colnames, value_vars = list(time), var_name = 'time', value_name = 'gamma_mode')
+        gammadf = pd.DataFrame(mode_gamma,columns=time)
+        outdf = pd.concat([outdf,gammadf], axis=1)
+        outdf = pd.melt(outdf,id_vars=colnames, value_vars=list(time), var_name='time', value_name='gamma_mode')
         return(outdf)
-    out = best_hmms.apply(lambda x: getbinstateprob(x), axis = 1).tolist()
+    out = best_hmms.apply(lambda x: getbinstateprob(x), axis=1).tolist()
     out = pd.concat(out)
+
+
     return out
-    
+
+def get_avg_gamma_mode(best_hmms):
+    gmdf = binstate(best_hmms)
+    avg_gamma_mode_df = gmdf.groupby(
+        ['exp_name', 'exp_group', 'time_group', 'taste', 'trial']).mean().reset_index()
+    avg_gamma_mode_df['pr(mode state)'] = avg_gamma_mode_df.gamma_mode
+    avg_gamma_mode_df['session_trial'] = avg_gamma_mode_df.session_trial.astype(int)
+    return avg_gamma_mode_df
+
 def add_trial_group(df, trial_group = 5):
     df['trial_group'] = (df.trial.astype(int)/trial_group).astype(int)
     return df

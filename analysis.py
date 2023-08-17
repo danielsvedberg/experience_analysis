@@ -15,6 +15,7 @@ import population_analysis as pop
 import hmm_analysis as hmma
 import statsmodels.formula.api as smf
 import patsy
+import glob
 from itertools import product
 from statsmodels.regression.linear_model import OLS
 from scipy.stats import mannwhitneyu, spearmanr, sem, f_oneway, rankdata, pearsonr, ttest_ind
@@ -2083,6 +2084,118 @@ class HmmAnalysis(object):
 
         self.write_sorted_hmms(sorted_df)
 
+    def get_NB_decode(self):
+        try:
+            _, NB_decode, _, _ = self.analyze_NB_ID(overwrite=False)
+        except FileNotFoundError:
+            print("decode file not found, need to run analyze_NB_ID with overwrite=True first")
+            return None
+
+        NB_decode[['Y', 'epoch']] = NB_decode.Y.str.split('_', expand=True)
+        NB_decode['taste'] = NB_decode['trial_ID']
+        NB_decode['state_num'] = NB_decode['hmm_state'].astype(int)
+
+        NB_decode['state_num'] = NB_decode['hmm_state'].astype('int64')
+        NB_decode['epoch'] = NB_decode['epoch'].fillna('prestim')
+        NB_decode = add_session_trial(NB_decode, self.project, trial_col='trial_num', trial_id='trial_ID')
+        NB_decode['taste_trial'] = NB_decode['trial_num']
+        NB_decode = NB_decode.drop(columns=['trial_ID', 'trial_num'])
+        return NB_decode
+
+    def get_NB_timing(self):
+        try:
+            _, _, _, NB_timings = self.analyze_NB_ID(overwrite=False)  # run with overwrite
+        except FileNotFoundError:
+            print("decode file not found, need to run analyze_NB_ID with overwrite=True first")
+            return None
+
+        NB_decode = self.get_NB_decode()
+        grcols = ['rec_dir', 'trial_num', 'taste', 'state_num']
+        NB_decsub = NB_decode[grcols + ['p_correct']].drop_duplicates()
+        NB_timings = NB_timings.merge(NB_decsub, on=grcols, how='left')
+
+        NB_timings = NB_timings.drop_duplicates()
+        NB_timings[['Y', 'epoch']] = NB_timings.state_group.str.split('_', expand=True)
+        avg_timing = NB_timings.groupby(['exp_name', 'taste', 'state_group']).mean()[
+            ['t_start', 't_end', 't_med', 'duration']]
+        avg_timing = avg_timing.rename(columns=lambda x: 'avg_' + x)
+
+        NB_timings = pd.merge(NB_timings, avg_timing, on=['exp_name', 'taste', 'state_group'],
+                              how='left').drop_duplicates()
+        NB_timings = NB_timings.reset_index()
+        idxcols1 = list(NB_timings.loc[:, 'exp_name':'state_num'].columns)
+        idxcols2 = list(NB_timings.loc[:, 'pos_in_trial':].columns)
+        idxcols = idxcols1 + idxcols2
+        NB_timings = NB_timings.set_index(idxcols)
+        NB_timings = NB_timings.reset_index()
+        NB_timings = NB_timings.set_index(['exp_name', 'taste', 'state_group', 'session_trial', 'time_group'])
+        operating_columns = ['t_start', 't_end', 't_med', 'duration']
+
+        from scipy.stats import zscore
+        for i in operating_columns:
+            zscorename = i + '_zscore'
+            abszscorename = i + '_absZscore'
+            NB_timings[zscorename] = NB_timings.groupby(['exp_name', 'state_group'])[i].transform(lambda x: zscore(x))
+            NB_timings[zscorename] = NB_timings[zscorename].fillna(0)
+            NB_timings[abszscorename] = abs(NB_timings[zscorename])
+
+        NB_timings = NB_timings.reset_index()
+        NB_timings['session_trial'] = NB_timings.session_trial.astype(int)  # make trial number an int
+        NB_timings['time_group'] = NB_timings.time_group.astype(int)  # make trial number an int
+
+        # remove all trials with less than 3 states
+        NB_timings = NB_timings.groupby(['rec_dir', 'taste', 'session_trial']).filter(lambda x: len(x) >= 3)
+
+        return NB_timings
+
+    def get_binstate(self, sorting='best_AIC', statefunc=hmma.getModeHmm):
+        def getbinstateprob(row):
+            h5_file = get_hmm_h5(row['rec_dir'])  # get hmm file name
+            hmm, time, params = phmm.load_hmm_from_hdf5(h5_file, row["hmm_id"])  # load hmm
+            mode_seqs, mode_gamma = statefunc(hmm)  # get mode state # and gamma prob
+
+            rowids = hmm.stat_arrays['row_id']
+            time = hmm.stat_arrays['time']
+            colnames = ['hmm_id', 'dig_in', 'taste', 'trial']
+            outdf = pd.DataFrame(rowids, columns=colnames)
+            nmcols = ['exp_name', 'exp_group', 'rec_group', 'time_group', 'rec_dir']
+            outdf[nmcols] = row[nmcols]
+            colnames = outdf.columns
+            gammadf = pd.DataFrame(mode_gamma, columns=time)
+            outdf = pd.concat([outdf, gammadf], axis=1)
+            outdf = pd.melt(outdf, id_vars=colnames, value_vars=list(time), var_name='time', value_name='gamma_mode')
+            return (outdf)
+
+        best_hmms = self.get_best_hmms(sorting=sorting)
+        out = best_hmms.apply(lambda x: getbinstateprob(x), axis=1).tolist()
+        out = pd.concat(out)
+
+        gamma_mode_df = add_session_trial(out, self.project)  # rebin every 50ms into a bin
+        gamma_mode_df['time_bin'] = gamma_mode_df.time.astype(int) / 20
+        gamma_mode_df['time_bin'] = gamma_mode_df['time_bin'].astype(int)
+        gamma_mode_df['binned_time'] = gamma_mode_df.time_bin * 20
+        gamma_mode_df['session'] = gamma_mode_df.time_group  # rename time_group column to session
+        gamma_mode_df['session_trial'] = gamma_mode_df.session_trial.astype(int)
+        return gamma_mode_df
+
+    def get_avg_gamma_mode(self, sorting='best_AIC', statefunc=hmma.getModeHmm):
+        gmdf = self.get_binstate(sorting, statefunc)
+        avg_gamma_mode_df = gmdf.groupby(
+            ['exp_name', 'exp_group', 'time_group', 'taste', 'trial']).mean().reset_index()
+        avg_gamma_mode_df['pr(mode state)'] = avg_gamma_mode_df.gamma_mode
+        avg_gamma_mode_df['session_trial'] = avg_gamma_mode_df.session_trial.astype(int)
+        return avg_gamma_mode_df
+
+
+def get_hmm_h5(rec_dir):
+    tmp = glob.glob(rec_dir + os.sep + '**' + os.sep + '*HMM_Analysis.hdf5', recursive=True)
+    if len(tmp)>1:
+        raise ValueError(str(tmp))
+
+    if len(tmp) == 0:
+        return None
+
+    return tmp[0]
 
 def organize_hmms(sorted_df, plot_dir):
     req_params = {'dt': 0.001, 'unit_type': 'single', 'time_end': 2000}
@@ -2759,7 +2872,7 @@ def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='tri
         special_aov.to_csv(aovpath)
         special_ph.to_csv(posthocpath)
 
-    return (aovs, pws)
+    return aovs, pws
 
 
 def iter_trial_group_anova(df, groups, dep_vars, within, subject='exp_name', trial_cols=None,
