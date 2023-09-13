@@ -478,7 +478,7 @@ def plot_trialwise_rel2(df, y_facs, sess_col='time_group', cond_col='exp_group',
         df['taste'] = pd.Categorical(df['taste'], ['Suc', 'NaCl', 'CA', 'QHCl'])
         g = sns.relplot(kind='line', data=df,
                         x='trial group', y=y_col, col='session', row='taste', hue='condition', style='condition',
-                        markers=True, err_style='band', ci=95, height=4, aspect=0.75,
+                        markers=True, err_style='band', ci=95, height=4, aspect=1,
                         linewidth=3,
                         facet_kws={"margin_titles": True})
         g.set_titles(row_template='{row_name}')

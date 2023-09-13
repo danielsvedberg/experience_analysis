@@ -22,7 +22,7 @@ HA.sort_hmms_by_AIC(overwrite=True) #label hmms in hmm_overview with lowest AIC 
 best_hmms = HA.get_best_hmms(sorting='best_AIC', overwrite=True) #get rows of hmm_overview where sorting column==sorting arugument
 
 ### perform the naive bayes analysis of the hmm
-NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite=True, parallel=True) #run with overwrite
+NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite=True, multi_process=True) #run with overwrite
 
 #%% important calls to make checks
 ov = HA.get_hmm_overview(overwrite=False) #get the hmm_overview dataframe

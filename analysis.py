@@ -1422,19 +1422,19 @@ class HmmAnalysis(object):
         BIC_file = os.path.join(self.save_dir, 'bic_comparison.svg')
         nplt.plot_BIC(ho, self.project, save_file=BIC_file)
 
-    def analyze_NB_ID(self, overwrite=True, epoch=None, parallel=False):
+    def analyze_NB_ID(self, overwrite=True, multi_process=False, sorting="best_AIC"):
         '''
         critical function for pizza talk decoding analysis of HMM states
         '''
         if overwrite is True:
-            best_hmms = self.get_best_hmms(sorting="best_BIC")
+            best_hmms = self.get_best_hmms(sorting=sorting)
             all_units, _ = ProjectAnalysis(self.project).get_unit_info()
 
-            if parallel == True:
+            if multi_process==True:
                 NB_res, NB_meta = hmma.analyze_NB_state_classification_parallel(best_hmms, all_units)
             else:
-                NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms,
-                                                                       all_units)  # , epoch = epoch, prestim = True)
+                NB_res, NB_meta = hmma.analyze_NB_state_classification_parallel(best_hmms, all_units, run_parallel=False)
+                #NB_res, NB_meta = hmma.analyze_NB_state_classification(best_hmms, all_units)  # , epoch = epoch, prestim = True)
 
             decode_data = hmma.process_NB_classification(NB_meta, NB_res)
 
@@ -2110,8 +2110,11 @@ class HmmAnalysis(object):
             return None
 
         NB_decode = self.get_NB_decode()
-        grcols = ['rec_dir', 'trial_num', 'taste', 'state_num']
+        grcols = ['rec_dir', 'taste_trial', 'taste', 'state_num']
         NB_decsub = NB_decode[grcols + ['p_correct']].drop_duplicates()
+
+        NB_timings['taste_trial'] = NB_timings['trial_num']
+        NB_timings = NB_timings.drop(columns=['trial_num'])
         NB_timings = NB_timings.merge(NB_decsub, on=grcols, how='left')
 
         NB_timings = NB_timings.drop_duplicates()
@@ -2122,22 +2125,22 @@ class HmmAnalysis(object):
 
         NB_timings = pd.merge(NB_timings, avg_timing, on=['exp_name', 'taste', 'state_group'],
                               how='left').drop_duplicates()
-        NB_timings = NB_timings.reset_index()
-        idxcols1 = list(NB_timings.loc[:, 'exp_name':'state_num'].columns)
-        idxcols2 = list(NB_timings.loc[:, 'pos_in_trial':].columns)
-        idxcols = idxcols1 + idxcols2
-        NB_timings = NB_timings.set_index(idxcols)
-        NB_timings = NB_timings.reset_index()
-        NB_timings = NB_timings.set_index(['exp_name', 'taste', 'state_group', 'session_trial', 'time_group'])
-        operating_columns = ['t_start', 't_end', 't_med', 'duration']
-
-        from scipy.stats import zscore
-        for i in operating_columns:
-            zscorename = i + '_zscore'
-            abszscorename = i + '_absZscore'
-            NB_timings[zscorename] = NB_timings.groupby(['exp_name', 'state_group'])[i].transform(lambda x: zscore(x))
-            NB_timings[zscorename] = NB_timings[zscorename].fillna(0)
-            NB_timings[abszscorename] = abs(NB_timings[zscorename])
+        NB_timings = NB_timings.reset_index(drop=True)
+        # idxcols1 = list(NB_timings.loc[:, 'exp_name':'state_num'].columns)
+        # idxcols2 = list(NB_timings.loc[:, 'pos_in_trial':].columns)
+        # idxcols = idxcols1 + idxcols2
+        # NB_timings = NB_timings.set_index(idxcols)
+        # NB_timings = NB_timings.reset_index()
+        # NB_timings = NB_timings.set_index(['exp_name', 'taste', 'state_group', 'session_trial', 'time_group'])
+        # operating_columns = ['t_start', 't_end', 't_med', 'duration']
+        #
+        # from scipy.stats import zscore
+        # for i in operating_columns:
+        #     zscorename = i + '_zscore'
+        #     abszscorename = i + '_absZscore'
+        #     NB_timings[zscorename] = NB_timings.groupby(['exp_name', 'state_group'])[i].transform(lambda x: zscore(x))
+        #     NB_timings[zscorename] = NB_timings[zscorename].fillna(0)
+        #     NB_timings[abszscorename] = abs(NB_timings[zscorename])
 
         NB_timings = NB_timings.reset_index()
         NB_timings['session_trial'] = NB_timings.session_trial.astype(int)  # make trial number an int
@@ -2148,11 +2151,40 @@ class HmmAnalysis(object):
 
         return NB_timings
 
-    def get_binstate(self, sorting='best_AIC', statefunc=hmma.getModeHmm):
+    def get_gamma_sequences(self, sorting='best_AIC'):
+        def getmaxgammaprob(row):
+            h5_file = get_hmm_h5(row['rec_dir'])
+            hmm, time, params = phmm.load_hmm_from_hdf5(h5_file, row["hmm_id"])
+            gamma = hmm.stat_arrays['gamma_probabilities']
+            gamma_seqs = np.argmax(gamma, axis=1)
+            rowids = hmm.stat_arrays['row_id']
+            time = hmm.stat_arrays['time']
+            colnames = ['hmm_id', 'dig_in', 'taste', 'trial']
+            outdf = pd.DataFrame(rowids, columns=colnames)
+            nmcols = ['exp_name', 'exp_group', 'rec_group', 'time_group', 'rec_dir']
+            outdf[nmcols] = row[nmcols]
+            colnames = outdf.columns
+            gammadf = pd.DataFrame(gamma_seqs, columns=time)
+            outdf = pd.concat([outdf, gammadf], axis=1)
+            outdf = pd.melt(outdf, id_vars=colnames, value_vars=list(time), var_name='time', value_name='gamma_state')
+
+            return outdf
+
+        best_hmms = self.get_best_hmms(sorting=sorting)
+        out = best_hmms.apply(lambda x: getmaxgammaprob(x), axis=1).tolist()
+        out = pd.concat(out)
+
+        out = add_session_trial(out, self.project)
+        out['session'] = out.time_group
+        out['session_trial'] = out.session_trial.astype(int)
+
+        return out
+
+    def get_gamma_mode(self, sorting='best_AIC'):
         def getbinstateprob(row):
             h5_file = get_hmm_h5(row['rec_dir'])  # get hmm file name
             hmm, time, params = phmm.load_hmm_from_hdf5(h5_file, row["hmm_id"])  # load hmm
-            mode_seqs, mode_gamma = statefunc(hmm)  # get mode state # and gamma prob
+            mode_seqs, mode_gamma = hmma.getModeHmm(hmm)  # get mode state # and gamma prob
 
             rowids = hmm.stat_arrays['row_id']
             time = hmm.stat_arrays['time']
@@ -2178,11 +2210,12 @@ class HmmAnalysis(object):
         gamma_mode_df['session_trial'] = gamma_mode_df.session_trial.astype(int)
         return gamma_mode_df
 
-    def get_avg_gamma_mode(self, sorting='best_AIC', statefunc=hmma.getModeHmm):
-        gmdf = self.get_binstate(sorting, statefunc)
+    def get_avg_gamma_mode(self, sorting='best_AIC'):
+        gmdf = self.get_gamma_mode(sorting)
         avg_gamma_mode_df = gmdf.groupby(
             ['exp_name', 'exp_group', 'time_group', 'taste', 'trial']).mean().reset_index()
         avg_gamma_mode_df['pr(mode state)'] = avg_gamma_mode_df.gamma_mode
+        avg_gamma_mode_df['taste_trial'] = avg_gamma_mode_df.trial.astype(int)
         avg_gamma_mode_df['session_trial'] = avg_gamma_mode_df.session_trial.astype(int)
         return avg_gamma_mode_df
 
@@ -2819,10 +2852,14 @@ def refit_hmms(sorted_df, base_params, all_units, log_file=None, rec_params={}):
 
 import pingouin as pg
 
-
-def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='trial', n_trial_groups=5, save_dir=None):
+def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='trial', n_trial_groups=5, trial_split=False, save_dir=None):
     df = df.copy()
-    df['trial_group'] = pd.cut(df[trial_col], n_trial_groups, labels=False)
+    if trial_split:
+        df['trial_group'] = df[trial_col] > trial_split
+        df['trial_group'] = df['trial_group'].astype(int)
+        n_trial_groups = 2
+    else:
+        df['trial_group'] = pd.cut(df[trial_col], n_trial_groups, labels=False)
 
     if 'trial_group' not in within:
         within.append('trial_group')
@@ -2833,12 +2870,13 @@ def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='tri
     pws = []
     for name, group in df.groupby(groups):
         aov = pg.rm_anova(dv=dv, within=within, subject=subject, data=group)
-        pw = pg.pairwise_ttests(dv=dv, within=['trial_group'], subject=['taste_sub'], padjust='holm', data=group)
+        #pw = pg.pairwise_ttests(dv=dv, within=['trial_group'], subject=['taste_sub'], padjust='holm', data=group)
+        pw = pg.pairwise_ttests(dv=dv, within=within, subject=subject, padjust='holm', data=group)
 
         aov[groups] = name
         pw[groups] = name
-        extra_cols = ['trial_type', 'n_trial_groups', 'dependent_var']
-        extra_col_data = [trial_col, str(n_trial_groups), dv]
+        extra_cols = ['trial_type', 'n_trial_groups', 'dependent_var', 'trial_split']
+        extra_col_data = [trial_col, str(n_trial_groups), dv, trial_split]
         aov[extra_cols] = extra_col_data
         pw[extra_cols] = extra_col_data
 
@@ -2849,7 +2887,10 @@ def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='tri
     pws = pd.concat(pws)
 
     if save_dir is not None:
-        save_suffix = '%s_%s_%s_%s_%s.csv' % (dv, '_'.join(groups), '_'.join(within), str(n_trial_groups), trial_col)
+        if trial_split:
+            save_suffix = '%s_%s_%s_%s_%s_%s.csv' % (dv, '_'.join(groups), '_'.join(within), 'trialsplit', str(trial_split), trial_col)
+        else:
+            save_suffix = '%s_%s_%s_%s_%s.csv' % (dv, '_'.join(groups), '_'.join(within), str(n_trial_groups), trial_col)
         aovname = 'aov_%s' % save_suffix
         posthocname = 'posthoc_%s' % save_suffix
         aovpath = os.path.join(save_dir, aovname)
@@ -2911,6 +2952,46 @@ def iter_trial_group_anova(df, groups, dep_vars, within, subject='exp_name', tri
 
     return aov_df, ph_df
 
+def iter_trial_split_anova(df, groups, dep_vars, within, subject='exp_name', trial_cols=None,
+                           n_splits=None, save_dir=None, save_suffix=None):
+    if type(dep_vars) is not list: # if only one dependent variable is passed, make it a list
+        dep_vars = [dep_vars]
+
+    if trial_cols is None: # if no trial columns are passed, use the default
+        trial_cols = ['trial', 'session_trial']
+
+    if n_splits is None: n_splits = 30
+
+    aov_df = []
+    ph_df = []
+    for i in trial_cols:
+        min_trial = df[i].min()
+        max_trial = df[i].max()
+        trials = np.linspace(min_trial, max_trial, n_splits).astype('int')
+        splits = trials[2:-3]
+        for j in dep_vars:
+            for k in splits:
+                aov, ph = trial_group_anova(df, groups, j, within, subject=subject, trial_col=i, trial_split=k,
+                                            save_dir=save_dir)
+                aov_df.append(aov)
+                ph_df.append(ph)
+
+    aov_df = pd.concat(aov_df)
+    ph_df = pd.concat(ph_df)
+
+    if save_suffix is None:
+        if len(dep_vars) > 1:
+            save_suffix = '_'.join(dep_vars)
+        else:
+            save_suffix = dep_vars[0]
+
+    if save_dir is not None:
+        aov_filename = '%s_all_trial_split_ANOVA.csv' % save_suffix
+        ph_filename = '%s_all_trial_split_posthoc.csv' % save_suffix
+        aov_df.to_csv(os.path.join(save_dir, aov_filename))
+        ph_df.to_csv(os.path.join(save_dir, ph_filename))
+
+    return aov_df, ph_df
 
 def get_local_path(path):
     if ELF_DIR in path and not os.path.isdir(path) and os.path.isdir(MONO_DIR):
@@ -3102,7 +3183,10 @@ def get_hmm_firing_rate_PCs(best_hmms):
 def get_hmm_trial_info(HA, sorting='params #5'):
     out = []
     for i, hmm, params, row in HA.iterhmms(sorting=sorting):
-        seqs = hmm.stat_arrays['best_sequences']
+        #seqs = hmm.stat_arrays['best_sequences']
+        seqs = hmm.stat_arrays['gamma_probabilities']
+        seqs = seqs.argmax(axis=1)
+
         time = hmm.stat_arrays['time']
 
         # Only looking at the presence of states past t=0

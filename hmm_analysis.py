@@ -101,7 +101,9 @@ def get_state_breakdown(rec_dir, hmm_id, h5_file=None):
                                              time_start=time_start,
                                              time_end=time_end, dt=dt,
                                              trials=n_trials)
-    best_paths = hmm.stat_arrays['best_sequences'].astype('int')
+    #best_paths = hmm.stat_arrays['best_sequences'].astype('int')
+    paths = hmm.stat_arrays['gamma_probabilities']
+    best_paths = paths.argmax(axis=1)
     state_order = deduce_state_order(best_paths)
     taste = params['taste']
     n_cells = params['n_cells']
@@ -224,7 +226,10 @@ def get_early_and_late_firing_rates(rec_dir, hmm_id, early_state, late_state, un
     late_rates = []
     dropped_trials = []
     labels = [] # trial, early_start, early_end, late_start, late_end
-    for trial, (spikes, path) in enumerate(zip(spike_array, hmm.stat_arrays['best_sequences'])):
+    paths = hmm.stat_arrays['gamma_probabilities']
+    paths = paths.argmax(axis=1)
+
+    for trial, (spikes, path) in enumerate(zip(spike_array, paths)):
         if not early_state in path or not late_state in path:
             dropped_trials.append(trial)
             continue
@@ -284,7 +289,9 @@ def write_id_pal_to_text(save_file, group, early_id=None,
         hmm_id = row['hmm_id']
         h5_file = get_hmm_h5(rec_dir)
         hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
-        state_map = deduce_state_order(hmm.stat_arrays['best_sequences'])
+        paths = hmm.stat_arrays['gamma_probabilities']
+        paths = paths.argmax(axis=1)
+        state_map = deduce_state_order(paths)
         # hmm_id, early_state, late_state, early_hmm_state, late_hmm_state
         early_state = row['early_state']
         late_state = row['late_state']
@@ -389,7 +396,9 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
     dt = params['dt']
     unit_type = params['unit_type']
     area = params['area']
-    seqs = hmm.stat_arrays['best_sequences']
+    #seqs = hmm.stat_arrays['best_sequences']
+    paths = hmm.stat_arrays['gamma_probabilities']
+    seqs = paths.argmax(axis=1)
     if units is not None:
         unit_type = units
     spike_array, s_dt, s_time = ph.get_hmm_spike_data(rec_dir, unit_type,
@@ -493,11 +502,6 @@ def get_classifier_data(group, states, label_col, all_units,
     units = get_common_units(group, all_units)
     if units == {}:
         return None, None, None
-    
-    # if other_state_col is not None:
-    #     state2 = 0#row[other_state_col]
-    # else:
-    #     state2 = None
         
     labels = []
     rates = []
@@ -592,8 +596,6 @@ def get_common_units(group, all_units):
 
     return out
 
-
-
 def check_single_state_trials(row, min_dur=1):
     '''takes a row from hmm_overview and determines the number of single state decoded paths
     min_dur signifies the minimum time in ms that a state must be present to
@@ -605,7 +607,9 @@ def check_single_state_trials(row, min_dur=1):
     hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
     dt = params['dt'] * 1000  # convert from sec to ms
     min_idx = int(min_dur/dt)
-    paths = hmm.stat_arrays['best_sequences']
+    #paths = hmm.stat_arrays['best_sequences']
+    paths = hmm.stat_arrays['gamma_probabilities']
+    paths = paths.argmax(axis=1)
     single_state_trials = 0
     for path in paths:
         info = summarize_sequence(path)
@@ -943,14 +947,15 @@ def analyze_NB_state_classification(best_hmms,all_units):
     NB_res : list with every single decode
     NB_meta : table with metadata to index NB_res and pull out best decodes from NB_res
     '''
-    
+    best_hmms = best_hmms.copy()
+    all_units = all_units.copy()
     label_col = 'taste'
     id_cols = ['exp_name','exp_group','time_group']
     NB_res = []; metadict = []
     all_u = all_units.query('area == "GC" and single_unit == True')
+    all_u = all_units.query('area == "GC" and single_unit == True')
     best_hmms_ = best_hmms.dropna(subset=['hmm_id'])
-    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x,min_dur = 50), axis = 1)
-    
+    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x, min_dur=50), axis=1)
     
     for name, group in best_hmms_.groupby(id_cols):
         state_df, el_tastes = generate_state_combos(group)
@@ -1063,8 +1068,7 @@ def generate_state_combos(group):
 def nb_group(group, all_units):
     label_col = 'taste'
     state_df, el_tastes = generate_state_combos(group)
-    
-    
+
     n_trials = dict(zip(group.taste,group.n_trials))
     n_single_state = dict(zip(group.taste,group.single_state_trials))
     name = group[['exp_name','exp_group','time_group']].drop_duplicates().values.tolist()[0]
@@ -1125,7 +1129,7 @@ def nb_group(group, all_units):
     return [NB_res, meta]
 
 #Rabbit hole: NB_classifier_accuracy>get_classifier_data>get_state_firing_rates
-def analyze_NB_state_classification_parallel(best_hmms,all_units):
+def analyze_NB_state_classification_parallel(best_hmms,all_units, run_parallel=True):
     '''generates list of combinations (state_df) for every possible combination of HMM states 
     and then uses them as the prior for decoding
     Parameters
@@ -1137,16 +1141,22 @@ def analyze_NB_state_classification_parallel(best_hmms,all_units):
     NB_res : list with every single decode
     NB_meta : table with metadata to index NB_res and pull out best decodes from NB_res
     '''
+    best_hmms = best_hmms.copy()
+    all_units = all_units.copy()
     id_cols = ['exp_name','exp_group','time_group']
     all_units_ = all_units.query('area == "GC" and single_unit == True')
     best_hmms_ = best_hmms.dropna(subset=['hmm_id'])
-    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x,min_dur = 50), axis = 1)
+    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x,min_dur=50), axis = 1)
     
     groupedBH = best_hmms_.groupby(id_cols)
-    
-    delayed_func = delayed(nb_group)
-    res = Parallel(n_jobs = -2)(delayed_func(subgroup, all_units_)
-                                for name, subgroup in groupedBH)
+
+    if run_parallel==True:
+        delayed_func = delayed(nb_group)
+        res = Parallel(n_jobs=-2)(delayed_func(subgroup, all_units_) for name, subgroup in groupedBH)
+    else:
+        res = []
+        for name, subgroup in groupedBH:
+            res.append(nb_group(subgroup, all_units_))
     
     res_list = [list(x) for x in zip(*res)]
     NB_res = res_list[0]
@@ -1262,7 +1272,9 @@ def process_NB_classification(NB_meta,NB_res):
         h5_file = get_hmm_h5(rec_dir)
         hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
         dt = params['dt'] * 1000
-        paths = hmm.stat_arrays['best_sequences']
+        #paths = hmm.stat_arrays['best_sequences']
+        paths = hmm.stat_arrays['gamma_probabilities']
+        paths = paths.argmax(axis=1)
         for trial, path in enumerate(paths):
             info = summarize_sequence(path)
             idx = np.where((info[:,-1] >= min_dur))[0] # & (info[:,-1] < 3000))[0]
@@ -1585,7 +1597,9 @@ def choose_bsln_early_late_states(hmm, bsln_window = [-250,0], early_window=[201
     int, int : early_state, late_state
         early_state = None if it cannout choose one
     '''
-    seqs = hmm.stat_arrays['best_sequences']
+    #seqs = hmm.stat_arrays['best_sequences']
+    paths = hmm.stat_arrays['gamma_probabilities']
+    seqs = paths.argmax(axis=1)
     time = hmm.stat_arrays['time']
     trial_win = np.where(time > 0)[0]
     
@@ -1671,7 +1685,9 @@ def find_poss_epoch_states(hmm, bsln_window = [-250,0], early_window=[201,1600],
     int, int : early_state, late_state
         early_state = None if it cannout choose one
     '''
-    seqs = hmm.stat_arrays['best_sequences']
+    #seqs = hmm.stat_arrays['best_sequences']
+    paths = hmm.stat_arrays['gamma_probabilities']
+    seqs = paths.argmax(axis=1)
     time = hmm.stat_arrays['time']
     trial_win = np.where(time > 0)[0]
     
@@ -1747,7 +1763,9 @@ def analyze_hmm_state_timing(best_hmms, min_dur=1):
         dt = params['dt'] * 1000  # dt in ms
         min_pts = int(min_dur/dt)
         row_id = hmm.stat_arrays['row_id'] # hmm_id, channel, taste, trial, all string
-        best_seqs = hmm.stat_arrays['best_sequences']
+        #best_seqs = hmm.stat_arrays['best_sequences']
+        best_seqs = hmm.stat_arrays['gamma_probabilities']
+        best_seqs = best_seqs.argmax(axis=1)
         for ids, path in zip(row_id, best_seqs):
             tmp = template.copy()
             tmp['trial'] = int(ids[-1])
@@ -1845,13 +1863,15 @@ def getMaxGamma(best_hmms, trial_group = 5):
         outdf = pd.concat([outdf,gammadf], axis = 1)
         outdf = pd.melt(outdf,id_vars = colnames, value_vars = list(time), var_name = 'time', value_name = 'max_gamma')
         return(outdf)
-    out = best_hmms.apply(lambda x: maxgamma(x), axis = 1).tolist()
+    out = best_hmms.apply(lambda x: maxgamma(x), axis=1).tolist()
     out = pd.concat(out)
 
     return out
 
 def getModeHmm(hmm):
-    best_seqs = hmm.stat_arrays['best_sequences']
+    #best_seqs = hmm.stat_arrays['best_sequences']
+    paths = hmm.stat_arrays['gamma_probabilities']
+    best_seqs = paths.argmax(axis=1)
     gamma = hmm.stat_arrays['gamma_probabilities']
     mode_seqs, _ = scistats.mode(best_seqs)
     mode_seqs = mode_seqs.flatten().astype(int)
@@ -1859,7 +1879,7 @@ def getModeHmm(hmm):
     mode_gamma = gamma[:,mode_seqs,np.arange(gamma.shape[2])]
     return mode_seqs, mode_gamma
 
-def binstate_deprecated(best_hmms, statefunc=getModeHmm):
+def binstate(best_hmms, statefunc=getModeHmm):
     def getbinstateprob(row):
         h5_file = get_hmm_h5(row['rec_dir']) #get hmm file name
         hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row["hmm_id"]) #load hmm
@@ -1878,7 +1898,6 @@ def binstate_deprecated(best_hmms, statefunc=getModeHmm):
         return(outdf)
     out = best_hmms.apply(lambda x: getbinstateprob(x), axis=1).tolist()
     out = pd.concat(out)
-
 
     return out
 
@@ -1948,15 +1967,14 @@ def analyze_classified_hmm_state_timing(best_hmms, decodes, min_dur=1):
         dt = params['dt'] * 1000  # dt in ms
         min_pts = int(min_dur/dt)
         row_id = hmm.stat_arrays['row_id'] # hmm_id, channel, taste, trial, all string
-        best_seqs = hmm.stat_arrays['best_sequences']
-        
+        #best_seqs = hmm.stat_arrays['best_sequences']
+        paths = hmm.stat_arrays['gamma_probabilities']
+        best_seqs = paths.argmax(axis=1)
+
         for ids, path in zip(row_id, best_seqs):
             decsub = decodes
             trlno = int(ids[-1])
 
-            # decsub = decsub.loc[(decsub.exp_name == row.exp_name) & (decsub.time_group == int(row.time_group)) &\
-            #                     (decsub.trial_num == trlno) & (decsub.hmm_id == row.hmm_id)]
-                
             tmp = template.copy()
             tmp['trial_num'] = int(ids[-1])
             tmp['trial_group'] = (lambda x: int(x/5)+1)(tmp['trial_num'])
