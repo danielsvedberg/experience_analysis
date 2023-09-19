@@ -1977,7 +1977,7 @@ def analyze_classified_hmm_state_timing(best_hmms, decodes, min_dur=1):
 
             tmp = template.copy()
             tmp['trial_num'] = int(ids[-1])
-            tmp['trial_group'] = (lambda x: int(x/5)+1)(tmp['trial_num'])
+            #tmp['trial_group'] = (lambda x: int(x/5)+1)(tmp['trial_num'])
             #tmp[col_name] = row[col_name]
             
             #id_valid = is_state_in_seq(path, row[col_name], min_pts=min_pts, time=time)

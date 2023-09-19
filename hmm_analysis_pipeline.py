@@ -120,6 +120,9 @@ sns.catplot(data=gm_plt_aov, x='n_trial_groups', y='p-GG-corr', hue='exp_group',
             margin_titles=True, aspect=0.5)
 plt.show()
 
+
+
+
 ### plot gamma mode probability over time #####################################
 trial_cols = ['trial', 'session_trial']
 trial_groups = [3, 4, 5, 6]
@@ -128,13 +131,70 @@ for i in trial_groups:
         nplt.plot_trialwise_rel2(avg_gamma_mode_df, y_facs=['pr(mode state)'], save_dir=HA.save_dir,
                                  save_prefix='gamma_mode_AIC', trial_col=j, n_trial_groups=i)
 
-#split trials by a single point
+#run ANOVA on gamma mode splitting trials by a single point
+aov_groups = ['time_group', 'exp_group']
+within = ['taste']
+subject = 'exp_name'
+dvcols = 'gamma_mode'
+
 gm_split_aov, gm_split_ph = ana.iter_trial_split_anova(avg_gamma_mode_df, aov_groups, dvcols, within, subject,
                                                               trial_cols=['taste_trial', 'session_trial'],
                                                                 n_splits=30, save_dir=HA.save_dir, save_suffix='gamma_mode')
+gm_split_aov['session'] = gm_split_aov['time_group']
+
 gm_split_aov_sig = gm_split_aov.loc[gm_split_aov['p-GG-corr'] < 0.05]
+gm_split_aov_sig['session'] = gm_split_aov_sig['time_group']
+
+#plot a relplot of the ANOVA significance levels for each significant trial split
+sns.set(font_scale=1.25, style='white')
+for nm, group in gm_split_aov_sig.groupby(['trial_type']):
+    g = sns.relplot(data=group, x='trial_split', y='p-GG-corr', hue='exp_group', row='trial_type', style='Source',
+                    col='session', facet_kws={'margin_titles':True}, s=100, aspect=1.25, height=4)
+    g.set_titles(row_template='{row_name}')
+    plt.show()
+    sn = nm + '_Pval_vs_splitnum_gamma_mode.png'
+    sf = os.path.join(HA.save_dir, sn)
+    g.savefig(sf)
+
+gm_split_aov_sig = gm_split_aov_sig.loc[gm_split_aov_sig['Source'] == 'trial_group']
+dfs = []
+for nm, group in gm_split_aov.groupby(['trial_type']):
+    trial_splits = group['trial_split'].unique()
+    for i in trial_splits:
+        df = avg_gamma_mode_df.copy()
+        df['trial_type'] = nm
+        df['split_trial'] = i
+        df['half'] = df[nm] > i
+        df['half'] = df['half'].astype(int)
+        df = df.drop(nm, axis=1)
+        dfs.append(df)
+dfs = pd.concat(dfs)
+
+for nm, group in dfs.groupby(['trial_type']):
+    p = sns.catplot(data=group, x='split_trial', y='gamma_mode', hue='half', row='exp_group', col='session', kind='boxen', sharex=False, margin_titles=True, aspect=1.75, height=4.5)
+    p.set_titles(row_template='{row_name}')
+    p.fig.suptitle(nm + ' gamma mode split by half')
+    p.fig.subplots_adjust(top=0.9)
+    p.savefig(os.path.join(HA.save_dir, nm + '_gamma_mode_split_by_half.png'))
+plt.show()
+
+trldiff = dfs.groupby(['half', 'exp_name','exp_group', 'time_group','split_trial','trial_type']).mean().reset_index()
+def grpdiff(group, col):
+    return group[col].diff()
+
+trldiff = trldiff.groupby(['exp_name', 'exp_group', 'time_group', 'split_trial','trial_type']).apply(grpdiff, 'pr(mode state)').reset_index().dropna()
+trldiff['pr(mode state) change'] = trldiff['pr(mode state)']
+trldiff['session'] = trldiff['time_group']
+for nm, group in trldiff.groupby(['trial_type']):
+    p = sns.catplot(data=group, x='split_trial', y='pr(mode state) change', row='trial_type', col='session', kind='boxen', hue='exp_group', sharex=False, margin_titles=True, aspect=1.75, height=4.5)
+    sf = os.path.join(HA.save_dir, nm + '_gamma_mode_split_by_half_change.png')
+    p.savefig(sf)
+plt.show()
 
 
+
+for nm, group in trldiff.groupby(['trial_type']):
+    p = sns.catplot(data=dfs, x='split_trial', y='gamma_mode', hue='exp_group', col='session', kind='boxen', margin_titles=True, aspect=2, height=4, sharex=False)
 
 
 ###############################################################################
@@ -158,12 +218,20 @@ supersplit_sigaov = supersplit_aov.loc[supersplit_aov['significant']].reset_inde
 supersplit_sigaov['trial_split'] = supersplit_sigaov['trial_split'].astype(int)
 supersplit_sigaov['log_F'] = np.log(supersplit_sigaov['F'])
 supersplit_sigaov = supersplit_sigaov.loc[supersplit_sigaov['Source'] == 'trial_group']
+supersplit_sigaov['epoch'] = supersplit_sigaov['epoch'].fillna('all')
 
+sns.set(font_scale=1.25, style='white')
 for nm,group in supersplit_sigaov.groupby(['trial_type']):
     p = sns.relplot(data=group, x='trial_split', y='p-GG-corr', hue='exp_group', style='epoch', col='session',
-                    row='dependent_var', aspect=1, height=5, facet_kws={"margin_titles":True})
+                    row='dependent_var', aspect=1, height=3.5, s=100, facet_kws={"margin_titles":True})
     p.set_titles(row_template='{row_name}')
+    p.fig.suptitle("p-value vs trial split: " + nm)
+    p.fig.subplots_adjust(top=0.925)
     plt.show()
+
+    fn = nm + '_Pval_vs_splitnum.png'
+    sf = os.path.join(HA.save_dir, fn)
+    p.savefig(sf)
 
 for nm,group in supersplit_sigaov.groupby(['trial_type']):
     p = sns.relplot(data=group, x='trial_split', y='log_F', hue='exp_group', style='epoch', col='session',

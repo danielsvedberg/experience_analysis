@@ -2968,7 +2968,9 @@ def iter_trial_split_anova(df, groups, dep_vars, within, subject='exp_name', tri
         min_trial = df[i].min()
         max_trial = df[i].max()
         trials = np.linspace(min_trial, max_trial, n_splits).astype('int')
-        splits = trials[2:-3]
+        print(trials)
+        splits = trials[2:-2]
+        print(splits)
         for j in dep_vars:
             for k in splits:
                 aov, ph = trial_group_anova(df, groups, j, within, subject=subject, trial_col=i, trial_split=k,
