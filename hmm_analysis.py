@@ -396,7 +396,6 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
     dt = params['dt']
     unit_type = params['unit_type']
     area = params['area']
-    #seqs = hmm.stat_arrays['best_sequences']
     paths = hmm.stat_arrays['gamma_probabilities']
     seqs = paths.argmax(axis=1)
     if units is not None:
@@ -416,11 +415,9 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
 
     #state must be present for at least 50ms each post-stimulus
     check_states = [state, other_state] if other_state is not None else [state]
-    #check_states = [state]
-    valid_trials = agg.get_valid_trials(seqs, check_states, min_pts= 50/(dt*1000), time=time)
+    valid_trials = agg.get_valid_trials(seqs, check_states, min_pts=50/(dt*1000), time=time)
 
     # spike_array is trial x neuron x time
-    n_trials, n_cells, n_steps = spike_array.shape
     rates = []
     trial_nums = []
     for trial, (spikes, path) in enumerate(zip(spike_array, seqs)):
@@ -437,9 +434,9 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
         edgeoffs = np.where(edges==-1)[0]
         
         statelens = edgeoffs-edgeons
-        longest = np.where(statelens==max(statelens))[0][0] #get longest instance of state
+        longest = np.where(statelens == max(statelens))[0][0] #get longest instance of state
         onidx = edgeons[longest]
-        offidx = edgeoffs[longest] -1
+        offidx = edgeoffs[longest] - 1
 
         t1 = time[onidx]
         t2 = time[offidx]
@@ -455,12 +452,12 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
         duration = abs(t2-t1)
         min_dur_check = (duration > min_dur)
         max_dur_check = True#(duration < max_dur)
-        if state > 0:
-            med_check = median([t1,t2]) > 50
-            end_check = (t2 > 200)
-        else:
-            med_check = True
-            end_check = True
+        # if state > 1:
+        #     med_check = median([t1,t2]) > 50
+        #     end_check = (t2 > 200)
+        # else:
+        med_check = True
+        end_check = True
         
         if not all([min_dur_check, max_dur_check, end_check, med_check]):
             continue
@@ -492,7 +489,6 @@ def get_baseline_rates(rec_dir, hmm_id, units=None, min_dur=50, max_dur = 3000,)
                                                       trials=n_trials, area=area)
     
 
-
 #group is the groupby df
 #label_col is the heading of the taste col
 #all_units is all_units_table
@@ -515,14 +511,11 @@ def get_classifier_data(group, states, label_col, all_units,
         l_state = states[label+'_late']
         
         un = units[rec_dir]
-        h5_file = get_hmm_h5(rec_dir)
-        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
         #if error is "selection lists cannot have repeated values" then you have repeated units in all_units, go fix PA.detect_held_units()
-        
         #get baseline data:
         tmp_ps_r, tmp_ps_trials = get_state_firing_rates(rec_dir,hmm_id,b_state, 
                                                     units = un,
-                                                    remove_baseline = remove_baseline,
+                                                    remove_baseline=remove_baseline,
                                                     other_state=None)
         tmp_ps_l = np.repeat('prestim', tmp_ps_r.shape[0])
         
@@ -951,12 +944,12 @@ def analyze_NB_state_classification(best_hmms,all_units):
     all_units = all_units.copy()
     label_col = 'taste'
     id_cols = ['exp_name','exp_group','time_group']
-    NB_res = []; metadict = []
-    all_u = all_units.query('area == "GC" and single_unit == True')
+
     all_u = all_units.query('area == "GC" and single_unit == True')
     best_hmms_ = best_hmms.dropna(subset=['hmm_id'])
     best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x, min_dur=50), axis=1)
-    
+
+    NB_res = []; metadict = []
     for name, group in best_hmms_.groupby(id_cols):
         state_df, el_tastes = generate_state_combos(group)
         #el_tastes = state_df.columns
@@ -974,8 +967,7 @@ def analyze_NB_state_classification(best_hmms,all_units):
             if (labels is not None) & (rates is not None):
                 model = stats.NBClassifier(labels, rates, row_id=identifiers)
                 res = model.leave1out_fit()
-            
-            if (res is not None) & (labels is not None):
+
                 NB_res.append(res)  
                 n_trials_decoded = []
                 
@@ -989,7 +981,7 @@ def analyze_NB_state_classification(best_hmms,all_units):
                 Y_taste = res.Y[tasteidx]
                 Y_pred_taste = res.Y_predicted[tasteidx]
                 
-                tasteacc = sum(Y_taste==Y_pred_taste)/len(Y_taste)
+                tasteacc = sum(Y_taste == Y_pred_taste)/len(Y_taste)
                 
                 
                 for i in el_tastes:
@@ -1073,57 +1065,57 @@ def nb_group(group, all_units):
     n_single_state = dict(zip(group.taste,group.single_state_trials))
     name = group[['exp_name','exp_group','time_group']].drop_duplicates().values.tolist()[0]
     en = name[0]; eg = name[1]; tg = name[2]
-    NB_res, metadict= [], []
+    NB_res, metadict = [], []
     
     for i, states in state_df.iterrows():
 
         labels, rates, identifiers = get_classifier_data(group, states, label_col, all_units,
-                                                         remove_baseline=False)
+                                                         remove_baseline=False) #092523: identifiers missing CA trials
         
         if (labels is not None) & (rates is not None):
             model = stats.NBClassifier(labels, rates, row_id=identifiers)
             res = model.leave1out_fit()
-            
-        if (res is not None) & (labels is not None):
-            NB_res.append(res)  
-            n_trials_decoded = []
-            
-            res_frame = pd.DataFrame()
-            res_frame['X'] = list(res.X)
-            res_frame['Y'] = res.Y
-            res_frame['Y_pred'] = res.Y_predicted
-            res_frame['row_ID'] = list(res.row_id)
-            
-            tasteidx = res.Y != 'prestim'
-            Y_taste = res.Y[tasteidx]
-            Y_pred_taste = res.Y_predicted[tasteidx]
-            
-            tasteacc = sum(Y_taste==Y_pred_taste)/len(Y_taste)
-            
-            
-            for i in el_tastes:
-                n_dec = np.count_nonzero(res.Y==i)
-                n_trials_decoded.append(n_dec)
-                
-            n_trials_missed = sum(group.n_trials*2)-sum(n_trials_decoded)
-            n_trials_decoded = dict(zip(el_tastes,n_trials_decoded))
-            
-            meta_row = {'exp_name':en,
-                        'time_group':tg,
-                        'exp_group':eg,
-                        'accuracies':res.accuracy, 
-                        'taste_acc':tasteacc,
-                        'hmm_state':states, 
-                        'n_trials': n_trials,
-                        'n_single_state': n_single_state,
-                        'n_trials_dec': n_trials_decoded,
-                        'n_trials_missed': n_trials_missed
-                        }
-            
-            meta_row.update(states)
-            print('decode:', name,' ',i)
-            print(meta_row)
-            metadict.append(meta_row)
+
+            if (res is not None):
+                NB_res.append(res)
+                n_trials_decoded = []
+
+                res_frame = pd.DataFrame()
+                res_frame['X'] = list(res.X)
+                res_frame['Y'] = res.Y
+                res_frame['Y_pred'] = res.Y_predicted
+                res_frame['row_ID'] = list(res.row_id)
+
+                tasteidx = res.Y != 'prestim'
+                Y_taste = res.Y[tasteidx]
+                Y_pred_taste = res.Y_predicted[tasteidx]
+
+                tasteacc = sum(Y_taste==Y_pred_taste)/len(Y_taste)
+
+
+                for i in el_tastes:
+                    n_dec = np.count_nonzero(res.Y==i)
+                    n_trials_decoded.append(n_dec)
+
+                n_trials_missed = sum(group.n_trials*2)-sum(n_trials_decoded)
+                n_trials_decoded = dict(zip(el_tastes,n_trials_decoded))
+
+                meta_row = {'exp_name': en,
+                            'time_group': tg,
+                            'exp_group': eg,
+                            'accuracies': res.accuracy,
+                            'taste_acc': tasteacc,
+                            'hmm_state': states,
+                            'n_trials': n_trials,
+                            'n_single_state': n_single_state,
+                            'n_trials_dec': n_trials_decoded,
+                            'n_trials_missed': n_trials_missed
+                            }
+
+                meta_row.update(states)
+                print('decode:', name,' ',i)
+                print(meta_row)
+                metadict.append(meta_row)
             
     meta = pd.DataFrame(metadict)
     return [NB_res, meta]
@@ -1146,7 +1138,7 @@ def analyze_NB_state_classification_parallel(best_hmms,all_units, run_parallel=T
     id_cols = ['exp_name','exp_group','time_group']
     all_units_ = all_units.query('area == "GC" and single_unit == True')
     best_hmms_ = best_hmms.dropna(subset=['hmm_id'])
-    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x,min_dur=50), axis = 1)
+    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x,min_dur=50), axis=1)
     
     groupedBH = best_hmms_.groupby(id_cols)
 
@@ -1172,7 +1164,7 @@ def analyze_NB_state_classification_parallel(best_hmms,all_units, run_parallel=T
 
 def process_NB_classification(NB_meta,NB_res):
     
-    best_NB = NB_meta.reset_index(drop = True)
+    best_NB = NB_meta.copy().reset_index(drop=True)
     best_NB = best_NB[best_NB.groupby(['exp_name','time_group']).performance.transform('max') == best_NB.performance]
     best_NB = best_NB[best_NB.groupby(['exp_name','time_group']).earlyness.transform('min')==best_NB.earlyness]
     best_NB = best_NB.loc[best_NB.groupby(['exp_name','time_group']).accuracies.idxmin()]
@@ -2008,6 +2000,9 @@ def analyze_classified_hmm_state_timing(best_hmms, decodes, min_dur=1):
     Y_index = decodes[['rec_dir','hmm_id','hmm_state','trial_ID','Y']].drop_duplicates()
     Y_index = Y_index.rename(columns = {'hmm_state':'state_num','trial_ID':'taste','Y':'state_group'})
     Y_index[['hmm_id','state_num']] = Y_index[['hmm_id','state_num']].astype(int)
+
+
+
     out = out.merge(Y_index, on=['rec_dir','hmm_id','state_num','taste'])
     #mask = out.Y=='prestim'
     #out.loc[mask, 'state_group'] = 'prestim'

@@ -85,7 +85,11 @@ time_split_aov, time_split_ph = ana.iter_trial_split_anova(NB_timings, aov_group
                                                            n_splits=30, save_dir=HA.save_dir, save_suffix='NB_timings')
 time_split_aov_sig = time_split_aov.loc[time_split_aov['p-GG-corr'] < 0.05]
 
-
+for nm, group in time_split_aov_sig.groupby(['trial_type', 'epoch']):
+    g = sns.relplot(data=group, x='trial_split', y='p-GG-corr', hue='exp_group', row='dependent_var', style='Source', col='time_group', facet_kws={'margin_titles':True}, s=100, aspect=1.25, height=4)
+    g.fig.suptitle(nm[0] + ' ' + nm[1] + ' timing split')
+    g.fig.subplots_adjust(top=0.9)
+    plt.show()
 
 ###############################################################################
 #%%mode gamma probability analysis
@@ -95,11 +99,13 @@ time_split_aov_sig = time_split_aov.loc[time_split_aov['p-GG-corr'] < 0.05]
 avg_gamma_mode_df = HA.get_avg_gamma_mode()
 
 ### gamma mode ANOVAS
+#grouping factors
 aov_groups = ['time_group', 'exp_group']
 within = ['taste']
 subject = 'exp_name'
 dvcols = 'gamma_mode'
 
+#run ANOVA on binned trials
 gm_aov, gm_ph = ana.iter_trial_group_anova(avg_gamma_mode_df, groups=aov_groups, dep_vars=dvcols, within=within,
                                            save_dir=HA.save_dir)
 
@@ -120,17 +126,6 @@ sns.catplot(data=gm_plt_aov, x='n_trial_groups', y='p-GG-corr', hue='exp_group',
             margin_titles=True, aspect=0.5)
 plt.show()
 
-
-
-
-### plot gamma mode probability over time #####################################
-trial_cols = ['trial', 'session_trial']
-trial_groups = [3, 4, 5, 6]
-for i in trial_groups:
-    for j in trial_cols:
-        nplt.plot_trialwise_rel2(avg_gamma_mode_df, y_facs=['pr(mode state)'], save_dir=HA.save_dir,
-                                 save_prefix='gamma_mode_AIC', trial_col=j, n_trial_groups=i)
-
 #run ANOVA on gamma mode splitting trials by a single point
 aov_groups = ['time_group', 'exp_group']
 within = ['taste']
@@ -142,8 +137,43 @@ gm_split_aov, gm_split_ph = ana.iter_trial_split_anova(avg_gamma_mode_df, aov_gr
                                                                 n_splits=30, save_dir=HA.save_dir, save_suffix='gamma_mode')
 gm_split_aov['session'] = gm_split_aov['time_group']
 
+#run ANOVA on gamma mode splitting, but remove the first 11 trials. this should abolish significance
 gm_split_aov_sig = gm_split_aov.loc[gm_split_aov['p-GG-corr'] < 0.05]
 gm_split_aov_sig['session'] = gm_split_aov_sig['time_group']
+
+snips_aov = []
+for i in range(0,20):
+    gm_snip = avg_gamma_mode_df.loc[avg_gamma_mode_df['taste_trial'] >= i]
+    ns = 30-i
+    gm_snip_aov, gm_snip_ph = ana.iter_trial_split_anova(gm_snip, aov_groups, dvcols, within, subject,
+                                                        trial_cols=['taste_trial'],
+                                                        n_splits=ns, save_dir=HA.save_dir, save_suffix='gamma_mode_snip')
+    gm_snip_aov['start_trial'] = i
+    gm_snip_sig = gm_snip_aov.loc[gm_snip_aov['p-GG-corr'] < 0.05]
+    snips_aov.append(gm_snip_sig)
+
+snips_aov = pd.concat(snips_aov)
+snips_trials_aov = snips_aov.loc[snips_aov['Source'] == 'trial_group']
+snips_trials_aov['session'] = snips_trials_aov['time_group']
+snips_trials_aov = snips_trials_aov.loc[snips_trials_aov['start_trial'] < 16]
+
+sns.set(font_scale=1, style='white')
+g = sns.relplot(data=snips_trials_aov, x='trial_split', y='p-GG-corr', hue='exp_group', col='start_trial', row='session', facet_kws={'margin_titles':True}, aspect=0.4, height=3.5)
+g.set_titles(col_template='{col_name}')
+g.fig.suptitle("trials cut off from start of session")
+g.fig.subplots_adjust(top=0.9)
+plt.show()
+g.savefig(os.path.join(HA.save_dir, 'gamma_mode_Pval_vs_splitnum_vs_trialsnip.png'))
+
+#%%
+### plot gamma mode probability over time #####################################
+trial_cols = ['trial', 'session_trial']
+trial_groups = [3, 4, 5, 6]
+for i in trial_groups:
+    for j in trial_cols:
+        nplt.plot_trialwise_rel2(avg_gamma_mode_df, y_facs=['pr(mode state)'], save_dir=HA.save_dir,
+                                 save_prefix='gamma_mode_AIC', trial_col=j, n_trial_groups=i)
+
 
 #plot a relplot of the ANOVA significance levels for each significant trial split
 sns.set(font_scale=1.25, style='white')
@@ -190,7 +220,6 @@ for nm, group in trldiff.groupby(['trial_type']):
     sf = os.path.join(HA.save_dir, nm + '_gamma_mode_split_by_half_change.png')
     p.savefig(sf)
 plt.show()
-
 
 
 for nm, group in trldiff.groupby(['trial_type']):

@@ -2109,19 +2109,23 @@ class HmmAnalysis(object):
             print("decode file not found, need to run analyze_NB_ID with overwrite=True first")
             return None
 
+        test = NB_timings.groupby(['exp_name', 'exp_group','time_group', 'taste', 'trial_num', 'state_num']).size().astype('int')
+
         NB_decode = self.get_NB_decode()
         grcols = ['rec_dir', 'taste_trial', 'taste', 'state_num']
         NB_decsub = NB_decode[grcols + ['p_correct']].drop_duplicates()
 
         NB_timings['taste_trial'] = NB_timings['trial_num']
         NB_timings = NB_timings.drop(columns=['trial_num'])
+        NB_timings = NB_timings.groupby(['rec_dir', 'taste', 'taste_trial']).filter(lambda x: len(x) >= 3)
+
         NB_timings = NB_timings.merge(NB_decsub, on=grcols, how='left')
 
         NB_timings = NB_timings.drop_duplicates()
         NB_timings[['Y', 'epoch']] = NB_timings.state_group.str.split('_', expand=True)
         avg_timing = NB_timings.groupby(['exp_name', 'taste', 'state_group']).mean()[
             ['t_start', 't_end', 't_med', 'duration']]
-        avg_timing = avg_timing.rename(columns=lambda x: 'avg_' + x)
+        avg_timing = avg_timing.rename(columns=lambda x: 'avg_' + x).reset_index()
 
         NB_timings = pd.merge(NB_timings, avg_timing, on=['exp_name', 'taste', 'state_group'],
                               how='left').drop_duplicates()
@@ -2133,22 +2137,12 @@ class HmmAnalysis(object):
         # NB_timings = NB_timings.reset_index()
         # NB_timings = NB_timings.set_index(['exp_name', 'taste', 'state_group', 'session_trial', 'time_group'])
         # operating_columns = ['t_start', 't_end', 't_med', 'duration']
-        #
-        # from scipy.stats import zscore
-        # for i in operating_columns:
-        #     zscorename = i + '_zscore'
-        #     abszscorename = i + '_absZscore'
-        #     NB_timings[zscorename] = NB_timings.groupby(['exp_name', 'state_group'])[i].transform(lambda x: zscore(x))
-        #     NB_timings[zscorename] = NB_timings[zscorename].fillna(0)
-        #     NB_timings[abszscorename] = abs(NB_timings[zscorename])
 
         NB_timings = NB_timings.reset_index()
         NB_timings['session_trial'] = NB_timings.session_trial.astype(int)  # make trial number an int
         NB_timings['time_group'] = NB_timings.time_group.astype(int)  # make trial number an int
 
         # remove all trials with less than 3 states
-        NB_timings = NB_timings.groupby(['rec_dir', 'taste', 'session_trial']).filter(lambda x: len(x) >= 3)
-
         return NB_timings
 
     def get_gamma_sequences(self, sorting='best_AIC'):
