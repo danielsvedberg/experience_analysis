@@ -1722,7 +1722,7 @@ def find_poss_epoch_states(hmm, bsln_window = [-250,0], early_window=[201,1600],
 ## State timing analysis ##
 #031320 check this function for bug on early and late state
 #031420 check here if "trial_group" makes it in
-def analyze_hmm_state_timing(best_hmms, min_dur=1):
+def analyze_hmm_state_timing(best_hmms, min_dur=100):
     '''create output array with columns: exp_name, exp_group, rec_dir,
     rec_group, time_group, exp_group, taste, hmm_id, trial, state_group,
     state_num, t_start, t_end, duration
@@ -1868,8 +1868,9 @@ def getModeHmm(hmm):
     mode_seqs, _ = scistats.mode(best_seqs)
     mode_seqs = mode_seqs.flatten().astype(int)
     mode_seqs = np.ravel(mode_seqs)
-    mode_gamma = gamma[:,mode_seqs,np.arange(gamma.shape[2])]
-    return mode_seqs, mode_gamma
+    pr_mode = gamma[:,mode_seqs,np.arange(gamma.shape[2])]
+
+    return mode_seqs, pr_mode, best_seqs
 
 def binstate(best_hmms, statefunc=getModeHmm):
     def getbinstateprob(row):
@@ -1919,9 +1920,9 @@ def binwrong(best_hmms, trial_group = 5):
         nmcols = ['exp_name','exp_group','rec_group','time_group']
         outdf[nmcols] = row[nmcols]
         colnames = outdf.columns
-        gammadf = pd.DataFrame(mode_gamma,columns = time) 
-        outdf = pd.concat([outdf,gammadf], axis = 1)
-        outdf = pd.melt(outdf,id_vars = colnames, value_vars = list(time), var_name = 'time', value_name = 'gamma_mode')
+        gammadf = pd.DataFrame(mode_gamma, columns=time)
+        outdf = pd.concat([outdf, gammadf], axis=1)
+        outdf = pd.melt(outdf, id_vars=colnames, value_vars=list(time), var_name='time', value_name='gamma_mode')
 
 def analyze_classified_hmm_state_timing(best_hmms, decodes, min_dur=1):
     '''create output array with columns: exp_name, exp_group, rec_dir,

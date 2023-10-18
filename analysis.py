@@ -994,7 +994,8 @@ class HmmAnalysis(object):
                       'best_hmms': os.path.join(save_dir, 'best_hmms.feather'),
                       'hmm_coding': os.path.join(save_dir, 'hmm_coding.feather'),
                       'hmm_confusion': os.path.join(save_dir, 'hmm_confusion.feather'),
-                      'hmm_timings': os.path.join(save_dir, 'hmm_timings.feather')}
+                      'hmm_timings': os.path.join(save_dir, 'hmm_timings.feather'),
+                      'pr_mode_state': os.path.join(save_dir, 'pr_mode_state.feather')}
 
         self.base_params = {'unit_type': 'single', 'dt': 0.001,
                             'max_iter': 500, 'n_repeats': 20, 'time_start': -500,
@@ -2174,45 +2175,68 @@ class HmmAnalysis(object):
 
         return out
 
-    def get_gamma_mode(self, sorting='best_AIC'):
-        def getbinstateprob(row):
-            h5_file = get_hmm_h5(row['rec_dir'])  # get hmm file name
-            hmm, time, params = phmm.load_hmm_from_hdf5(h5_file, row["hmm_id"])  # load hmm
-            mode_seqs, mode_gamma = hmma.getModeHmm(hmm)  # get mode state # and gamma prob
+    def get_gamma_mode(self, sorting='best_AIC', overwrite=False):
+        if overwrite is True:
+            def getbinstateprob(row):
+                h5_file = get_hmm_h5(row['rec_dir'])  # get hmm file name
+                hmm, time, params = phmm.load_hmm_from_hdf5(h5_file, row["hmm_id"])  # load hmm
+                mode_seqs, mode_gamma, best_seqs = hmma.getModeHmm(hmm)  # get mode state # and gamma prob
+                rowids = hmm.stat_arrays['row_id']
+                time = hmm.stat_arrays['time']
+                colnames = ['hmm_id', 'dig_in', 'taste', 'trial']
+                outdf = pd.DataFrame(rowids, columns=colnames)
+                nmcols = ['exp_name', 'exp_group', 'rec_group', 'time_group', 'rec_dir']
+                outdf[nmcols] = row[nmcols]
+                colnames = outdf.columns
+                gammadf = pd.DataFrame(mode_gamma, columns=time)
+                seqdf = pd.DataFrame(best_seqs, columns=time)
+                gdf= pd.concat([outdf, gammadf], axis=1)
+                sdf = pd.concat([outdf, seqdf], axis=1)
+                gdf = pd.melt(gdf, id_vars=colnames, value_vars=list(time), var_name='time', value_name='gamma_mode')
+                sdf = pd.melt(sdf, id_vars=colnames, value_vars=list(time), var_name='time', value_name='state_sequence')
+                #merge gdf and sdf by common variables into outdf
+                outdf = pd.merge(gdf, sdf, on=['hmm_id', 'dig_in', 'taste', 'trial', 'exp_name', 'exp_group', 'rec_group', 'time_group', 'rec_dir', 'time'], how='outer')
+                return outdf
 
-            rowids = hmm.stat_arrays['row_id']
-            time = hmm.stat_arrays['time']
-            colnames = ['hmm_id', 'dig_in', 'taste', 'trial']
-            outdf = pd.DataFrame(rowids, columns=colnames)
-            nmcols = ['exp_name', 'exp_group', 'rec_group', 'time_group', 'rec_dir']
-            outdf[nmcols] = row[nmcols]
-            colnames = outdf.columns
-            gammadf = pd.DataFrame(mode_gamma, columns=time)
-            outdf = pd.concat([outdf, gammadf], axis=1)
-            outdf = pd.melt(outdf, id_vars=colnames, value_vars=list(time), var_name='time', value_name='gamma_mode')
-            return (outdf)
+            best_hmms = self.get_best_hmms(sorting=sorting)
+            out = best_hmms.apply(lambda x: getbinstateprob(x), axis=1).tolist()
+            out = pd.concat(out)
+            gamma_mode_df = add_session_trial(out, self.project)  # rebin every 50ms into a bin
+            gamma_mode_df['time_bin'] = gamma_mode_df.time.astype(int) / 20
+            gamma_mode_df['time_bin'] = gamma_mode_df['time_bin'].astype(int)
+            gamma_mode_df['binned_time'] = gamma_mode_df.time_bin * 20
+            gamma_mode_df['session'] = gamma_mode_df.time_group  # rename time_group column to session
+            gamma_mode_df['session_trial'] = gamma_mode_df.session_trial.astype(int)
 
-        best_hmms = self.get_best_hmms(sorting=sorting)
-        out = best_hmms.apply(lambda x: getbinstateprob(x), axis=1).tolist()
-        out = pd.concat(out)
+            #save the dataframe to a feather file
+            mode_state_sf = self.files['pr_mode_state']
+            feather.write_dataframe(gamma_mode_df, mode_state_sf) # save dataframe to feather file
 
-        gamma_mode_df = add_session_trial(out, self.project)  # rebin every 50ms into a bin
-        gamma_mode_df['time_bin'] = gamma_mode_df.time.astype(int) / 20
-        gamma_mode_df['time_bin'] = gamma_mode_df['time_bin'].astype(int)
-        gamma_mode_df['binned_time'] = gamma_mode_df.time_bin * 20
-        gamma_mode_df['session'] = gamma_mode_df.time_group  # rename time_group column to session
-        gamma_mode_df['session_trial'] = gamma_mode_df.session_trial.astype(int)
+        else:
+            mode_state_sf = self.files['pr_mode_state']
+            gamma_mode_df = feather.read_dataframe(mode_state_sf)
+
         return gamma_mode_df
 
-    def get_avg_gamma_mode(self, sorting='best_AIC'):
-        gmdf = self.get_gamma_mode(sorting)
+    def get_avg_gamma_mode(self, sorting='best_AIC', overwrite=False):
+        gmdf = self.get_gamma_mode(sorting, overwrite)
+
+        trial_groupings = ['hmm_id','dig_in','trial','exp_name','exp_group','time_group']
+
+        group_variances = gmdf.groupby(trial_groupings)['state_sequence'].var()
+        # Get groups where variance is not zero
+        groups_with_variance = group_variances[group_variances != 0].index
+        # Filter the original dataframe to keep only those groups
+        gmdf = gmdf[gmdf.set_index(trial_groupings).index.isin(groups_with_variance)].reset_index()
+
+        gmdf['time'] = gmdf.time.astype(float)
+        gmdf = gmdf.loc[gmdf.time > 0].reset_index(drop=True)
         avg_gamma_mode_df = gmdf.groupby(
             ['exp_name', 'exp_group', 'time_group', 'taste', 'trial']).mean().reset_index()
         avg_gamma_mode_df['pr(mode state)'] = avg_gamma_mode_df.gamma_mode
         avg_gamma_mode_df['taste_trial'] = avg_gamma_mode_df.trial.astype(int)
         avg_gamma_mode_df['session_trial'] = avg_gamma_mode_df.session_trial.astype(int)
         return avg_gamma_mode_df
-
 
 def get_hmm_h5(rec_dir):
     tmp = glob.glob(rec_dir + os.sep + '**' + os.sep + '*HMM_Analysis.hdf5', recursive=True)
@@ -2932,6 +2956,8 @@ def iter_trial_group_anova(df, groups, dep_vars, within, subject='exp_name', tri
     aov_df = pd.concat(aov_df)
     ph_df = pd.concat(ph_df)
 
+    aov_df = aov_df.reset_index(drop=True)
+    ph_df = ph_df.reset_index(drop=True)
     if save_suffix is None:
         if len(dep_vars) > 1:
             save_suffix = '_'.join(dep_vars)
@@ -2961,7 +2987,9 @@ def iter_trial_split_anova(df, groups, dep_vars, within, subject='exp_name', tri
     for i in trial_cols:
         min_trial = df[i].min()
         max_trial = df[i].max()
-        trials = np.linspace(min_trial, max_trial, n_splits).astype('int')
+        ntrls = max_trial - min_trial + 1
+        dtrls = ntrls / n_splits
+        trials = np.arange(min_trial, max_trial, dtrls).astype(int)
         print(trials)
         splits = trials[2:-2]
         print(splits)
@@ -2972,8 +3000,8 @@ def iter_trial_split_anova(df, groups, dep_vars, within, subject='exp_name', tri
                 aov_df.append(aov)
                 ph_df.append(ph)
 
-    aov_df = pd.concat(aov_df)
-    ph_df = pd.concat(ph_df)
+    aov_df = pd.concat(aov_df).reset_index(drop=True)
+    ph_df = pd.concat(ph_df).reset_index(drop=True)
 
     if save_suffix is None:
         if len(dep_vars) > 1:

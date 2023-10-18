@@ -12,8 +12,8 @@ proj.make_rec_info_table() #run this in case you changed around project stuff
 PA = ana.ProjectAnalysis(proj) #create a project analysis object
 PA.detect_held_units(overwrite=True) #establish the units, also gets the all units file
 [all_units, held_df] = PA.get_unit_info(overwrite=True) #run and check for correct area then run get best hmm
-PA.process_single_units(overwrite=True) #run the single-unit analysis, check function to see if all parts are working
-PA.run(overwrite=True) #run several single-unit analyses
+#PA.process_single_units(overwrite=True) #run the single-unit analysis, check function to see if all parts are working
+#PA.run(overwrite=True) #run several single-unit analyses
 
 ### run the hmm analysis
 HA = ana.HmmAnalysis(proj) #create a hmm analysis object
