@@ -1120,6 +1120,72 @@ def nb_group(group, all_units):
     meta = pd.DataFrame(metadict)
     return [NB_res, meta]
 
+
+def nb_lm_group(group, all_units):
+    label_col = 'taste'
+    state_df, el_tastes = generate_state_combos(group)
+
+    n_trials = dict(zip(group.taste, group.n_trials))
+    n_single_state = dict(zip(group.taste, group.single_state_trials))
+    name = group[['exp_name', 'exp_group', 'time_group']].drop_duplicates().values.tolist()[0]
+    en = name[0];
+    eg = name[1];
+    tg = name[2]
+    NB_res, metadict = [], []
+
+    for i, states in state_df.iterrows():
+
+        labels, rates, identifiers = get_classifier_data(group, states, label_col, all_units,
+                                                         remove_baseline=False)  # 092523: identifiers missing CA trials
+
+        if (labels is not None) & (rates is not None):
+            model = stats.NBClassifier(labels, rates, row_id=identifiers)
+            res = model.leave1out_fit()
+
+            if (res is not None):
+                NB_res.append(res)
+                n_trials_decoded = []
+
+                res_frame = pd.DataFrame()
+                res_frame['X'] = list(res.X)
+                res_frame['Y'] = res.Y
+                res_frame['Y_pred'] = res.Y_predicted
+                res_frame['row_ID'] = list(res.row_id)
+
+                tasteidx = res.Y != 'prestim'
+                Y_taste = res.Y[tasteidx]
+                Y_pred_taste = res.Y_predicted[tasteidx]
+
+                tasteacc = sum(Y_taste == Y_pred_taste) / len(Y_taste)
+
+                for i in el_tastes:
+                    n_dec = np.count_nonzero(res.Y == i)
+                    n_trials_decoded.append(n_dec)
+
+                n_trials_missed = sum(group.n_trials * 2) - sum(n_trials_decoded)
+                n_trials_decoded = dict(zip(el_tastes, n_trials_decoded))
+
+                meta_row = {'exp_name': en,
+                            'time_group': tg,
+                            'exp_group': eg,
+                            'accuracies': res.accuracy,
+                            'taste_acc': tasteacc,
+                            'hmm_state': states,
+                            'n_trials': n_trials,
+                            'n_single_state': n_single_state,
+                            'n_trials_dec': n_trials_decoded,
+                            'n_trials_missed': n_trials_missed
+                            }
+
+                meta_row.update(states)
+                print('decode:', name, ' ', i)
+                print(meta_row)
+                metadict.append(meta_row)
+
+    meta = pd.DataFrame(metadict)
+    return [NB_res, meta]
+
+
 #Rabbit hole: NB_classifier_accuracy>get_classifier_data>get_state_firing_rates
 def analyze_NB_state_classification_parallel(best_hmms,all_units, run_parallel=True):
     '''generates list of combinations (state_df) for every possible combination of HMM states 
@@ -1138,7 +1204,7 @@ def analyze_NB_state_classification_parallel(best_hmms,all_units, run_parallel=T
     id_cols = ['exp_name','exp_group','time_group']
     all_units_ = all_units.query('area == "GC" and single_unit == True')
     best_hmms_ = best_hmms.dropna(subset=['hmm_id'])
-    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x,min_dur=50), axis=1)
+    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x, min_dur=50), axis=1)
     
     groupedBH = best_hmms_.groupby(id_cols)
 
