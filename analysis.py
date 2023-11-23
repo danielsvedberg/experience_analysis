@@ -1479,15 +1479,18 @@ class HmmAnalysis(object):
             ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')
             self.files['early_ID_timing'] = ID_timing_sf
             feather.write_dataframe(timings, ID_timing_sf)
+            print('saving ID_timing to %s' % ID_timing_sf)
 
             ID_decode_sf = os.path.join(save_dir, 'ID_decode.feather')
             self.files['decode'] = ID_decode_sf
             feather.write_dataframe(decode_data, ID_decode_sf)
+            print('saving ID_decode to %s' % ID_decode_sf)
 
             # TODO: consolidate output of this function so it's the same when saved or not
             # NB_meta.drop(columns = ['hmm_state'])
             best_file = self.files['best_hmms']
             feather.write_dataframe(best_hmms, best_file)
+            print('saving best_hmms to %s' % best_file)
 
             return NB_meta, decode_data, best_hmms, timings
 

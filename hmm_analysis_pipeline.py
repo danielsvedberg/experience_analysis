@@ -7,7 +7,7 @@ import pandas as pd
 import os
 import numpy as np
 
-proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'  # directory where the project is
+proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
@@ -311,9 +311,9 @@ for nm, group in trldiff.groupby(['trial_type']):
 
 ###############################################################################
 #%% combine all ANOVAs into one dataframe
-NB_decode_split_AOV_file = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts/taste_experience_resorts_analysis/hmm_analysis/NB_decode_all_trial_split_ANOVA.csv'
-gamma_mode_split_AOV_file = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts/taste_experience_resorts_analysis/hmm_analysis/gamma_mode_all_trial_split_ANOVA.csv'
-timing_split_AOV_file = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts/taste_experience_resorts_analysis/hmm_analysis/NB_timings_all_trial_split_ANOVA.csv'
+NB_decode_split_AOV_file = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy/taste_experience_resorts_analysis/hmm_analysis/NB_decode_all_trial_split_ANOVA.csv'
+gamma_mode_split_AOV_file = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy/taste_experience_resorts_analysis/hmm_analysis/gamma_mode_all_trial_split_ANOVA.csv'
+timing_split_AOV_file = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy/taste_experience_resorts_analysis/hmm_analysis/NB_timings_all_trial_split_ANOVA.csv'
 
 NB_split_aov = pd.read_csv(NB_decode_split_AOV_file)
 time_split_aov = pd.read_csv(timing_split_AOV_file)
