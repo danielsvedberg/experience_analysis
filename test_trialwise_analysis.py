@@ -24,16 +24,18 @@ sns.lineplot(data=fitted_data, x='Time', y='Value', hue='Subject', legend=False,
 plt.show()
 
 #now generate the metafit, which is the average of each individual's fit
-metaparams, metar2, meanr2 = nonlinear_metaregression(synthetic_data)
-metafit = generate_metafit(metaparams,time_steps=30)
+#metaparams, metar2, meanr2 = nonlinear_metaregression(synthetic_data)
+#metafit = generate_metafit(metaparams,time_steps=30)
 
 
 #plot the metafit with the 95% CI around it
+"""
 fig, ax = plt.subplots(figsize=(5, 5))
 sns.scatterplot(data=synthetic_data, x='Time', y='Value', hue='Subject', legend=False)
 ax.plot(metafit.Time, metafit.model_mean, color = 'black')
 ax.fill_between(metafit.Time, metafit.model_high, metafit.model_low, color = 'gray', alpha = 0.5)
 plt.show()
+"""
 
 #generate the null distribution of the metafit r2
 shuffdf = iter_shuffle(synthetic_data, niter=2000)

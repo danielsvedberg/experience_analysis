@@ -53,17 +53,17 @@ def generate_synthetic_data(time_steps=30, subjects=3, jitter_strength=0.1):
 
     return longform_data
 
-def shuffle_time(df):
+def shuffle_time(df, subject_cols='Subject', time_col='Time'):
     newdf = []
-    for name, group in df.groupby('Subject'):
-        nt = list(group['Time'])
+    for name, group in df.groupby(subject_cols):
+        nt = list(group[time_col])
         random.shuffle(nt)
-        group['Time'] = nt
+        group[time_col] = nt
         newdf.append(group)
     newdf = pd.concat(newdf)
     return newdf 
 
-def nonlinear_regression(data):
+def nonlinear_regression(data, subject_cols=['Subject'], time_col='Time', value_col='Value'):
     """
     Performs nonlinear regression on the synthetic data for each subject.
 
@@ -81,23 +81,21 @@ def nonlinear_regression(data):
     r2_scores = {}
 
     # Get unique subjects
-    subjects = data['Subject'].unique()
-
     # Fit the model for each subject
-    for subject, subject_data in data.groupby('Subject'):
+    for subject, subject_data in data.groupby(subject_cols):
 
         # Extract time and values
-        time = subject_data['Time']
-        values = subject_data['Value']
+        time = subject_data[time_col]
+        values = subject_data[value_col]
 
         # Fit the model
-        params, _ = curve_fit(model, time, values, bounds=([0,0,0],'inf'), maxfev=10000)
+        params, _ = curve_fit(model, time, values, bounds=([0,0,0],[1,'inf', 'inf']), maxfev=100000)
 
         # Store the fitted parameters
         fitted_params[subject] = params
         
-        y_pred = model(subject_data['Time'], *params)
-        r2 = r2_score(subject_data['Value'], y_pred)
+        y_pred = model(subject_data[time_col], *params)
+        r2 = r2_score(subject_data[value_col], y_pred)
         
         r2_scores[subject] = r2
 
@@ -106,7 +104,6 @@ def nonlinear_regression(data):
 def bootstrap_stats(matrix, n_bootstraps=1000, axis=0):
     # Number of rows and columns in the matrix
     n_rows, n_cols = matrix.shape
-
 
     # Initialize arrays to store bootstrap means and standard deviations
     boot_means = np.zeros((n_bootstraps, n_cols))
@@ -125,18 +122,41 @@ def bootstrap_stats(matrix, n_bootstraps=1000, axis=0):
     params = {'bootmean': bootmean, 'bootci': bootci}
     return params
 
-def nonlinear_metaregression(data):
-    fitted_params, r2 = nonlinear_regression(data)
-    matrix = np.array(list(fitted_params.values()))
-    metaparams = bootstrap_stats(matrix, n_bootstraps=1000)
-    r2arr = np.array(list(r2.values()))
-    r2arr = r2arr.reshape(-1,1)
-    meanr2 = bootstrap_stats(r2arr, axis=0)
+"""
+def nonlinear_metaregression(data, subject_cols=['Subject'], grouping_cols=['exp_group', 'time_group'], time_col='Time', value_col='Value'):
+    fitted_params, r2 = nonlinear_regression(data, subject_cols, time_col, value_col)
+    df = pd.Series(fitted_params).reset_index()
+    cols = subject_cols + ['params']
+    df = df.set_axis(cols, axis=1)
+
+    grpavgdf = df.groupby(grouping_cols).mean().reset_index()
+
+    bootmetaparam= []
+    bootmetaci = []
+    r2_bootmean = []
+    r2_bootci = []
+    groups = []
+    for i, group in df.groupby(grouping_cols):
+        matrix = np.array(list(group.params))
+        metaparams = bootstrap_stats(matrix, n_bootstraps=1000)
+        r2arr = np.array(list(r2.values()))
+        r2arr = r2arr.reshape(-1,1)
+        meanr2 = bootstrap_stats(r2arr, axis=0)
+
+        groups.append(i)
+        bootmetaparam.append(metaparams['bootmean'])
+        bootmetaci.append(metaparams['bootci'])
+        r2_bootmean.append(meanr2['bootmean'])
+        r2_bootci.append(meanr2['bootci'])
+
+    metadf = pd.DataFrame({'group': groups, 'bootmetaparam':bootmetaparam, 'bootmetaci': bootmetaci, 'r2_bootmean': r2_bootmean, 'r2_bootci': r2_bootci})
+    metadf = metadf.set_index('group')
+
+    y_pred = model(data[time_col], *metaparams['bootmean'])
+    metar2 = r2_score(data[value_col], y_pred)
     
-    y_pred = model(data['Time'], *metaparams['bootmean'])
-    metar2 = r2_score(data['Value'], y_pred)
-    
-    return metaparams, metar2, meanr2
+    return metaparams, metar2
+"""
 
 def generate_metafit(metaparams, time_steps = 30):
     t = np.linspace(0, time_steps-1, time_steps)
@@ -207,40 +227,20 @@ def generate_fitted_data(fitted_parameters, time_steps=30):
 
     return longform_data
 
-def iter_shuffle(data, niter = 10000):
+def iter_shuffle(data, niter = 10000, subject_cols=['Subject'], time_col='Time', value_col='Value'):
     iters = []
-    params = []
-    param_high = []
-    param_low = []
     for i in range(niter): 
-        shuff = shuffle_time(data)
-        metaparams, metar2, meanr2 = nonlinear_metaregression(shuff)
-        paramest = metaparams['bootmean']
-        metaci = metaparams['bootci']
-        paramlow = metaci[0,:]
-        paramhigh = metaci[1,:]
-        r2est = meanr2['bootmean']
-        r2ci = meanr2['bootci']
-        r2low = r2ci[0,:]
-        r2high = r2ci[1,:] 
-        
-        datadict = {'iternum': i,
-                    'metaR2' : metar2,
-                    'r2_est' : r2est,
-                    'r2_low' : r2low,
-                    'r2_high': r2high}
-        df = pd.DataFrame(datadict)
-        iters.append(df)
-        params.append(paramest)
-        param_low.append(paramlow)
-        param_high.append(paramhigh)
+        shuff = shuffle_time(data, subject_cols=subject_cols, time_col=time_col)
+        params, r2 = nonlinear_regression(shuff, subject_cols=subject_cols, time_col=time_col, value_col=value_col)
 
-        
+        paramdf = pd.Series(params, name='params').to_frame()
+        r2df = pd.Series(r2, name='r2').to_frame()
+        df = pd.concat([paramdf, r2df], axis=1).reset_index()
+        cols = subject_cols + ['params', 'r2']
+        df = df.set_axis(cols, axis=1)
+        df['iternum'] = i
+        iters.append(df)
     iters = pd.concat(iters)
-    iters['param_est'] = params
-    iters['param_low'] = param_low
-    iters['param_high'] = param_high        
     
     return iters
-        
         

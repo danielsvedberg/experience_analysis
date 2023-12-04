@@ -6,6 +6,8 @@ import seaborn as sns
 import pandas as pd
 import os
 import numpy as np
+import trialwise_analysis as ta
+import scipy.stats as stats
 
 proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
 proj = blechpy.load_project(proj_dir)  # load the project
@@ -167,6 +169,70 @@ for nm, group in snips_trials_aov.groupby(['dependent_var', 'trial_type']):
 #%% get gamma probability of mode state for each bin
 avg_gamma_mode_df = HA.get_avg_gamma_mode(overwrite=True)
 
+#%% trialwise nonlinear regression
+groupings = ['exp_name','exp_group','time_group','taste']
+test, r2 = ta.nonlinear_regression(avg_gamma_mode_df, subject_cols=groupings, time_col='session_trial', value_col='gamma_mode')
+r2_df = pd.Series(r2).reset_index()
+r2_df = r2_df.reset_index()
+r2_df = r2_df.rename(columns={'level_0':'exp_name', 'level_1':'exp_group', 'level_2': 'session', 'level_3':'taste', 0:'r2'})
+
+r2_df_groupmean = r2_df.groupby(['exp_group', 'taste', 'session']).mean().reset_index()
+
+
+shuff = ta.iter_shuffle(avg_gamma_mode_df, niter=1000, subject_cols=groupings, time_col='session_trial', value_col='gamma_mode') #TODO break this down by group
+avg_shuff = shuff.groupby(['exp_group', 'time_group', 'taste', 'iternum']).mean().reset_index()
+avg_shuff['session'] = avg_shuff['time_group']
+
+#%% plot the r2 values for each session with the null distribution
+import matplotlib.pyplot as plt
+import numpy as np
+
+ypos = {'naive':0.5, 'suc_preexp':0.6}
+pal = sns.color_palette()
+colmap = {'naive':0, 'suc_preexp':1}
+
+unique_tastes = avg_shuff['taste'].unique()
+unique_time_groups = avg_shuff['session'].unique()
+unique_exp_groups = avg_shuff['exp_group'].unique()
+pvals = []
+fig, axes = plt.subplots(4,3, sharex=True, sharey=True, figsize=(10,10))
+# Iterate over each combination of taste and time_group
+for i, taste in enumerate(unique_tastes):
+    for j, time_group in enumerate(unique_time_groups):
+        ax = axes[i,j]
+        # Filter the DataFrame for the current taste and time_group
+        subset = r2_df_groupmean[(r2_df_groupmean['taste'] == taste) & (r2_df_groupmean['session'] == time_group)]
+        # Draw a vertical line for each session in the subset
+        for name, row in subset.iterrows():
+            avg_shuff_subset = avg_shuff[(avg_shuff['taste'] == taste) & (avg_shuff['session'] == time_group) & (avg_shuff['exp_group'] == row['exp_group'])]
+            p_val = stats.percentileofscore(avg_shuff_subset.r2, kind ='weak', score = row['r2'])
+            p_val = 1-p_val/100
+            pvals.append(p_val)
+            textpos = ypos[row['exp_group']]
+            color = pal[colmap[row['exp_group']]]
+            ax.hist(x=avg_shuff_subset.r2, bins=20, density=True, alpha=0.5, color=color)
+            ax.axvline(x=row['r2'], color=color, linestyle='--')  # Customize color and linestyle
+            ax.set_xlim(-0.25, 1)
+            ax.set_ylim(0, 10)
+            #print the p-value with the color code
+            pvaltext = "p = " + str(np.round(p_val, 3))
+            ax.text(0.5, textpos, pvaltext, transform=ax.transAxes, color=color)
+            r2text = "r2 = " + str(np.round(row['r2'], 3))
+            ax.text(0.5, textpos-0.2, r2text, transform=ax.transAxes, color=color)
+
+plt.show()
+r2_df_groupmean['pval'] = pvals
+
+meanr2ci = np.percentile(shuff.r2_est, [2.5, 97.5])
+counts, bins = np.histogram(shuff.r2_est, bins = 100, range = (-0.25, 1))
+mask = (shuff.r2_est >= meanr2ci[0]) & (shuff.r2_est <= meanr2ci[1])
+fig, ax = plt.subplots(figsize=(5, 5), sharey=True)
+ax.hist(shuff.r2_est[mask], bins)
+ax.hist(shuff.r2_est, bins, histtype = 'step', color='black')
+#ax.axvline(x=r2_df_groupmean['r2'])
+plt.show()
+
+
 for j in ['session_trial']:#trial_cols:
     for nm, group in avg_gamma_mode_df.groupby(['exp_group']):
         prefix = 'NB_timing_' + nm[0] + '_' + nm[1]
@@ -176,6 +242,7 @@ for j in ['session_trial']:#trial_cols:
         g.fig.subplots_adjust(top=0.9)
         g.set(ylim=(0,1))
         plt.show()
+
 
 
 #%% plot gamma mode probability over time #####################################
