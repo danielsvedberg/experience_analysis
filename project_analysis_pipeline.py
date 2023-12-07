@@ -4,7 +4,7 @@ import analysis as ana
 import blechpy
 ### load the project
 #### requires having set up experiment and project objects beforehand
-proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy' # directory where the project is
+proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts' # directory where the project is
 proj = blechpy.load_project(proj_dir) #load the project
 proj.make_rec_info_table() #run this in case you changed around project stuff
 
@@ -22,7 +22,7 @@ HA.sort_hmms_by_AIC(overwrite=True) #label hmms in hmm_overview with lowest AIC 
 best_hmms = HA.get_best_hmms(sorting='best_AIC', overwrite=True) #get rows of hmm_overview where sorting column==sorting arugument
 
 ### perform the naive bayes analysis of the hmm
-NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite=True, multi_process=False) #run with overwrite
+NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite=False, multi_process=True) #run with overwrite
 
 #%% important calls to make checks
 ov = HA.get_hmm_overview(overwrite=False) #get the hmm_overview dataframe
