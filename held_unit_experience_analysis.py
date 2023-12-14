@@ -28,16 +28,16 @@ from multiprocessing import Pool
 import pyBAKS
 
 #you need to make a project analysis using blechpy.project() first
-proj_dir =  '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'
+proj_dir =  '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'
 proj = blechpy.load_project(proj_dir)
 proj.make_rec_info_table() #run this in case you changed around project stuff
 
 PA = ana.ProjectAnalysis(proj)
 
-PA.detect_held_units()#overwrite = True) #this part also gets the all units file
-[all_units, held_df] = PA.get_unit_info()#overwrite = True) #run and check for correct area then run get best hmm
+PA.detect_held_units(overwrite = False) #this part also gets the all units file
+[all_units, held_df] = PA.get_unit_info(overwrite = False) #run and check for correct area then run get best hmm
 
-PA.process_single_units()#overwrite = True) #run the single-unit analysis, check function to see if all parts are working
+resp_units, pal_units = PA.process_single_units(overwrite = True) #run the single-unit analysis, check function to see if all parts are working
 
 HA = ana.HmmAnalysis(proj)
 HA.get_hmm_overview()#overwrite = True) #use overwrrite = True to debug
@@ -54,19 +54,21 @@ best_hmms = HA.get_best_hmms(overwrite = False, sorting = 'best_BIC')#overwrite 
 
 held_df = held_df[held_df.held !=False]
 
-
-
-#held_df_long = pd.wide_to_long(held_df, stubnames=['rec', 'unit'], i=['held_unit_name', 'exp_group', 'exp_name', 'inter_J3','held'], j=['rec_order'])
-
-#reate a version of the df where the recordings and units are splitup
 held_df_long = pd.melt(held_df, id_vars=['held_unit_name', 'exp_group', 'exp_name', 'inter_J3','held'], value_vars=['rec1', 'rec2'], value_name='rec_dir', var_name='rec_order')
 held_df_long2 = pd.melt(held_df, id_vars=['held_unit_name', 'exp_group', 'exp_name', 'inter_J3','held'], value_vars=['unit1', 'unit2'], value_name='unit_num', var_name='unit_order')
 #this is our final version fo the long edit
 held_df_long = pd.concat([held_df_long, held_df_long2], axis=1)
-held_df_long = held_df_long[['held_unit_name', 'exp_group', 'exp_name', 'held', 'rec_dir', 'unit_num']]
+held_df_long = held_df_long[['held_unit_name', 'exp_group', 'exp_name', 'held', 'rec_dir', 'unit_num', 'inter_J3']]
 #remove the  duplicated columns
 held_df_long = held_df_long.loc[:, ~held_df_long.columns.duplicated()].copy()
 held_df_long = held_df_long.drop_duplicates()
+
+#get the rows from resp_units where column 'taste_responsive' is true
+respidxs = resp_units.loc[resp_units.taste_responsive == True]
+respidxs = respidxs[['rec_dir', 'unit_name']].drop_duplicates()
+held_df_long['unit_name'] = held_df_long['unit_num']
+#get rows from held_df_long where [rec_dir, unit_name] is in respidxs
+held_resp = held_df_long.merge(respidxs, on=['rec_dir', 'unit_name']).drop_duplicates()
 
 
 '''to do list
@@ -167,7 +169,7 @@ df = df.loc[df.din < 4].reset_index(drop=True)
 df['min_session_trial'] = df.groupby(['rec_dir'])['session_trial'].transform(min)
 df['session_trial'] = df['session_trial'] - df['min_session_trial']
 
-test = pyBAKS.dfBAKS(df, 'spike_array', 'time_array', ['held_unit_name', 'rec_dir'], n_jobs=0)
+#test = pyBAKS.dfBAKS(df, 'spike_array', 'time_array', ['held_unit_name', 'rec_dir'], n_jobs=0)
 
 #%%
 spike_array = []
@@ -179,6 +181,7 @@ interj3 = [] #meaure of how well the unit is held
 digins = []
 trial = []
 unit_nums = []
+rate_arrays = []
 
 for name, group in held_df_long.groupby(['rec_dir']):
     dat = blechpy.load_dataset(name)
@@ -194,6 +197,7 @@ for name, group in held_df_long.groupby(['rec_dir']):
         for j, dinrow in dinmap[:4].iterrows():
             trials = digintrials.loc[digintrials.channel==j]
             time, spike_train = dio.h5io.get_spike_data(row.rec_dir, unum, dinrow.channel)
+            _, rate_array = dio.h5io.get_rate_data(row.rec_dir, unum, dinrow.channel)
             for k, train in enumerate(spike_train):
                 digintrialslist.append(trials.trial_num.iloc[k])
                 spike_array.append(train)
@@ -209,7 +213,7 @@ for name, group in held_df_long.groupby(['rec_dir']):
 
 
 #create a dataframe from d
-dictionary = {'din': digins, 'session_trial':digintrialslist, 'rec_dir': rec_dirsy, 'held_unit_name': held_unit_name,'unit_num':unit_nums, 'interJ3': interj3, 'spike_array': spike_array, 'taste_trial': trial}
+dictionary = {'din': digins, 'session_trial':digintrialslist, 'rec_dir': rec_dirsy, 'held_unit_name': held_unit_name,'unit_num':unit_nums, 'interJ3': interj3, 'spike_array': spike_array, 'rate_array': rate_arrays, 'taste_trial': trial}
 df = pd.DataFrame(dictionary) 
 
 
@@ -217,6 +221,10 @@ df = pd.DataFrame(dictionary)
 
 rec_info = proj.rec_info
 df = df.merge(rec_info, on =['rec_dir'])
+
+
+
+
 #make a subset of best hmms that is justhte variables that I'm grouping on and the varibales I want to merge in.
 #get the columns that are overlapping
 best_hmms_din = best_hmms.rename(columns={'channel': 'din'})

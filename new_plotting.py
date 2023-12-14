@@ -2138,10 +2138,11 @@ def plot_unit_firing_rates(all_units, group_col='exp_group', save_file=None):
     df['group_col'] = df.apply(lambda x: '%s_%s' % (x[group_col], x['time_group']), axis=1)
 
     # plot baseline and response firing rates 
-    g = sns.catplot(data=df, x=group_col, y='firing_rate', hue='time_group',
-                    col='unit_type', row='firing_type', kind='bar', order=order,
+    g = sns.catplot(data=df, x=group_col, y='firing_rate', kind='bar', hue='time_group',col='unit_type', row='firing_type', margin_titles=True,
+                    order=order,
                     hue_order=hue_order, col_order=col_order,
                     row_order=row_order, sharey=False)
+    g.set_titles(row_template='{row_name}', col_template='{col_name}')
     g.fig.set_size_inches((15, 12))
     for (ft, ut), group in df.groupby(['firing_type', 'unit_type']):
         row = row_order.index(ft)
