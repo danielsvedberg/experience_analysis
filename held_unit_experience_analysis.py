@@ -11,10 +11,6 @@ import timeit
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from blechpy.analysis import poissonHMM as phmm
-import glob
-import re
-
 import pandas as pd
 #get into the directory
 import analysis as ana
@@ -25,7 +21,8 @@ from blechpy import dio
 import seaborn as sns
 import hmm_analysis as hmma
 from multiprocessing import Pool
-import pyBAKS
+from scipy.stats import zscore
+import trialwise_analysis as ta
 
 #you need to make a project analysis using blechpy.project() first
 proj_dir =  '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'
@@ -34,201 +31,286 @@ proj.make_rec_info_table() #run this in case you changed around project stuff
 
 PA = ana.ProjectAnalysis(proj)
 
-PA.detect_held_units(overwrite = False) #this part also gets the all units file
-[all_units, held_df] = PA.get_unit_info(overwrite = False) #run and check for correct area then run get best hmm
+def get_held_resp(PA):
+    PA.detect_held_units(overwrite = False) #this part also gets the all units file
+    [all_units, held_df] = PA.get_unit_info(overwrite=False) #run and check for correct area then run get best hmm
 
-resp_units, pal_units = PA.process_single_units(overwrite = True) #run the single-unit analysis, check function to see if all parts are working
+    #check df for nan in HMMID or early or late state
+    held_df = held_df[held_df.held !=False]
+    held_df.reset_index(drop=True, inplace=True)
+    id_vars = ['held_unit_name', 'exp_group', 'exp_name', 'held', 'area']
+    filter_cols = id_vars + ["rec1", "rec2", "unit1", "unit2"]
+    held_df = held_df[filter_cols]
+    held_df_long = pd.melt(held_df, id_vars=id_vars, value_vars=['rec1', 'rec2'], value_name='rec_dir', var_name='rec_order')
+    held_df_long2 = pd.melt(held_df, id_vars=id_vars, value_vars=['unit1', 'unit2'], value_name='unit_num', var_name='unit_order')
+    # drop the unit_order columns
+    held_df_long = held_df_long.drop(['rec_order'], axis=1)
+    held_df_long2 = held_df_long2.drop(['unit_order'], axis=1)
 
-HA = ana.HmmAnalysis(proj)
-HA.get_hmm_overview()#overwrite = True) #use overwrrite = True to debug
-#HA.sort_hmms_by_params()#overwrite = True)
-HA.sort_hmms_by_BIC()#overwrite = True)
-srt_df = HA.get_sorted_hmms()
-#HA.mark_early_and_late_states() #this is good, is writing in early and late states I think.
-best_hmms = HA.get_best_hmms(overwrite = False, sorting = 'best_BIC')#overwrite = True, sorting = 'params #4') #HA has no attribute project analysis #this is not getting the early and late states 
-#heads up, params #5 doesn't cover all animals, you want params #4
-#play around with state timings in mark_early_and_late_states()
+    held_df_long = pd.concat([held_df_long, held_df_long2], axis=1)
 
-#check df for nan in HMMID or early or late state
+    final_cols = ['held_unit_name', 'exp_group', 'exp_name', 'held', 'rec_dir', 'unit_num']
+    held_df_long = held_df_long[final_cols]
+    #remove the  duplicated columns
+    held_df_long = held_df_long.T.drop_duplicates().T
+    held_df_long = held_df_long.drop_duplicates()
+    held_df_long['unit_name'] = held_df_long['unit_num']
 
+    resp_units, pal_units = PA.process_single_units(overwrite=False) #run the single-unit analysis, check function to see if all parts are working
+    respidxs = resp_units[['rec_dir', 'unit_name', 'taste', 'taste_responsive']].drop_duplicates()
+    #get rows from held_df_long where [rec_dir, unit_name] is in respidxs
+    held_resp = held_df_long.merge(respidxs, on=['rec_dir', 'unit_name']).drop_duplicates()
+    #group by held_unit_name and remove all groups where no row of the group has held == True
+    for name, group in held_resp.groupby(['held_unit_name']):
+        if not any(group[['taste_responsive', 'taste']]):
+            held_resp = held_resp[held_resp.held_unit_name != name]
 
-held_df = held_df[held_df.held !=False]
+    return held_resp
 
-held_df_long = pd.melt(held_df, id_vars=['held_unit_name', 'exp_group', 'exp_name', 'inter_J3','held'], value_vars=['rec1', 'rec2'], value_name='rec_dir', var_name='rec_order')
-held_df_long2 = pd.melt(held_df, id_vars=['held_unit_name', 'exp_group', 'exp_name', 'inter_J3','held'], value_vars=['unit1', 'unit2'], value_name='unit_num', var_name='unit_order')
-#this is our final version fo the long edit
-held_df_long = pd.concat([held_df_long, held_df_long2], axis=1)
-held_df_long = held_df_long[['held_unit_name', 'exp_group', 'exp_name', 'held', 'rec_dir', 'unit_num', 'inter_J3']]
-#remove the  duplicated columns
-held_df_long = held_df_long.loc[:, ~held_df_long.columns.duplicated()].copy()
-held_df_long = held_df_long.drop_duplicates()
-
-#get the rows from resp_units where column 'taste_responsive' is true
-respidxs = resp_units.loc[resp_units.taste_responsive == True]
-respidxs = respidxs[['rec_dir', 'unit_name']].drop_duplicates()
-held_df_long['unit_name'] = held_df_long['unit_num']
-#get rows from held_df_long where [rec_dir, unit_name] is in respidxs
-held_resp = held_df_long.merge(respidxs, on=['rec_dir', 'unit_name']).drop_duplicates()
-
-
-'''to do list
-add in trial and session
-
-trial is how many times the animal has gotten any stimulus inthe session
-digintrials.trial_num
-
-session is which date in the pairing
-held_df_long['rec_order']
-
-also add in a column for the nth time a rat has gotten a specific taste
-tastes are from din
-
-fix the trial number
-
-'''                          
-#time it                                                                                
-start = timeit.default_timer()
-
-# Step 1: Define the function for inner logic
-def process_rec_dir(name, group):
+#%% pull spike arrays or rate arrays for units matching any arbitrary list of units
+def get_arrays(name, group, query_name='spike_array', query_func = dio.h5io.get_spike_data):
+    #get spike arrays or rate arrays (or whatever) for each unit in each recording
+    #use the query_func to get the arrays
+    #query_name
     # Initialize lists for this group
-    spike_array = []
+    sessiontrials = []
+    tastetrials = []
+    queried_arr = []
     timedata = []
-    digintrialslist = []
     rec_dir = []
     held_unit_name = []
     interj3 = []
     digins = []
-    trial = []
     unit_nums = []
 
     dat = blechpy.load_dataset(name)
     dinmap = dat.dig_in_mapping.query('spike_array ==True')
+    tastemap = dinmap[['channel', 'name']]
+    #rename column 'name' to 'taste'
+    tastemap = tastemap.rename(columns={'name': 'taste'})
+    group = group.merge(tastemap, on=['taste'])
     unittable = dat.get_unit_table()
     digintrials = dat.dig_in_trials
     digintrials['tasteExposure'] = digintrials.groupby(['name', 'channel']).cumcount()+1
-    digintrials = digintrials.loc[digintrials.name != 'Experiment']
+    digintrials = digintrials.loc[digintrials.name != 'Experiment'].reset_index(drop=True)
 
     for i , row in group.iterrows():
+        print(i)
         unum = unittable.loc[unittable.unit_name == row.unit_num]
         unum = unum.unit_num.item()
-        for j, dinrow in dinmap.iterrows():
-            trials = digintrials.loc[digintrials.channel==j]
-            time, spike_train = dio.h5io.get_spike_data(row.rec_dir, unum, dinrow.channel)
-            for k, train in enumerate(spike_train):
-                digintrialslist.append(trials.trial_num.iloc[k])
-                spike_array.append(train)
-                timedata.append(time)
-                rec_dir.append(name)
-                held_unit_name.append(row.held_unit_name)
-                unit_nums.append(group['unit_num'][i])
-                digins.append(dinrow.channel)
-            for taste_trial in trials['tasteExposure']:
-                trial.append(taste_trial)
 
+        trials = digintrials.loc[digintrials.channel == row['channel']]
+        time, arrays = query_func(row.rec_dir, unum, row['channel'])
+        for k, array in enumerate(arrays):
+            sessiontrials.append(trials.trial_num.iloc[k])
+            tastetrials.append(trials.tasteExposure.iloc[k])
+            queried_arr.append(array)
+            timedata.append(time)
+            rec_dir.append(name)
+            held_unit_name.append(row.held_unit_name)
+            unit_nums.append(group['unit_num'][i])
+            digins.append(row.channel)
     # Construct a list of dictionaries for this group
     data_dicts = [{
-        'spike_array': sa,
+        query_name: qa,
         'time_array': td,
-        'session_trial': dtl,
+        'session_trial': ss,
+        'taste_trial': tt,
         'rec_dir': rd,
         'held_unit_name': hun,
         'din': di,
-        'trial': tr,
-        'held_unit_unit_num': un
-    } for sa, td, dtl, rd, hun, di, tr, un in zip(spike_array, timedata, digintrialslist, rec_dir, held_unit_name, digins, trial, unit_nums)]
-
+        'unit_num': un
+    } for qa, td, ss, tt, rd, hun, di, un in zip(queried_arr, timedata, sessiontrials, tastetrials, rec_dir, held_unit_name, digins, unit_nums)]
     return data_dicts
 
-# Step 2: Parallel Processing
+def get_rate_arrays(name, group):
+    return get_arrays(name, group, query_name='rate_array', query_func=dio.h5io.get_rate_data)
+
 # Split the data into chunks for parallel processing
-groups = list(held_df_long.groupby(['rec_dir']))
+def get_rate_array_df(PA):
+    held_resp = get_held_resp(PA)
+    groups = list(held_resp.groupby(['rec_dir']))
+    # Use multiprocessing to process each group in parallel
+    with Pool(processes=4) as pool:  # Adjust the number of processes based on your CPU cores
+        results = pool.starmap(get_rate_arrays, groups)
 
-# Use multiprocessing to process each group in parallel
-with Pool(processes=4) as pool:  # Adjust the number of processes based on your CPU cores
-    results = pool.starmap(process_rec_dir, groups)
+    results
 
-# Flatten the results and construct the DataFrame
-all_data = [item for sublist in results for item in sublist]
-df = pd.DataFrame(all_data)
+    # Flatten the results and construct the DataFrame
+    all_data = [item for sublist in results for item in sublist]
+    df = pd.DataFrame(all_data)
 
-#resuls of timer
-df_loop_time = timeit.default_timer()
-print(f'The loop to create the df took: {df_loop_time - start:.6f} seconds')
+    proj = PA.project
+    rec_info = proj.get_rec_info()
+    ri_formerge = rec_info[['exp_name', 'exp_group', 'rec_num', 'rec_dir']]
+    # rename rec_num to session
+    ri_formerge = ri_formerge.rename(columns={'rec_num': 'session'})
 
-rec_info = proj.get_rec_info()
-ri_formerge = rec_info[['exp_name', 'exp_group', 'rec_num', 'rec_dir']]
-#rename rec_num to session
-ri_formerge = ri_formerge.rename(columns={'rec_num': 'session'})
+    # apply columns from ri_formerge to df along rec_dir column
+    df = df.merge(ri_formerge, on=['rec_dir'])
+    df = df.loc[df.din < 4].reset_index(drop=True)
 
-#apply columns from ri_formerge to df along rec_dir column
-df = df.merge(ri_formerge, on=['rec_dir'])
-df = df.loc[df.din < 4].reset_index(drop=True)
+    # make column with miniumum session trial
+    df['min_session_trial'] = df.groupby(['rec_dir'])['session_trial'].transform(min)
+    df['session_trial'] = df['session_trial'] - df['min_session_trial']
 
-#make column with miniumum session trial
-df['min_session_trial'] = df.groupby(['rec_dir'])['session_trial'].transform(min)
-df['session_trial'] = df['session_trial'] - df['min_session_trial']
+    return df
 
-#test = pyBAKS.dfBAKS(df, 'spike_array', 'time_array', ['held_unit_name', 'rec_dir'], n_jobs=0)
+rate_array_df = get_rate_array_df(PA)
+taste_map = {0: 'Suc', 1: 'NaCl', 2: 'CA', 3: 'QHCl', 4: 'Spont'}
+rate_array_df['taste'] = rate_array_df['din'].map(taste_map)
+cols = ['rec_dir', 'held_unit_name', 'unit_num', 'session_trial', 'taste']
+rate_array_df = rate_array_df.drop_duplicates(subset=cols)
+
+zscore_df_list = []
+for name, group in rate_array_df.groupby(['exp_name', 'held_unit_name']):
+    dflist = []
+    for i, row in group.iterrows():
+        rates = row.rate_array
+        time = row.time_array
+        df = pd.DataFrame({'rate': rates, 'time': time})
+        df['rec_dir'] = row.rec_dir
+        df['held_unit_name'] = row.held_unit_name
+        df['unit_num'] = row.unit_num
+        df['session_trial'] = row.session_trial
+        df['taste'] = row.taste
+        dflist.append(df)
+    df = pd.concat(dflist)
+    #make column 'zscore' the z-score across the entire 'rate' column
+    df['zscore'] = zscore(df['rate'])
+
+    zscore_list = []
+    nmlist = []
+    #make a dataframe where each column is an entry of nm
+    for nm, gr in df.groupby(cols):
+        zscore_list.append(gr['zscore'].to_numpy())
+        nmlist.append(nm)
+    zscore_df = pd.DataFrame(nmlist, columns=cols)
+    zscore_df['zscore'] = zscore_list
+    zscore_df_list.append(zscore_df)
+zscore_df = pd.concat(zscore_df_list)
+#merge zscore_df into rate_array_df along cols
+rate_array_df = rate_array_df.merge(zscore_df, on=cols) #TODO: figure out why this makes rate array shorter
+
+prestim = []
+early = []
+late = []
+early_mags = []
+late_mags = []
+for i, row in rate_array_df.iterrows():
+    mean_prestim = np.mean(row.zscore[0:1900])
+    mean_early = np.mean(row.zscore[2000:3500])
+    mean_late = np.mean(row.zscore[3500:5000])
+
+    early_mag = abs(mean_early - mean_prestim)
+    late_mag = abs(mean_late - mean_prestim)
+    prestim.append(mean_prestim)
+    early.append(mean_early)
+    late.append(mean_late)
+    early_mags.append(early_mag)
+    late_mags.append(late_mag)
+
+rate_array_df['prestim'] = prestim
+rate_array_df['early'] = early
+rate_array_df['late'] = late
+rate_array_df['early_mag'] = early_mags
+rate_array_df['late_mag'] = late_mags
+
 
 #%%
-spike_array = []
-timedata = []
-digintrialslist = []
-rec_dirsy = []
-held_unit_name = []                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
-interj3 = [] #meaure of how well the unit is held
-digins = []
-trial = []
-unit_nums = []
-rate_arrays = []
+import trialwise_analysis as ta
+#get rows of rate_array_df that are duplicated
+cols = ['rec_dir', 'held_unit_name', 'taste', 'session_trial', 'exp_name', 'exp_group']
+rate_array_df = rate_array_df.drop_duplicates(cols)
 
-for name, group in held_df_long.groupby(['rec_dir']):
-    dat = blechpy.load_dataset(name)
-    dinmap = dat.dig_in_mapping.query('spike_array ==True')
-    unittable = dat.get_unit_table()
-    digintrials = dat.dig_in_trials
-    digintrials['tasteExposure#'] = digintrials.groupby(['name', 'channel']).cumcount()+1 #add the nth taste exposure as a column to digintrials
-    digintrials = digintrials.loc[digintrials.name != 'Experiment']
-    for i , row in group.iterrows():
-        unum = unittable.loc[unittable.unit_name == row.unit_num]
-        unum = unum.unit_num.item()
-        print(row)
-        for j, dinrow in dinmap[:4].iterrows():
-            trials = digintrials.loc[digintrials.channel==j]
-            time, spike_train = dio.h5io.get_spike_data(row.rec_dir, unum, dinrow.channel)
-            _, rate_array = dio.h5io.get_rate_data(row.rec_dir, unum, dinrow.channel)
-            for k, train in enumerate(spike_train):
-                digintrialslist.append(trials.trial_num.iloc[k])
-                spike_array.append(train)
-                timedata.append(time)
-                rec_dirsy.append(name)
-                held_unit_name.append(row.held_unit_name)
-                interj3.append(row.inter_J3)
-                #add the raw unit name
-                unit_nums.append(group['unit_num'][i])
-                digins.append(dinrow.channel) # to identify the taste given on this trial
-            for taste_trial in trials['tasteExposure#']:
-                trial.append(taste_trial) 
+def process_nonlinear_regression(rate_array_df, trial_col = 'session_trial', value_col = 'late_mag'):
+    groupings = ['exp_group', 'exp_name', 'taste', 'held_unit_name', 'session']
+    params, r2, y_pred = ta.nonlinear_regression(rate_array_df, subject_cols=groupings, trial_col=trial_col, value_col=value_col)
+    r2_df = pd.Series(r2).reset_index()
+    r2_df = r2_df.reset_index()
+    r2_df = r2_df.rename(columns={'level_0':'exp_group', 'level_1':'exp_name', 'level_2': 'taste', 'level_3':'held_unit_name', 'level_4':'session', 0:'r2'})
+    r2_df_groupmean = r2_df.groupby(['exp_group', 'taste', 'session']).mean().reset_index()
+
+    modeled = []
+    alpha = []
+    beta = []
+    c = []
+    for i, row in rate_array_df.iterrows():
+        group = row[groupings]
+        pr = params[tuple(group)]
+        modeled.append(ta.model(row[trial_col], *pr))
+        #yp = y_pred[tuple(group)]
+        #modeled.append(y_pred[tuple(group)])
+        alpha.append(pr[0])
+        beta.append(pr[1])
+        c.append(pr[2])
+    modeled_str = 'modeled_' + value_col
+    rate_array_df[modeled_str] = modeled
+    rate_array_df['alpha'] = alpha
+    rate_array_df['beta'] = beta
+    rate_array_df['c'] = c
+    rate_array_df['alpha_pos'] = rate_array_df['alpha'] > 0
+
+    for nm, group in rate_array_df.groupby(groupings):
+        trials = group[trial_col].to_numpy()
+        model = group[modeled_str].to_numpy()
+        trial_diff = np.diff(trials)
+        model_diff = model[-1] - model[0]
+        alpha = group['alpha'].to_numpy()
+        alpha = alpha[0]
+
+        yp = y_pred[tuple(nm)]
+        ypdiff = yp[-1] - yp[0]
+
+        if alpha > 0 and model_diff < 0:
+            print('alpha is positive and model is decreasing')
+            print(nm)
+            print(ypdiff)
+        elif alpha < 0 and model_diff > 0:
+            print('alpha is negative and model is increasing')
+            print(nm)
+            print(ypdiff)
 
 
-#create a dataframe from d
-dictionary = {'din': digins, 'session_trial':digintrialslist, 'rec_dir': rec_dirsy, 'held_unit_name': held_unit_name,'unit_num':unit_nums, 'interJ3': interj3, 'spike_array': spike_array, 'rate_array': rate_arrays, 'taste_trial': trial}
-df = pd.DataFrame(dictionary) 
+    #sort the df by groupings and session_trial
+    #rate_array_df = rate_array_df.sort_values(by=groupings+[time_col]).reset_index(drop=True)
+
+    ta.plot_fits(rate_array_df, trial_col=trial_col, dat_col=value_col, model_col=modeled_str, time_col='session', save_dir=PA.save_dir)
+
+    shuff = ta.iter_shuffle(rate_array_df, niter=100, subject_cols=groupings, trial_col=trial_col, value_col=value_col, save_dir=PA.save_dir, overwrite=False) #TODO break this down by group
+    #save shuff as feather datafr
+    avg_shuff = shuff.groupby(['exp_group', 'session', 'taste', 'iternum']).mean().reset_index()
+    #%% plot the r2 values for each session with the null distribution
+    save_flag = trial_col + '_' + value_col
+    ta.plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=save_flag, save_dir=PA.save_dir)
+
+process_nonlinear_regression(rate_array_df, trial_col='session_trial', value_col='late_mag')
+process_nonlinear_regression(rate_array_df, trial_col='session_trial', value_col='early_mag')
+process_nonlinear_regression(rate_array_df, trial_col='session_trial', value_col='prestim')
+process_nonlinear_regression(rate_array_df, trial_col='session_trial', value_col='early')
+process_nonlinear_regression(rate_array_df, trial_col='session_trial', value_col='late')
+process_nonlinear_regression(rate_array_df, trial_col='taste_trial', value_col='late_mag')
+process_nonlinear_regression(rate_array_df, trial_col='taste_trial', value_col='early_mag')
+process_nonlinear_regression(rate_array_df, trial_col='taste_trial', value_col='prestim')
+process_nonlinear_regression(rate_array_df, trial_col='taste_trial', value_col='early')
+process_nonlinear_regression(rate_array_df, trial_col='taste_trial', value_col='late')
 
 
-#filter out 
+g = sns.lmplot(data=rate_array_df, x='trial', y='early_mag', hue='exp_group', col='session', row='din', height=4, aspect=.7, x_estimator=np.mean, facet_kws={'margin_titles':True})
+plt.show(g)
 
-rec_info = proj.rec_info
-df = df.merge(rec_info, on =['rec_dir'])
+h = sns.lmplot(data=rate_array_df, x='trial', y='late_mag', hue='exp_group', col='session', row='din', height=4, aspect=.7, x_estimator=np.mean, facet_kws={'margin_titles':True})
+plt.show(h)
 
 
-
-
+HA = ana.HmmAnalysis(proj)
+ov = HA.get_hmm_overview(overwrite=False) #get the hmm_overview dataframe
+sorted = HA.sort_hmms_by_AIC(overwrite=False) #get hmm_overview sorted by best AIC
+best_hmms = HA.get_best_hmms(sorting='best_AIC', overwrite=False) #get rows of hmm_overview where sorting column==sorting arugument
 #make a subset of best hmms that is justhte variables that I'm grouping on and the varibales I want to merge in.
 #get the columns that are overlapping
 best_hmms_din = best_hmms.rename(columns={'channel': 'din'})
-common_cols = list(set(df.columns).intersection(best_hmms_din.columns))
+common_cols = list(set(rate_array_df.columns).intersection(best_hmms_din.columns))
 cols_to_merge = common_cols + ['hmm_id', 'prestim', 'early', 'late']
 best_hmms_tomerge = best_hmms_din[cols_to_merge].copy().drop_duplicates().reset_index()
 

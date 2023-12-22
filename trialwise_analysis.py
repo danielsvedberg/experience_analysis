@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 import random
 import scipy.stats as stats
 
-def model(x, a, b, c):
-    return a / (1 + np.exp(-b * x + c))
 
+def model(x, a, b, c):
+    return b * (1/(1+np.exp(-a*x))) + c
 def generate_synthetic_data(time_steps=30, subjects=3, jitter_strength=0.1):
     """
     Generates synthetic data in a pandas DataFrame in long-form format.
@@ -54,53 +54,86 @@ def generate_synthetic_data(time_steps=30, subjects=3, jitter_strength=0.1):
 
     return longform_data
 
-def shuffle_time(df, subject_cols='Subject', time_col='Time'):
+def shuffle_time(df, subject_cols='Subject', trial_col='Time'):
     newdf = []
     for name, group in df.groupby(subject_cols):
-        nt = list(group[time_col])
+        nt = list(group[trial_col])
         random.shuffle(nt)
-        group[time_col] = nt
+        group[trial_col] = nt
         newdf.append(group)
     newdf = pd.concat(newdf)
-    return newdf 
+    return newdf
 
-def nonlinear_regression(data, subject_cols=['Subject'], time_col='Time', value_col='Value'):
+
+from joblib import Parallel, delayed
+import numpy as np
+from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score
+
+
+def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', value_col='Value'):
     """
     Performs nonlinear regression on the synthetic data for each subject.
 
     Args:
     data (pandas.DataFrame): The synthetic data in long-form format.
+    subject_cols (list): List of columns to group by for subjects.
+    trial_col (str): Name of the column containing trial data.
+    value_col (str): Name of the column containing value data.
+    model (function): The nonlinear model function.
 
     Returns:
-    dict: A dictionary containing the fitted parameters for each subject.
+    dict: A dictionary containing the fitted parameters and R2 scores for each subject.
     """
+    def model(x, a, b, c):
+        return b * (1/(1+np.exp(-a*x))) + c
 
-    # Define the nonlinear model (exponential decay)
+    def fit_for_subject(subject, subject_data):
+        #sort subject data by trial_col
+        subject_data = subject_data.copy().sort_values(by=[trial_col]).reset_index(drop=True)
+        time = subject_data[trial_col].to_numpy()
+        values = subject_data[value_col].to_numpy()
+        aMax = np.inf
+        aMin = -np.inf
+        bMax = 2*(abs(np.max(values)-np.min(values)))
+        bMin = 0
+        cMax = np.max(values)
+        cMin = np.min(values)-bMax
 
-    # Initialize a dictionary to store results
-    fitted_params = {}
-    r2_scores = {}
+        # first estimate bounds using linear regression
+        slope, intercept, r_value, p_value, std_err = stats.linregress(time, values)
+        # calculate the y value at the min(time)
+        y0 = slope * np.min(time) + intercept
+        # calculate the y value at the max(time)
+        y1 = slope * np.max(time) + intercept
+        a0 = slope
+        linchange = abs(y1 - y0)
+        if linchange < bMax:
+            b0 = linchange
+        else:
+            b0 = abs(cMax - cMin)
 
-    # Get unique subjects
-    # Fit the model for each subject
-    for subject, subject_data in data.groupby(subject_cols):
+        if cMin < y0 < cMax:
+            c0 = y0
+        else:
+            c0 = values[0]
 
-        # Extract time and values
-        time = subject_data[time_col]
-        values = subject_data[value_col]
+        params, _ = curve_fit(model, time, values, p0=[a0, b0, c0], bounds=([aMin, bMin, cMin], [aMax, bMax, cMax]),
+                              maxfev=10000000)
+        y_pred = model(time, *params)
+        r2 = r2_score(values, y_pred)
 
-        # Fit the model
-        params, _ = curve_fit(model, time, values, bounds=([0,0,0],[1,'inf', 'inf']), maxfev=100000)
+        return subject, params, r2, y_pred,
 
-        # Store the fitted parameters
-        fitted_params[subject] = params
-        
-        y_pred = model(subject_data[time_col], *params)
-        r2 = r2_score(subject_data[value_col], y_pred)
-        
-        r2_scores[subject] = r2
+    results = Parallel(n_jobs=-1)(
+        delayed(fit_for_subject)(subject, subject_data) for subject, subject_data in data.groupby(subject_cols))
 
-    return fitted_params, r2_scores
+    fitted_params = {result[0]: result[1] for result in results}
+    r2_scores = {result[0]: result[2] for result in results}
+    y_pred = {result[0]: result[3] for result in results}
+
+    return fitted_params, r2_scores, y_pred
+
 
 def bootstrap_stats(matrix, n_bootstraps=1000, axis=0):
     # Number of rows and columns in the matrix
@@ -122,42 +155,6 @@ def bootstrap_stats(matrix, n_bootstraps=1000, axis=0):
     
     params = {'bootmean': bootmean, 'bootci': bootci}
     return params
-
-"""
-def nonlinear_metaregression(data, subject_cols=['Subject'], grouping_cols=['exp_group', 'time_group'], time_col='Time', value_col='Value'):
-    fitted_params, r2 = nonlinear_regression(data, subject_cols, time_col, value_col)
-    df = pd.Series(fitted_params).reset_index()
-    cols = subject_cols + ['params']
-    df = df.set_axis(cols, axis=1)
-
-    grpavgdf = df.groupby(grouping_cols).mean().reset_index()
-
-    bootmetaparam= []
-    bootmetaci = []
-    r2_bootmean = []
-    r2_bootci = []
-    groups = []
-    for i, group in df.groupby(grouping_cols):
-        matrix = np.array(list(group.params))
-        metaparams = bootstrap_stats(matrix, n_bootstraps=1000)
-        r2arr = np.array(list(r2.values()))
-        r2arr = r2arr.reshape(-1,1)
-        meanr2 = bootstrap_stats(r2arr, axis=0)
-
-        groups.append(i)
-        bootmetaparam.append(metaparams['bootmean'])
-        bootmetaci.append(metaparams['bootci'])
-        r2_bootmean.append(meanr2['bootmean'])
-        r2_bootci.append(meanr2['bootci'])
-
-    metadf = pd.DataFrame({'group': groups, 'bootmetaparam':bootmetaparam, 'bootmetaci': bootmetaci, 'r2_bootmean': r2_bootmean, 'r2_bootci': r2_bootci})
-    metadf = metadf.set_index('group')
-
-    y_pred = model(data[time_col], *metaparams['bootmean'])
-    metar2 = r2_score(data[value_col], y_pred)
-    
-    return metaparams, metar2
-"""
 
 def generate_metafit(metaparams, time_steps = 30):
     t = np.linspace(0, time_steps-1, time_steps)
@@ -228,9 +225,9 @@ def generate_fitted_data(fitted_parameters, time_steps=30):
 
     return longform_data
 
-def iter_shuffle(data, niter = 10000, subject_cols=['Subject'], time_col='Time', value_col='Value', save_dir=None, overwrite=True):
+def iter_shuffle(data, niter = 10000, subject_cols=['Subject'], trial_col='Trial', value_col='Value', save_dir=None, overwrite=True):
     if overwrite is False:
-        shuffname = time_col + '_' + value_col + '_nonlinearNullDist.feather'
+        shuffname = trial_col + '_' + value_col + '_nonlinearNullDist.feather'
         try:
             iters = pd.read_feather(save_dir + '/' + shuffname)
             return iters
@@ -238,9 +235,10 @@ def iter_shuffle(data, niter = 10000, subject_cols=['Subject'], time_col='Time',
             pass
 
     iters = []
-    for i in range(niter): 
-        shuff = shuffle_time(data, subject_cols=subject_cols, time_col=time_col)
-        params, r2 = nonlinear_regression(shuff, subject_cols=subject_cols, time_col=time_col, value_col=value_col)
+    for i in range(niter):
+        print("iter " + str(i) + " of " + str(niter))
+        shuff = shuffle_time(data, subject_cols=subject_cols, trial_col=trial_col)
+        params, r2, _ = nonlinear_regression(shuff, subject_cols=subject_cols, trial_col=trial_col, value_col=value_col)
 
         paramdf = pd.Series(params, name='params').to_frame()
         r2df = pd.Series(r2, name='r2').to_frame()
@@ -252,19 +250,63 @@ def iter_shuffle(data, niter = 10000, subject_cols=['Subject'], time_col='Time',
     iters = pd.concat(iters)
     iters = iters.reset_index(drop=True)
     if save_dir is not None:
-        shuffname = time_col + '_' + value_col + '_nonlinearNullDist.feather'
+        shuffname = trial_col + '_' + value_col + '_nonlinearNullDist.feather'
         iters.to_feather(save_dir + '/' + shuffname)
     return iters
+
+from tqdm import tqdm
+
+from joblib import Parallel, delayed
+
+def iter_shuffle_parallel(data, niter=10000, subject_cols=['Subject'], trial_col='Time', value_col='Value', save_dir=None,
+                 overwrite=True):
+    def single_iteration(i):
+        shuff = shuffle_time(data, subject_cols=subject_cols, trial_col=trial_col)
+        params, r2 = nonlinear_regression(shuff, subject_cols=subject_cols, trial_col=trial_col, value_col=value_col)
+        paramdf = pd.Series(params, name='params').to_frame()
+        r2df = pd.Series(r2, name='r2').to_frame()
+        df = pd.concat([paramdf, r2df], axis=1).reset_index()
+        cols = subject_cols + ['params', 'r2']
+        df = df.set_axis(cols, axis=1)
+        df['iternum'] = i
+        return df
+
+    if overwrite is False:
+        shuffname = trial_col + '_' + value_col + '_nonlinearNullDist.feather'
+        try:
+            iters = pd.read_feather(save_dir + '/' + shuffname)
+            return iters
+        except FileNotFoundError:
+            pass
+
+    iters = Parallel(n_jobs=-1)(delayed(single_iteration)(i) for i in tqdm(range(niter), desc='Iterations'))
+    iters = pd.concat(iters)
+    iters = iters.reset_index(drop=True)
+
+    if save_dir is not None:
+        shuffname = trial_col + '_' + value_col + '_nonlinearNullDist.feather'
+        iters.to_feather(save_dir + '/' + shuffname)
+
+    return iters
+
 
 taste_index = {'Suc':0, 'NaCl':1, 'CA':2, 'QHCl':3}
 session_index = {1:0, 2:1, 3:2}
 unique_tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
-def plot_fits(avg_gamma_mode_df, trial_col = 'session_trial', dat_col = 'pr(mode state)', model_col = 'modeled_prMode', save_dir=None):
+def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode state)', model_col='modeled_prMode', time_col='time_group', save_dir=None):
 
-    unique_tastes = ['Suc', 'NaCl', 'CA', 'QHCl']  # avg_shuff['taste'].unique()
+    #make a column determining if alpha is positive
     unique_exp_groups = avg_gamma_mode_df['exp_group'].unique()
-    unique_time_groups = avg_gamma_mode_df['time_group'].unique()
     unique_exp_names = avg_gamma_mode_df['exp_name'].unique()
+    unique_tastes = ['Suc', 'NaCl', 'CA', 'QHCl']  # avg_shuff['taste'].unique()
+
+    unique_time_groups = avg_gamma_mode_df[time_col].unique()
+
+    unique_alpha_pos = avg_gamma_mode_df['alpha_pos'].unique()
+    n_tastes = len(unique_tastes)
+    n_time_groups = len(unique_time_groups)
+    n_exp_groups = len(unique_exp_groups)
+
     #map a color to each exp name in unique exp names
     pal = sns.color_palette()
     colmap = {}
@@ -272,46 +314,60 @@ def plot_fits(avg_gamma_mode_df, trial_col = 'session_trial', dat_col = 'pr(mode
         colmap[exp] = i
 
     for k, exp_group in enumerate(unique_exp_groups):
-        #group_exp_names = avg_gamma_mode_df[avg_gamma_mode_df['exp_group'] == exp_group]['exp_name'].unique()
-        fig, axes = plt.subplots(4, 3, sharex=True, sharey=True, figsize=(10, 10))
-        for i, taste in enumerate(unique_tastes):
-            for j, time_group in enumerate(unique_time_groups):
-                subset = avg_gamma_mode_df[
-                    (avg_gamma_mode_df['taste'] == taste) & (avg_gamma_mode_df['time_group'] == time_group) & (
-                                avg_gamma_mode_df['exp_group'] == exp_group)]
-                ids = subset[['exp_name', 'exp_group', 'time_group', 'taste']].drop_duplicates().reset_index(drop=True)
-                ax = axes[i, j]
-                exp_group_names = subset['exp_name'].unique()
-                #made each entry of exp group names list twice
-                exp_group_names = np.repeat(exp_group_names, 2)
-                for l, row in ids.iterrows():
-                    subsubset = subset[(subset['exp_name'] == row['exp_name'])]
-                    color = pal[colmap[row['exp_name']]]
-                    scatter = ax.plot(subsubset[trial_col], subsubset[dat_col], 'o', alpha=0.5, color=color)
-                    line = ax.plot(subsubset[trial_col], subsubset[model_col], alpha=0.5, color=color)
-                if i == 0 and j == 0:
-                    ax.legend(labels=exp_group_names, loc='center right',
-                              bbox_to_anchor=(4.05, -1.3), ncol=1)
-        # add a title for each column
-        for ax, col in zip(axes[0], unique_time_groups):
-            label = 'session ' + str(col)
-            ax.set_title(label, rotation=0, size='large')
-        # add a title for each row, on the right side of the figure
-        for ax, row in zip(axes[:, -1], unique_tastes):
-            ax.yaxis.set_label_position("right")
-            ax.set_ylabel(row, rotation=-90, size='large', labelpad=15)
-        # set y-axis labels for the leftmost y-axis
-        for ax in axes[:, 0]:
-            ax.set_ylabel('pr(mode state)', rotation=90, size='large', labelpad=0)
-        # set x-axis labels for the bottommost x-axis
-        for ax in axes[-1, :]:
-            ax.set_xlabel('session trial', size='large')
-        plt.suptitle("HMM stereotypy: " + exp_group)
-        plt.show()
-        if save_dir is not None:
-            savename = '/gamma_mode_modeled_' + trial_col + '.png'
-            plt.savefig(save_dir + savename)
-        plt.subplots_adjust(right=0.85)
+        for l, alpha_pos in enumerate(unique_alpha_pos):
+            print(l)
+            print(alpha_pos)
+            fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=True, figsize=(10, 10))
+            for i, taste in enumerate(unique_tastes):
+                for j, time_group in enumerate(unique_time_groups):
+                    subset = avg_gamma_mode_df[(avg_gamma_mode_df['taste'] == taste) &
+                                               (avg_gamma_mode_df[time_col] == time_group) &
+                                               (avg_gamma_mode_df['exp_group'] == exp_group) &
+                                               (avg_gamma_mode_df['alpha_pos'] == alpha_pos)]
+                    ids = subset[['exp_name', 'exp_group', time_col, 'taste', 'held_unit_name']].drop_duplicates().reset_index(drop=True)
+                    ax = axes[i, j]
+                    exp_group_names = subset['exp_name'].unique()
+                    #made each entry of exp group names list twice
+                    exp_group_names = np.repeat(exp_group_names, 2)
+                    for l, row in ids.iterrows():
+                        subsubset = subset[(subset['exp_name'] == row['exp_name']) &
+                                           (subset['held_unit_name'] == row['held_unit_name'])]
+                        #reorder subsubset by trial_col
+                        subsubset = subsubset.copy().sort_values(by=[trial_col])
+                        color = pal[colmap[row['exp_name']]]
+                        line = ax.plot(subsubset[trial_col], subsubset[model_col], alpha=0.7, color=color)
+                        scatter = ax.plot(subsubset[trial_col], subsubset[dat_col], 'o', alpha=0.1, color=color)
+
+
+                    if i == 0 and j == 0:
+                        ax.legend(labels=exp_group_names, loc='center right',
+                                  bbox_to_anchor=(4.05, -1.3), ncol=1)
+            # add a title for each column
+            for ax, col in zip(axes[0], unique_time_groups):
+                label = 'session ' + str(col)
+                ax.set_title(label, rotation=0, size='large')
+            # add a title for each row, on the right side of the figure
+            for ax, row in zip(axes[:, -1], unique_tastes):
+                ax.yaxis.set_label_position("right")
+                ax.set_ylabel(row, rotation=-90, size='large', labelpad=15)
+            # set y-axis labels for the leftmost y-axis
+            for ax in axes[:, 0]:
+                ax.set_ylabel(dat_col, rotation=90, size='large', labelpad=0)
+            # set x-axis labels for the bottommost x-axis
+            for ax in axes[-1, :]:
+                ax.set_xlabel(trial_col, size='large')
+            plt.subplots_adjust(right=0.8)
+            #plt.suptitle("HMM stereotypy: " + exp_group)
+            plt.show()
+            if save_dir is not None:
+                if alpha_pos == True:
+                    alpha_lab = 'pos'
+                else:
+                    alpha_lab = 'neg'
+
+                savename = '/' + alpha_lab + '_' + model_col + '_' + trial_col + '_' + exp_group + '.png'
+                plt.savefig(save_dir + savename)
+
 def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir = None):
     unique_exp_groups = r2_df_groupmean['exp_group'].unique()
     unique_time_groups = r2_df_groupmean['session'].unique()
@@ -339,8 +395,8 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir = None):
                 color = pal[colmap[row['exp_group']]]
                 ax.hist(x=avg_shuff_subset.r2, bins=20, density=True, alpha=0.5, color=color)
                 ax.axvline(x=row['r2'], color=color, linestyle='--')  # Customize color and linestyle
-                ax.set_xlim(-0.5, 0.5)
-                ax.set_ylim(0, 10)
+                ax.set_xlim(0, 0.1)
+                #ax.set_ylim(0, 10)
                 # print the p-value with the color code
                 pvaltext = "p = " + str(np.round(p_val, 3))
                 ax.text(0.05, textpos - 0.2, pvaltext, transform=ax.transAxes, color=color)
@@ -366,5 +422,5 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir = None):
     plt.show()
     # save the figure as png
     if save_dir is not None:
-        savename = '/' + save_flag + '_gamma_mode_r2_perm_test.png'
+        savename = '/' + save_flag + '_r2_perm_test.png'
         plt.savefig(save_dir + savename)
