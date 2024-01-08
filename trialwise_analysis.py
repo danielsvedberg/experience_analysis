@@ -368,6 +368,93 @@ def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode sta
                 savename = '/' + alpha_lab + '_' + model_col + '_' + trial_col + '_' + exp_group + '.png'
                 plt.savefig(save_dir + savename)
 
+def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode state)', model_col='modeled_prMode', time_col='time_group', save_dir=None):
+
+    #make a column determining if alpha is positive
+    unique_exp_groups = avg_gamma_mode_df['exp_group'].unique()
+    unique_exp_names = avg_gamma_mode_df['exp_name'].unique()
+    unique_tastes = ['Suc', 'NaCl', 'CA', 'QHCl']  # avg_shuff['taste'].unique()
+
+    unique_time_groups = avg_gamma_mode_df[time_col].unique()
+
+    unique_alpha_pos = avg_gamma_mode_df['alpha_pos'].unique()
+    n_tastes = len(unique_tastes)
+    n_time_groups = len(unique_time_groups)
+    n_exp_groups = len(unique_exp_groups)
+
+    #map a color to each exp name in unique exp names
+    pal = sns.color_palette()
+    colmap = {}
+    for i, grp in enumerate(unique_exp_groups):
+        colmap[grp] = i
+
+    upper_y_bound = avg_gamma_mode_df[dat_col].max()
+    lower_y_bound = avg_gamma_mode_df[dat_col].min()
+
+    for m, alpha_pos in enumerate(unique_alpha_pos):
+        fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=True, figsize=(10, 10))
+        for i, taste in enumerate(unique_tastes):
+            for j, time_group in enumerate(unique_time_groups):
+                ax = axes[i, j]
+                for k, exp_group in enumerate(unique_exp_groups):
+                    color = pal[colmap[exp_group]]
+                    subset = avg_gamma_mode_df[(avg_gamma_mode_df['taste'] == taste) &
+                                               (avg_gamma_mode_df[time_col] == time_group) &
+                                               (avg_gamma_mode_df['exp_group'] == exp_group) &
+                                               (avg_gamma_mode_df['alpha_pos'] == alpha_pos)]
+
+                    #get the average alpha, beta, and c from subset
+                    alpha = np.mean(subset['alpha'])
+                    beta = np.mean(subset['beta'])
+                    c = np.mean(subset['c'])
+
+                    #get each unique [time_col] in subset
+                    unique_trials = subset[trial_col].unique()
+                    #order unique trials
+                    unique_trials = np.sort(unique_trials)
+
+                    #generate the model fit for each unique trial
+                    model_fit = model(unique_trials, alpha, beta, c)
+
+                    ids = subset[['exp_name', 'exp_group', time_col, 'taste', 'held_unit_name']].drop_duplicates().reset_index(drop=True)
+                    for n, row in ids.iterrows():
+                        subsubset = subset[(subset['exp_name'] == row['exp_name']) &
+                                           (subset['held_unit_name'] == row['held_unit_name'])]
+                        #reorder subsubset by trial_col
+                        subsubset = subsubset.copy().sort_values(by=[trial_col])
+                        scatter = ax.plot(subsubset[trial_col], subsubset[dat_col], 'o', alpha=0.05, color=color, mfc='none')
+
+                    line = ax.plot(unique_trials, model_fit, alpha=0.9, color=color)
+                    ax.set_ylim(lower_y_bound, upper_y_bound)
+                    if i == 0 and j == 0:
+                        ax.legend(labels=unique_exp_groups, loc='center right',
+                                  bbox_to_anchor=(4.05, -1.3), ncol=1)
+            # add a title for each column
+            for ax, col in zip(axes[0], unique_time_groups):
+                label = 'session ' + str(col)
+                ax.set_title(label, rotation=0, size='large')
+            # add a title for each row, on the right side of the figure
+            for ax, row in zip(axes[:, -1], unique_tastes):
+                ax.yaxis.set_label_position("right")
+                ax.set_ylabel(row, rotation=-90, size='large', labelpad=15)
+            # set y-axis labels for the leftmost y-axis
+            for ax in axes[:, 0]:
+                ax.set_ylabel(dat_col, rotation=90, size='large', labelpad=0)
+            # set x-axis labels for the bottommost x-axis
+            for ax in axes[-1, :]:
+                ax.set_xlabel(trial_col, size='large')
+            plt.subplots_adjust(right=0.85)
+            plt.show()
+        if save_dir is not None:
+            if alpha_pos == True:
+                alpha_lab = 'pos'
+            else:
+                alpha_lab = 'neg'
+
+            savename = '/' + alpha_lab + '_' + model_col + '_' + trial_col + 'summary.png'
+            plt.savefig(save_dir + savename)
+
+
 def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir = None):
     unique_exp_groups = r2_df_groupmean['exp_group'].unique()
     unique_time_groups = r2_df_groupmean['session'].unique()
@@ -388,8 +475,7 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir = None):
             for name, row in subset.iterrows():
                 avg_shuff_subset = avg_shuff[(avg_shuff['taste'] == taste) & (avg_shuff['session'] == time_group) & (
                             avg_shuff['exp_group'] == row['exp_group'])]
-                p_val = stats.percentileofscore(avg_shuff_subset.r2, kind='weak', score=row['r2'])
-                p_val = 1 - p_val / 100
+                p_val = np.mean(avg_shuff_subset.r2 >= row.r2)
                 pvals.append(p_val)
                 textpos = ypos[row['exp_group']]
                 color = pal[colmap[row['exp_group']]]

@@ -192,29 +192,131 @@ zscore_df = pd.concat(zscore_df_list)
 #merge zscore_df into rate_array_df along cols
 rate_array_df = rate_array_df.merge(zscore_df, on=cols) #TODO: figure out why this makes rate array shorter
 
+#modfiy rate_array_df to have columns for prestim, early, late, end, their magntitudes, their maxes and tmaxes, and the maxes/tmaxes of the magnitudes
 prestim = []
 early = []
 late = []
+end = []
+max = []
+tmax = []
+#prestim_max = []
+#early_max = []
+#late_max = []
+#end_max = []
+#prestim_tmax = []
+#early_tmax = []
+#late_tmax = []
+#end_tmax = []
+
 early_mags = []
 late_mags = []
+end_mags = []
+mag_max = []
+mag_tmax = []
+#early_mag_max = []
+#late_mag_max = []
+#end_mag_max = []
+#early_mag_tmax = []
+#late_mag_tmax = []
+#end_mag_tmax = []
+
+#loop through each row in rate_array_df, which represents a trial
 for i, row in rate_array_df.iterrows():
+    #cacluclate the mean of the zscore for each time period
     mean_prestim = np.mean(row.zscore[0:1900])
     mean_early = np.mean(row.zscore[2000:3500])
     mean_late = np.mean(row.zscore[3500:5000])
-
-    early_mag = abs(mean_early - mean_prestim)
-    late_mag = abs(mean_late - mean_prestim)
+    mean_end = np.mean(row.zscore[5000:7000])
+    #append the means to the lists
     prestim.append(mean_prestim)
     early.append(mean_early)
     late.append(mean_late)
+    end.append(mean_end)
+    #calculate the max of the zscore for each time period
+    #prestim_max_val = np.max(row.zscore[0:1900])
+    #early_max_val = np.max(row.zscore[2000:3500])
+    #late_max_val = np.max(row.zscore[3500:5000])
+    #end_max_val = np.max(row.zscore[5000:7000])
+    #append the maxes to the lists
+    #prestim_max.append(prestim_max_val)
+    #early_max.append(early_max_val)
+    #late_max.append(late_max_val)
+    #end_max.append(end_max_val)
+    #calculate the tmax of the zscore for each time period
+    #prestim_tmax_val = np.argmax(row.zscore[0:1900])
+    #early_tmax_val = np.argmax(row.zscore[2000:3500])
+    #late_tmax_val = np.argmax(row.zscore[3500:5000])
+    #end_tmax_val = np.argmax(row.zscore[5000:7000])
+    max_val = np.max(row.zscore[2000:7000])
+    max.append(max_val)
+    tmax_val = np.argmax(row.zscore[2000:7000])
+    tmax.append(tmax_val)
+
+    #append the tmaxes to the lists
+    #prestim_tmax.append(prestim_tmax_val)
+    #early_tmax.append(early_tmax_val)
+    #late_tmax.append(late_tmax_val)
+    #end_tmax.append(end_tmax_val)
+    #calculate the magnitude of the zscore for each time period
+    early_mag = abs(mean_early - mean_prestim)
+    late_mag = abs(mean_late - mean_prestim)
+    end_mag = abs(mean_end - mean_prestim)
+    #append the magnitudes to the lists
     early_mags.append(early_mag)
     late_mags.append(late_mag)
+    end_mags.append(end_mag)
+    #calculate the magnitude for each time index in the time period
+    mag_all = abs(row.zscore[2000:7000] - mean_prestim)
+    mag_max_val = np.max(mag_all)
+    mag_tmax_val = np.argmax(mag_all)
+    mag_max.append(mag_max_val)
+    mag_tmax.append(mag_tmax_val)
+    #early_mag_all = abs(row.zscore[2000:3500] - mean_prestim)
+    #late_mag_all = abs(row.zscore[3500:5000] - mean_prestim)
+    #end_mag_all = abs(row.zscore[5000:7000] - mean_prestim)
+    #calculate the max of the magnitudes
+    #early_mag_max_val = np.max(early_mag_all)
+    #late_mag_max_val = np.max(late_mag_all)
+    #end_mag_max_val = np.max(end_mag_all)
+    #append the maxes to the lists
+    #early_mag_max.append(early_mag_max_val)
+    #late_mag_max.append(late_mag_max_val)
+    #end_mag_max.append(end_mag_max_val)
+    #calculate the tmax of the magnitudes
+    #early_mag_tmax_val = np.argmax(early_mag_all)
+    #late_mag_tmax_val = np.argmax(late_mag_all)
+    #end_mag_tmax_val = np.argmax(end_mag_all)
+    #append the tmaxes to the lists
+    #early_mag_tmax.append(early_mag_tmax_val)
+    #late_mag_tmax.append(late_mag_tmax_val)
+    #end_mag_tmax.append(end_mag_tmax_val)
 
+#add the lists to rate_array_df
 rate_array_df['prestim'] = prestim
 rate_array_df['early'] = early
 rate_array_df['late'] = late
+rate_array_df['end'] = end
+rate_array_df['max'] = max
+rate_array_df['tmax'] = tmax
+# rate_array_df['prestim_max'] = prestim_max
+# rate_array_df['early_max'] = early_max
+# rate_array_df['late_max'] = late_max
+# rate_array_df['end_max'] = end_max
+# rate_array_df['prestim_tmax'] = prestim_tmax
+# rate_array_df['early_tmax'] = early_tmax
+# rate_array_df['late_tmax'] = late_tmax
+# rate_array_df['end_tmax'] = end_tmax
 rate_array_df['early_mag'] = early_mags
 rate_array_df['late_mag'] = late_mags
+rate_array_df['end_mag'] = end_mags
+rate_array_df['mag_max'] = mag_max
+rate_array_df['mag_tmax'] = mag_tmax
+# rate_array_df['early_mag_max'] = early_mag_max
+# rate_array_df['late_mag_max'] = late_mag_max
+# rate_array_df['end_mag_max'] = end_mag_max
+# rate_array_df['early_mag_tmax'] = early_mag_tmax
+# rate_array_df['late_mag_tmax'] = late_mag_tmax
+# rate_array_df['end_mag_tmax'] = end_mag_tmax
 
 
 #%%
@@ -222,7 +324,7 @@ import trialwise_analysis as ta
 #get rows of rate_array_df that are duplicated
 cols = ['rec_dir', 'held_unit_name', 'taste', 'session_trial', 'exp_name', 'exp_group']
 rate_array_df = rate_array_df.drop_duplicates(cols)
-
+import scipy.stats as stats
 def process_nonlinear_regression(rate_array_df, trial_col = 'session_trial', value_col = 'late_mag'):
     groupings = ['exp_group', 'exp_name', 'taste', 'held_unit_name', 'session']
     params, r2, y_pred = ta.nonlinear_regression(rate_array_df, subject_cols=groupings, trial_col=trial_col, value_col=value_col)
@@ -275,25 +377,63 @@ def process_nonlinear_regression(rate_array_df, trial_col = 'session_trial', val
     #sort the df by groupings and session_trial
     #rate_array_df = rate_array_df.sort_values(by=groupings+[time_col]).reset_index(drop=True)
 
-    ta.plot_fits(rate_array_df, trial_col=trial_col, dat_col=value_col, model_col=modeled_str, time_col='session', save_dir=PA.save_dir)
+    #ta.plot_fits(rate_array_df, trial_col=trial_col, dat_col=value_col, model_col=modeled_str, time_col='session', save_dir=PA.save_dir)
 
     shuff = ta.iter_shuffle(rate_array_df, niter=100, subject_cols=groupings, trial_col=trial_col, value_col=value_col, save_dir=PA.save_dir, overwrite=False) #TODO break this down by group
+
+    #calculate p-value for each unique held_unit_name in shuff
+    names = []
+    pvals = []
+    for name, group in shuff.groupby(['exp_group', 'exp_name', 'taste', 'held_unit_name', 'session']):
+        #get r2 for corresponding group in r2_df
+        row = r2_df.loc[(r2_df.exp_group == name[0]) & (r2_df.exp_name == name[1]) & (r2_df.taste == name[2]) & (r2_df.held_unit_name == name[3]) & (r2_df.session == name[4])]
+        p_value = np.mean(group.r2.to_numpy() >= row.r2.to_numpy())
+        pvals.append(p_value)
+        names.append(name)
+
+    pval_df = pd.DataFrame(names, columns=['exp_group', 'exp_name', 'taste', 'held_unit_name', 'session'])
+    pval_df['pval'] = pvals
+
+    #merge pval_df into r2_df
+    r2_df = r2_df.merge(pval_df, on=['exp_group', 'exp_name', 'taste', 'held_unit_name', 'session'])
+    #filter just the rows where pval < 0.05
+    sig_rows = r2_df.loc[r2_df.pval < 0.05]
+    sig_units = sig_rows.held_unit_name.unique()
+
+    #create versions of r2_df, rate_array_df and shuff that only have the significant units
+    rate_array_df_sig = rate_array_df[rate_array_df.held_unit_name.isin(sig_units)]
+    shuff_sig = shuff[shuff.held_unit_name.isin(sig_units)]
+    r2_df_sig = r2_df[r2_df.held_unit_name.isin(sig_units)]
+    r2_df_groupmean_sig = r2_df.groupby(['exp_group', 'taste', 'session']).mean().reset_index()
+
+
     #save shuff as feather datafr
-    avg_shuff = shuff.groupby(['exp_group', 'session', 'taste', 'iternum']).mean().reset_index()
+    avg_shuff_sig = shuff_sig.groupby(['exp_group', 'session', 'taste', 'iternum']).mean().reset_index()
     #%% plot the r2 values for each session with the null distribution
     save_flag = trial_col + '_' + value_col
-    ta.plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=save_flag, save_dir=PA.save_dir)
+    ta.plot_null_dist(avg_shuff_sig, r2_df_groupmean_sig, save_flag=save_flag, save_dir=PA.save_dir)
+    ta.plot_fits_summary(rate_array_df_sig, trial_col=trial_col, dat_col=value_col, model_col=modeled_str, time_col='session', save_dir=PA.save_dir)
 
-process_nonlinear_regression(rate_array_df, trial_col='session_trial', value_col='late_mag')
-process_nonlinear_regression(rate_array_df, trial_col='session_trial', value_col='early_mag')
-process_nonlinear_regression(rate_array_df, trial_col='session_trial', value_col='prestim')
-process_nonlinear_regression(rate_array_df, trial_col='session_trial', value_col='early')
-process_nonlinear_regression(rate_array_df, trial_col='session_trial', value_col='late')
-process_nonlinear_regression(rate_array_df, trial_col='taste_trial', value_col='late_mag')
-process_nonlinear_regression(rate_array_df, trial_col='taste_trial', value_col='early_mag')
-process_nonlinear_regression(rate_array_df, trial_col='taste_trial', value_col='prestim')
-process_nonlinear_regression(rate_array_df, trial_col='taste_trial', value_col='early')
-process_nonlinear_regression(rate_array_df, trial_col='taste_trial', value_col='late')
+
+trial_cols = ['session_trial', 'taste_trial']
+value_cols = ['prestim', 'early', 'late', 'end',
+              'late_mag', 'early_mag', 'end_mag']
+value_cols = ['max', 'tmax', 'mag_max', 'mag_tmax']
+# value_cols = ['prestim_max', 'early_max', 'late_max', 'end_max',
+#               'prestim_tmax', 'early_tmax', 'late_tmax', 'end_tmax',
+#               'early_mag_max', 'late_mag_max', 'end_mag_max',
+#               'early_mag_tmax', 'late_mag_tmax', 'end_mag_tmax']
+
+for trial_col in trial_cols:
+    for value_col in value_cols:
+        process_nonlinear_regression(rate_array_df, trial_col=trial_col, value_col=value_col)
+
+def load_shuff(PA, trial_col, value_col):
+    save_flag = trial_col + '_' + value_col
+    shuff = pd.read_feather(os.path.join(PA.save_dir, save_flag + '_shuff.feather'))
+    r2_df_groupmean = pd.read_feather(os.path.join(PA.save_dir, save_flag + '_r2_df_groupmean.feather'))
+    return shuff, r2_df_groupmean
+
 
 
 g = sns.lmplot(data=rate_array_df, x='trial', y='early_mag', hue='exp_group', col='session', row='din', height=4, aspect=.7, x_estimator=np.mean, facet_kws={'margin_titles':True})
