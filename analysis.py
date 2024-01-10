@@ -16,8 +16,6 @@ import hmm_analysis as hmma
 import statsmodels.formula.api as smf
 import patsy
 import glob
-from itertools import product
-from statsmodels.regression.linear_model import OLS
 from scipy.stats import mannwhitneyu, spearmanr, sem, f_oneway, rankdata, pearsonr, ttest_ind
 from blechpy import load_project, load_dataset, load_experiment
 from blechpy.plotting import data_plot as dplt
@@ -31,7 +29,6 @@ from datetime import datetime
 from tqdm import tqdm
 from joblib import parallel_backend
 from joblib import Parallel, delayed
-from pushbullet_tools import push_message as pm
 
 # PAL_MAP = {'Water': -1, 'Saccharin': -1, 'Quinine': 1,
 #            'Citric Acid': 2, 'NaCl': 3}
@@ -1766,58 +1763,58 @@ class HmmAnalysis(object):
             out.append(repr(h_count))
             print('\n'.join(out), file=f)
 
-    def process_fitted_hmms(self, overwrite=False, hmm_plots=False):
-        with pm.push_alert(success_msg='HMM Processing Complete! :D'):
-            # ho = self.get_hmm_overview(overwrite=overwrite)
-            ho = self.get_hmm_overview(overwrite=False)
-            self.sort_hmms_by_params(overwrite=overwrite)
-            self.mark_early_and_late_states()
-            sorted_df = self.get_sorted_hmms()
-            param_sets = sorted_df.sorting.unique()
-
-            self.plot_BIC_comparison()
-
-            for set_name in param_sets:
-                if set_name == 'rejected':
-                    continue
-
-                save_dir = os.path.join(self.save_dir, set_name)
-                if os.path.isdir(save_dir) and overwrite:
-                    shutil.rmtree(save_dir)
-
-                if not os.path.isdir(save_dir):
-                    os.mkdir(save_dir)
-
-                self.write_hmm_sorting_params(sorting=set_name, save_dir=save_dir)
-                best_hmms = self.get_best_hmms(overwrite=True, save_dir=save_dir,
-                                               sorting=set_name)
-                notes = best_hmms.dropna().notes.unique()[0]
-                if 'BIC test' in notes:
-                    continue
-
-                if sum(sorted_df['sorting'] == set_name) > 30:
-                    try:
-                        self.analyze_hmms(overwrite=True, save_dir=save_dir)
-                        self.plot_hmm_coding_and_timing(save_dir=save_dir)
-                        self.plot_hmm_coding(save_dir=save_dir)
-                        self.plot_hmm_confusion(save_dir=save_dir)
-                        self.plot_hmm_timing(save_dir=save_dir)
-                        self.plot_hmm_trial_breakdown(save_dir=save_dir)
-                    except:
-                        print(f'Failed to analyze {set_name}')
-
-                if hmm_plots:
-                    plot_dir = os.path.join(save_dir, 'HMM Plots')
-                    if os.path.isdir(plot_dir) and overwrite:
-                        shutil.rmtree(plot_dir)
-
-                    if not os.path.isdir(plot_dir):
-                        os.mkdir(plot_dir)
-
-                    self.plot_sorted_hmms(overwrite=overwrite, save_dir=plot_dir,
-                                          sorting_tag=set_name)
-
-        return sorted_df
+    # def process_fitted_hmms(self, overwrite=False, hmm_plots=False):
+    #     with pm.push_alert(success_msg='HMM Processing Complete! :D'):
+    #         # ho = self.get_hmm_overview(overwrite=overwrite)
+    #         ho = self.get_hmm_overview(overwrite=False)
+    #         self.sort_hmms_by_params(overwrite=overwrite)
+    #         self.mark_early_and_late_states()
+    #         sorted_df = self.get_sorted_hmms()
+    #         param_sets = sorted_df.sorting.unique()
+    #
+    #         self.plot_BIC_comparison()
+    #
+    #         for set_name in param_sets:
+    #             if set_name == 'rejected':
+    #                 continue
+    #
+    #             save_dir = os.path.join(self.save_dir, set_name)
+    #             if os.path.isdir(save_dir) and overwrite:
+    #                 shutil.rmtree(save_dir)
+    #
+    #             if not os.path.isdir(save_dir):
+    #                 os.mkdir(save_dir)
+    #
+    #             self.write_hmm_sorting_params(sorting=set_name, save_dir=save_dir)
+    #             best_hmms = self.get_best_hmms(overwrite=True, save_dir=save_dir,
+    #                                            sorting=set_name)
+    #             notes = best_hmms.dropna().notes.unique()[0]
+    #             if 'BIC test' in notes:
+    #                 continue
+    #
+    #             if sum(sorted_df['sorting'] == set_name) > 30:
+    #                 try:
+    #                     self.analyze_hmms(overwrite=True, save_dir=save_dir)
+    #                     self.plot_hmm_coding_and_timing(save_dir=save_dir)
+    #                     self.plot_hmm_coding(save_dir=save_dir)
+    #                     self.plot_hmm_confusion(save_dir=save_dir)
+    #                     self.plot_hmm_timing(save_dir=save_dir)
+    #                     self.plot_hmm_trial_breakdown(save_dir=save_dir)
+    #                 except:
+    #                     print(f'Failed to analyze {set_name}')
+    #
+    #             if hmm_plots:
+    #                 plot_dir = os.path.join(save_dir, 'HMM Plots')
+    #                 if os.path.isdir(plot_dir) and overwrite:
+    #                     shutil.rmtree(plot_dir)
+    #
+    #                 if not os.path.isdir(plot_dir):
+    #                     os.mkdir(plot_dir)
+    #
+    #                 self.plot_sorted_hmms(overwrite=overwrite, save_dir=plot_dir,
+    #                                       sorting_tag=set_name)
+    #
+    #     return sorted_df
 
     def plot_hmm_trial_breakdown(self, save_dir=None):
         if save_dir is None:
@@ -1838,7 +1835,7 @@ class HmmAnalysis(object):
         fn = os.path.join(save_dir, 'hmm_trial_breakdown.svg')
         nplt.plot_hmm_trial_breakdown(trial_df, self.project, save_file=fn)
 
-    @pm.push_alert(success_msg='HMM processing complete!')
+   # @pm.push_alert(success_msg='HMM processing complete!')
     def process_sorted_hmms(self, sorting='params #5', save_dir=None,
                             overwrite=False, hmm_plots=False):
         if save_dir is None:
@@ -2499,10 +2496,6 @@ def compare_taste_responses(rec1, unit1, rec2, unit2, params, method='bootstrap'
 from piecewise_regression import Fit
 from multiprocessing import Pool, cpu_count
 
-import pandas as pd
-from piecewise_regression import Fit
-from multiprocessing import Pool, cpu_count
-
 
 def fit_group(args):
     try:
@@ -2694,10 +2687,7 @@ def split_test(df, fit_groups, model_groups, trial_col, value_col):
 # results = split_test(df, ['subject_group', 'date'], ['subject'], 'trial_index', 'measurement')
 # print(results)
 
-
 import ruptures as rpt
-
-
 def detect_changepoints(df, group_list, data_col, time_col):
     """
     Detect changepoints in time series data for each grouping and compute the BIC.
@@ -3070,85 +3060,85 @@ def refit_anim(needed_hmms, anim, rec_group=None, custom_params=None):
         handler.run(constraint_func=hmma.sequential_constrained)
 
 
-def fit_anim_hmms(anim):
-    if anim == 'RN5':
-        anim = 'RN5b'
+    # def fit_anim_hmms(anim):
+    # if anim == 'RN5':
+    #     anim = 'RN5b'
+    #
+    # file_dirs, anim_dir = get_file_dirs(anim)
+    # base_params = {'n_trials': 15, 'unit_type': 'single', 'dt': 0.001,
+    #                'max_iter': 200, 'n_repeats': 50, 'time_start': -250,
+    #                'time_end': 2000, 'n_states': 3, 'area': 'GC',
+    #                'hmm_class': 'PoissonHMM', 'threshold': 1e-10,
+    #                'notes': 'sequential - low thresh'}
+    #
+    # for rec_dir in file_dirs:
+    #     units = phmm.query_units(rec_dir, 'single', area='GC')
+    #     if len(units) < 2:
+    #         continue
+    #
+    #     handler = phmm.HmmHandler(rec_dir)
+    #     p = base_params.copy()
+    #     handler.add_params(p)
+    #     # p2 = p.copy()
+    #     # p2['n_states'] = 2
+    #     # p2['time_start'] = 0
+    #     # handler.add_params(p2)
+    #     # p3 = p.copy()
+    #     # p3['n_states'] = 2
+    #     # p3['time_start'] = 200
+    #     # handler.add_params(p3)
+    #     # p4 = p.copy()
+    #     # p4['time_start'] = -1000
+    #     # p4['n_states'] = 4
+    #     # handler.add_params(p4)
+    #     # if 'ctaTrain' in rec_dir:
+    #     #     p5 = p.copy()
+    #     #     _ = p5.pop('n_trials')
+    #     #     handler.add_params(p5)
+    #
+    #     dataname = os.path.basename(rec_dir)
+    #     with pm.push_alert(success_msg=f'Done fitting for {dataname}'):
+    #         print('Fitting %s' % os.path.basename(rec_dir))
+    #         if LOCAL_MACHINE == 'StealthElf':
+    #             handler.run(constraint_func=hmma.sequential_constrained)
+    #         elif LOCAL_MACHINE == 'Mononoke':
+    #             with parallel_backend('multiprocessing'):
+    #                 handler.run(constraint_func=hmma.sequential_constrained)
 
-    file_dirs, anim_dir = get_file_dirs(anim)
-    base_params = {'n_trials': 15, 'unit_type': 'single', 'dt': 0.001,
-                   'max_iter': 200, 'n_repeats': 50, 'time_start': -250,
-                   'time_end': 2000, 'n_states': 3, 'area': 'GC',
-                   'hmm_class': 'PoissonHMM', 'threshold': 1e-10,
-                   'notes': 'sequential - low thresh'}
 
-    for rec_dir in file_dirs:
-        units = phmm.query_units(rec_dir, 'single', area='GC')
-        if len(units) < 2:
-            continue
-
-        handler = phmm.HmmHandler(rec_dir)
-        p = base_params.copy()
-        handler.add_params(p)
-        # p2 = p.copy()
-        # p2['n_states'] = 2
-        # p2['time_start'] = 0
-        # handler.add_params(p2)
-        # p3 = p.copy()
-        # p3['n_states'] = 2
-        # p3['time_start'] = 200
-        # handler.add_params(p3)
-        # p4 = p.copy()
-        # p4['time_start'] = -1000
-        # p4['n_states'] = 4
-        # handler.add_params(p4)
-        # if 'ctaTrain' in rec_dir:
-        #     p5 = p.copy()
-        #     _ = p5.pop('n_trials')
-        #     handler.add_params(p5)
-
-        dataname = os.path.basename(rec_dir)
-        with pm.push_alert(success_msg=f'Done fitting for {dataname}'):
-            print('Fitting %s' % os.path.basename(rec_dir))
-            if LOCAL_MACHINE == 'StealthElf':
-                handler.run(constraint_func=hmma.sequential_constrained)
-            elif LOCAL_MACHINE == 'Mononoke':
-                with parallel_backend('multiprocessing'):
-                    handler.run(constraint_func=hmma.sequential_constrained)
-
-
-@pm.push_alert(success_msg='Finished fitting HMMs')
-def fit_hmms_for_BIC_test(proj, all_units, min_states=2, max_states=6):
-    base_params = {'n_trials': 15, 'unit_type': 'single', 'dt': 0.001,
-                   'max_iter': 200, 'n_repeats': 50, 'time_start': -250,
-                   'time_end': 2000, 'area': 'GC',
-                   'hmm_class': 'PoissonHMM', 'threshold': 1e-6,
-                   'notes': 'sequential - BIC test'}
-
-    for i, row in proj._exp_info.iterrows():
-        anim = row['exp_name']
-        with pm.push_alert(success_msg=f'Done fiiting for {anim}'):
-            if anim == 'RN5':
-                anim = 'RN5b'
-
-            file_dirs, anim_dir = get_file_dirs(anim)
-            for rec_dir in file_dirs:
-                units = all_units.query('area == "GC" and rec_dir == @rec_dir and single_unit == True')
-                if len(units) < 3:
-                    print('Only %i units for %s. Skipping...' % (len(units), os.path.basename(rec_dir)))
-                    continue
-
-                handler = phmm.HmmHandler(rec_dir)
-                for N in range(min_states, max_states):
-                    p = base_params.copy()
-                    p['n_states'] = N
-                    handler.add_params(p)
-
-                print(f'Fitting {rec_dir}')
-                if LOCAL_MACHINE == 'StealthElf':
-                    handler.run(constraint_func=hmma.sequential_constrained)
-                elif LOCAL_MACHINE == 'Mononoke':
-                    with parallel_backend('multiprocessing'):
-                        handler.run(constraint_func=hmma.sequential_constrained)
+#@pm.push_alert(success_msg='Finished fitting HMMs')
+# def fit_hmms_for_BIC_test(proj, all_units, min_states=2, max_states=6):
+#     base_params = {'n_trials': 15, 'unit_type': 'single', 'dt': 0.001,
+#                    'max_iter': 200, 'n_repeats': 50, 'time_start': -250,
+#                    'time_end': 2000, 'area': 'GC',
+#                    'hmm_class': 'PoissonHMM', 'threshold': 1e-6,
+#                    'notes': 'sequential - BIC test'}
+#
+#     for i, row in proj._exp_info.iterrows():
+#         anim = row['exp_name']
+#         with pm.push_alert(success_msg=f'Done fiiting for {anim}'):
+#             if anim == 'RN5':
+#                 anim = 'RN5b'
+#
+#             file_dirs, anim_dir = get_file_dirs(anim)
+#             for rec_dir in file_dirs:
+#                 units = all_units.query('area == "GC" and rec_dir == @rec_dir and single_unit == True')
+#                 if len(units) < 3:
+#                     print('Only %i units for %s. Skipping...' % (len(units), os.path.basename(rec_dir)))
+#                     continue
+#
+#                 handler = phmm.HmmHandler(rec_dir)
+#                 for N in range(min_states, max_states):
+#                     p = base_params.copy()
+#                     p['n_states'] = N
+#                     handler.add_params(p)
+#
+#                 print(f'Fitting {rec_dir}')
+#                 if LOCAL_MACHINE == 'StealthElf':
+#                     handler.run(constraint_func=hmma.sequential_constrained)
+#                 elif LOCAL_MACHINE == 'Mononoke':
+#                     with parallel_backend('multiprocessing'):
+#                         handler.run(constraint_func=hmma.sequential_constrained)
 
 
 def final_refits(needed_hmms):
