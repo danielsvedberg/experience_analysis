@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 import random
 import scipy.stats as stats
-
+from sklearn.utils import resample
 
 def model(x, a, b, c):
     return b * (1/(1+np.exp(-a*x))) + c
@@ -99,27 +99,29 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
         bMax = 2*(abs(np.max(values)-np.min(values)))
         bMin = 0
         cMax = np.max(values)
-        cMin = np.min(values)-bMax
+        cMin = -(cMax/2)
 
-        # first estimate bounds using linear regression
-        slope, intercept, r_value, p_value, std_err = stats.linregress(time, values)
-        # calculate the y value at the min(time)
-        y0 = slope * np.min(time) + intercept
-        # calculate the y value at the max(time)
-        y1 = slope * np.max(time) + intercept
-        a0 = slope
+        if bMin == bMax:
+            bMax = bMax + 0.1
+        if cMin == cMax:
+            cMax = cMax + 0.1
+
+        slope, intercept, r_value, p_value, std_err = stats.linregress(time, values) # first estimate bounds using linear regression
+        y0 = slope * np.min(time) + intercept # calculate the y value at the min(time)
+        y1 = slope * np.max(time) + intercept # calculate the y value at the max(time)
+        a0 = slope # slope is the initial guess for a
         linchange = abs(y1 - y0)
-        if linchange < bMax:
-            b0 = linchange
+        if bMin < 2*linchange < bMax:
+            b0 = 2*linchange
         else:
-            b0 = abs(cMax - cMin)
+            b0 = abs(max(values) - min(values))
 
         if cMin < y0 < cMax:
             c0 = y0
         else:
             c0 = values[0]
 
-        params, _ = curve_fit(model, time, values, p0=[a0, b0, c0], bounds=([aMin, bMin, cMin], [aMax, bMax, cMax]),
+        params, _ = curve_fit(model, time, values, p0=[a0, b0, c0], bounds=[[aMin, bMin, cMin], [aMax, bMax, cMax]],
                               maxfev=10000000)
         y_pred = model(time, *params)
         r2 = r2_score(values, y_pred)
@@ -291,10 +293,11 @@ def iter_shuffle_parallel(data, niter=10000, subject_cols=['Subject'], trial_col
     return iters
 
 
+exp_group_index = {'naive':0, 'suc_preexp':1}
 taste_index = {'Suc':0, 'NaCl':1, 'CA':2, 'QHCl':3}
 session_index = {1:0, 2:1, 3:2}
 unique_tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
-def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode state)', model_col='modeled_prMode', time_col='time_group', save_dir=None):
+def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode state)', model_col='modeled', time_col='time_group', save_dir=None):
 
     #make a column determining if alpha is positive
     unique_exp_groups = avg_gamma_mode_df['exp_group'].unique()
@@ -369,7 +372,7 @@ def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode sta
                 savename = '/' + alpha_lab + '_' + model_col + '_' + trial_col + '_' + exp_group + '.png'
                 plt.savefig(save_dir + savename)
 
-def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode state)', model_col='modeled_prMode', time_col='time_group', save_dir=None, use_alpha_pos=True, dotalpha = 0.05):
+def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode state)', model_col='modeled', time_col='time_group', save_dir=None, use_alpha_pos=True, dotalpha = 0.05, flag = None, r2df = None):
     unique_exp_groups = avg_gamma_mode_df['exp_group'].unique()
     unique_exp_names = avg_gamma_mode_df['exp_name'].unique()
     unique_tastes = ['Suc', 'NaCl', 'CA', 'QHCl']  # avg_shuff['taste'].unique()
@@ -442,6 +445,11 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
 
         return fig, axes
 
+    if flag is not None:
+        save_str = model_col + '_' + trial_col + '_' + flag + '_' + 'summary.png'
+    else:
+        save_str = model_col + '_' + trial_col + '_' + 'summary.png'
+
     if use_alpha_pos:
         for m, alpha_pos in enumerate(unique_alpha_pos):
             data = avg_gamma_mode_df[avg_gamma_mode_df['alpha_pos'] == alpha_pos]
@@ -451,12 +459,163 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
                     alpha_lab = 'pos'
                 else:
                     alpha_lab = 'neg'
-                savename = '/' + alpha_lab + '_' + model_col + '_' + trial_col + 'summary.png'
+                savename = '/' + alpha_lab + '_' + save_str
                 plt.savefig(save_dir + savename)
     else:
         fig, axes = plot_ind_fit(avg_gamma_mode_df)
         if save_dir is not None:
-            savename = '/' + model_col + '_' + trial_col + 'summary.png'
+            savename = '/' + save_str
+            plt.savefig(save_dir + savename)
+
+def plot_fits_summary2(df, trial_col='session_trial', dat_col='pr(mode state)', model_col='modeled', time_col='time_group', save_dir=None, use_alpha_pos=False, dotalpha = 0.05, flag = None, r2df = None):
+    unique_exp_groups = df['exp_group'].unique()
+    unique_exp_names = df['exp_name'].unique()
+    unique_tastes = ['Suc', 'NaCl', 'CA', 'QHCl']  # avg_shuff['taste'].unique()
+    unique_time_groups = df[time_col].unique()
+    if use_alpha_pos == True:
+        unique_alpha_pos = df['alpha_pos'].unique()
+    n_tastes = len(unique_tastes)
+    n_time_groups = len(unique_time_groups)
+    n_exp_groups = len(unique_exp_groups)
+    #map a color to each exp name in unique exp names
+    pal = sns.color_palette()
+    colmap = {}
+    for i, grp in enumerate(unique_exp_groups):
+        colmap[grp] = i
+    upper_y_bound = df[dat_col].max()
+    lower_y_bound = df[dat_col].min()
+
+    def plot_scatter(ax, nm, group, color, dotalpha=0.05):
+        x = group[trial_col]
+        y = group[dat_col]
+        scatter = ax.plot(x, y, 'o', alpha=dotalpha, color=color,
+                          mfc='none')
+    def plot_boot(ax, nm, group, color):
+        trial = []
+        boot_mean = []
+        boot_low = []
+        boot_high = []
+
+        for trl, grp in group.groupby(trial_col):
+            trial.append(trl)
+            #bootstrap the 95% ci of grp[model_col]
+            samples = []
+            for iter in range(1000):
+                sample = resample(grp[model_col])
+                samples.append(np.median(sample))
+            bootci = np.percentile(samples, [2.5, 97.5])
+            boot_low.append(bootci[0])
+            boot_high.append(bootci[1])
+            boot_mean.append(samples)
+        trial = np.array(trial)
+        mean_alpha = np.median(group['alpha'])
+        mean_beta = np.median(group['beta'])
+        mean_c = np.median(group['c'])
+        mean_model = model(trial, mean_alpha, mean_beta, mean_c)
+
+        ax.fill_between(trial, boot_low, boot_high, alpha=0.2, color=color)
+        ax.plot(trial, mean_model, alpha=0.9, color=color)
+        x = group[trial_col].unique()
+        y = group[model_col]
+
+    def make_grid_plot(df):
+        df['session_index'] = df[time_col].map(session_index)
+        df['taste_index'] = df['taste'].map(taste_index)
+        df['exp_group_index'] = df['exp_group'].map(exp_group_index)
+        df = df.sort_values(by=['session_index', 'taste_index', 'exp_group_index'])
+
+        fig, axes = plt.subplots(1, n_time_groups, sharex=True, sharey=True, figsize=(10, 10))
+        for nm, group in df.groupby(['session', 'session_index', 'exp_group', 'exp_group_index']):
+            ax = axes[nm[1]]
+            color = pal[nm[3]]
+            plot_scatter(ax, nm, group, color=color, dotalpha=dotalpha)
+
+        for nm, group in df.groupby(['session', 'session_index', 'exp_group', 'exp_group_index']):
+            ax = axes[nm[1]]
+            color = pal[nm[3]]
+            plot_boot(ax, nm, group, color=color)
+
+    make_grid_plot(df)
+    plt.show()
+    save_str = 'summary_test.png'
+    plt.savefig(save_dir + '/' + save_str)
+    
+    def plot_ind_fit(df):
+        fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=True, figsize=(10, 10))
+        for i, taste in enumerate(unique_tastes):
+            for j, time_group in enumerate(unique_time_groups):
+                ax = axes[i, j]
+                legend_handles = []
+                for k, exp_group in enumerate(unique_exp_groups):
+                    color = pal[colmap[exp_group]]
+                    subset = df[(df['taste'] == taste) &
+                                (df[time_col] == time_group) &
+                                (df['exp_group'] == exp_group)]
+                    #get the average alpha, beta, and c from subset
+                    alpha = np.mean(subset['alpha'])
+                    beta = np.mean(subset['beta'])
+                    c = np.mean(subset['c'])
+                    #get each unique [time_col] in subset
+                    unique_trials = subset[trial_col].unique()
+                    #order unique trials
+                    unique_trials = np.sort(unique_trials)
+                    #generate the model fit for each unique trial
+                    model_fit = model(unique_trials, alpha, beta, c)
+
+                    for p, row in subset.iterrows():
+                        scatter = ax.plot(row[trial_col], row[dat_col], 'o', alpha=dotalpha, color=color,
+                                          mfc='none')
+                    line = ax.plot(unique_trials, model_fit, alpha=0.9, color=color)
+                    ax.set_ylim(lower_y_bound, upper_y_bound)
+
+                    if i == 0 and j == 0:
+                        legend_handle = mlines.Line2D([], [], color=color, marker='o', linestyle='None', label=exp_group, alpha=1)
+                        legend_handles.append(legend_handle)
+
+                if i == 0 and j == 0:
+                    ax.legend(handles=legend_handles, loc='center right',
+                              bbox_to_anchor=(4.05, -1.3), ncol=1)
+                    #ax.legend(labels=unique_exp_groups, loc='center right',
+                    #          bbox_to_anchor=(4.05, -1.3), ncol=1)
+            # add a title for each column
+            for ax, col in zip(axes[0], unique_time_groups):
+                label = 'session ' + str(col)
+                ax.set_title(label, rotation=0, size='large')
+            # add a title for each row, on the right side of the figure
+            for ax, row in zip(axes[:, -1], unique_tastes):
+                ax.yaxis.set_label_position("right")
+                ax.set_ylabel(row, rotation=-90, size='large', labelpad=15)
+            # set y-axis labels for the leftmost y-axis
+            for ax in axes[:, 0]:
+                ax.set_ylabel(dat_col, rotation=90, size='large', labelpad=0)
+            # set x-axis labels for the bottommost x-axis
+            for ax in axes[-1, :]:
+                ax.set_xlabel(trial_col, size='large')
+            plt.subplots_adjust(right=0.85)
+            plt.show()
+
+        return fig, axes
+
+    if flag is not None:
+        save_str = model_col + '_' + trial_col + '_' + flag + '_' + 'summary.png'
+    else:
+        save_str = model_col + '_' + trial_col + '_' + 'summary.png'
+
+    if use_alpha_pos:
+        for m, alpha_pos in enumerate(unique_alpha_pos):
+            data = avg_gamma_mode_df[avg_gamma_mode_df['alpha_pos'] == alpha_pos]
+            fig, axes = plot_ind_fit(data)
+            if save_dir is not None:
+                if alpha_pos == True:
+                    alpha_lab = 'pos'
+                else:
+                    alpha_lab = 'neg'
+                savename = '/' + alpha_lab + '_' + save_str
+                plt.savefig(save_dir + savename)
+    else:
+        fig, axes = plot_ind_fit(avg_gamma_mode_df)
+        if save_dir is not None:
+            savename = '/' + save_str
             plt.savefig(save_dir + savename)
 
 
@@ -535,5 +694,8 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir = None):
     plt.show()
     # save the figure as png
     if save_dir is not None:
-        savename = '/' + save_flag + '_r2_perm_test.png'
+        if save_flag is None:
+            savename = '/r2_perm_test.png'
+        else:
+            savename = '/' + save_flag + '_r2_perm_test.png'
         plt.savefig(save_dir + savename)
