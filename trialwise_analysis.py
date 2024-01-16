@@ -78,7 +78,7 @@ from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
 
 
-def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', value_col='Value'):
+def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', value_col='Value', yMin=None, yMax=None, parallel=True):
     """
     Performs nonlinear regression on the synthetic data for each subject.
 
@@ -93,14 +93,33 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
     dict: A dictionary containing the fitted parameters and R2 scores for each subject.
     """
 
+    def parse_bounds(paramMax, paramMin):
+        buffer = 1e-10
+        if paramMax == paramMin:
+            print('bound collision detected, adding 1e-10 to max and subtracting 1e-10 from min')
+            if yMax is None and yMin is None:
+                paramMin = paramMin - buffer
+                paramMax = paramMax + buffer
+                print('new bounds: ' + str(paramMin) + ' ' + str(paramMax))
+            else:
+                if yMax is not None:
+                    if paramMin == yMax:
+                        paramMin = paramMin - buffer
+                if yMin is not None:
+                    if paramMax == yMin:
+                        paramMax = paramMax + buffer
+                print('new bounds: ' + str(paramMin) + ' ' + str(paramMax))
+        if paramMax == paramMin:
+            raise Exception('bounds still equal after adjustment')
+        return paramMin, paramMax
     def fit_for_subject(subject, subject_data):
         # sort subject data by trial_col
         subject_data = subject_data.copy().sort_values(by=[trial_col]).reset_index(drop=True)
         trials = subject_data[trial_col].to_numpy()
         values = subject_data[value_col].to_numpy()
 
-        trialMax = np.max(trials) - 1
-        cMin = 0
+        trialMax = np.max(trials)
+
         valMax = np.max(values)
         valMin = np.min(values)
         aMin = valMin
@@ -109,41 +128,47 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
         bMin = valMin
 
         maxDiff = abs(valMax - valMin)
-
-        def calc_cmax():
-            return -np.log((trialMax + (1 - trialMax) * np.square(maxDiff)) / trialMax)
-
+        def calc_cmax(): #this ensures that the first time step does not account for more than [ntrials/(ntrials-1)]% of the total change
+            return -np.log(((trialMax-1) + (2 - trialMax) * np.square(maxDiff)) / (trialMax-1))
         cMax = calc_cmax()
+        cMin = 0
 
-        if aMin == aMax:
-            aMax = aMax + 0.1
-        if bMin == bMax:
-            bMax = bMax + 0.1
+        aMin, aMax = parse_bounds(aMax, aMin)
+        bMin, bMax = parse_bounds(bMax, bMin)
+        cMin, cMax = parse_bounds(cMax, cMin)
 
         slope, intercept, r_value, p_value, std_err = stats.linregress(trials,
                                                                        values)  # first estimate bounds using linear regression
         y0 = slope * np.min(trials) + intercept  # calculate the y value at the min(trials)
         y1 = slope * np.max(trials) + intercept  # calculate the y value at the max(trials)
         c0 = abs(slope)  # slope is the initial guess for c
-        if aMin < y0 < aMax:
+        if aMin <= y0 <= aMax:
             a0 = y0
         else:
             a0 = values[0]
 
-        if bMin < y1 < bMax:
+        if bMin <= y1 <= bMax:
             b0 = y1
         else:
             b0 = values[-1]
+
+        if c0 > cMax:
+            c0 = cMax
 
         params, _ = curve_fit(model, trials, values, p0=[a0, b0, c0], bounds=[[aMin, bMin, cMin], [aMax, bMax, cMax]],
                               maxfev=10000000)
         y_pred = model(trials, *params)
         r2 = r2_score(values, y_pred)
 
-        return subject, params, r2, y_pred,
+        return subject, params, r2, y_pred
 
-    results = Parallel(n_jobs=-1)(
-        delayed(fit_for_subject)(subject, subject_data) for subject, subject_data in data.groupby(subject_cols))
+    if parallel:
+        results = Parallel(n_jobs=-1)(
+            delayed(fit_for_subject)(subject, subject_data) for subject, subject_data in data.groupby(subject_cols))
+    else:
+        results = []
+        for subject, subject_data in data.groupby(subject_cols):
+            results.append(fit_for_subject(subject, subject_data))
 
     fitted_params = {result[0]: result[1] for result in results}
     r2_scores = {result[0]: result[2] for result in results}
@@ -244,7 +269,7 @@ def generate_fitted_data(fitted_parameters, time_steps=30):
     return longform_data
 
 
-def iter_shuffle(data, niter=10000, subject_cols=['Subject'], trial_col='Trial', value_col='Value', save_dir=None,
+def iter_shuffle(data, niter=10000, subject_cols=['Subject'], trial_col='Trial', value_col='Value', yMin=None, yMax=None, save_dir=None,
                  overwrite=True):
     if overwrite is False:
         shuffname = trial_col + '_' + value_col + '_nonlinearNullDist.feather'
@@ -258,7 +283,7 @@ def iter_shuffle(data, niter=10000, subject_cols=['Subject'], trial_col='Trial',
     for i in range(niter):
         print("iter " + str(i) + " of " + str(niter))
         shuff = shuffle_time(data, subject_cols=subject_cols, trial_col=trial_col)
-        params, r2, _ = nonlinear_regression(shuff, subject_cols=subject_cols, trial_col=trial_col, value_col=value_col)
+        params, r2, _ = nonlinear_regression(shuff, subject_cols=subject_cols, trial_col=trial_col, value_col=value_col, yMin=yMin, yMax=yMax)
 
         paramdf = pd.Series(params, name='params').to_frame()
         r2df = pd.Series(r2, name='r2').to_frame()
@@ -333,8 +358,6 @@ exp_group_index = {'naive': 0, 'suc_preexp': 1, 'sucrose preexposed': 1, 'sucros
 taste_index = {'Suc': 0, 'NaCl': 1, 'CA': 2, 'QHCl': 3}
 session_index = {1: 0, 2: 1, 3: 2}
 unique_tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
-
-
 def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode state)', model_col='modeled',
               time_col='time_group', save_dir=None, use_alpha_pos=True):
     # make a column determining if alpha is positive
@@ -543,8 +566,7 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
             savename = '/' + save_str
             plt.savefig(save_dir + savename)
 
-
-def plot_boot(ax, nm, group, color, trial_col='session_trial', shade_alpha=0.2):
+def calc_boot(group, trial_col):
     unique_trials = np.sort(group[trial_col].unique())
     trial = []
     models = []
@@ -572,6 +594,10 @@ def plot_boot(ax, nm, group, color, trial_col='session_trial', shade_alpha=0.2):
         boot_low.append(bootci[0])
         boot_high.append(bootci[1])
 
+    return boot_mean, boot_low, boot_high
+def plot_boot(ax, nm, group, color, trial_col='session_trial', shade_alpha=0.2):
+    unique_trials = np.sort(group[trial_col].unique())
+    boot_mean, boot_low, boot_high = calc_boot(group, trial_col)
     ax.fill_between(unique_trials, boot_low, boot_high, alpha=shade_alpha, color=color)
     ax.plot(unique_trials, boot_mean, alpha=1, color=color, linewidth=2)
 
@@ -698,6 +724,140 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
             plt.savefig(save_dir + savename)
             savename2 = '/' + save_str2
             plt.savefig(save_dir + savename2)
+
+def get_pval_stars(pval):
+    if pval <= 0.001:
+        return '***'
+    elif pval <= 0.01:
+        return '**'
+    elif pval <= 0.05:
+        return '*'
+    else:
+        return ''
+
+def bootstrap_mean_ci(data, n_bootstrap=100, ci=0.95):
+    bootstrap_means = np.array([np.mean(np.random.choice(data, size=len(data), replace=True)) for _ in range(n_bootstrap)])
+    lower_bound = np.percentile(bootstrap_means, (1 - ci) / 2 * 100)
+    upper_bound = np.percentile(bootstrap_means, (1 + ci) / 2 * 100)
+    return np.mean(bootstrap_means), lower_bound, upper_bound
+
+def plot_r2_pval_summary(avg_shuff, r2_df, save_flag=None, save_dir=None, textsize=12):
+    unique_exp_groups = r2_df['exp_group'].unique()
+    unique_time_groups = r2_df['session'].unique()
+    r2_df['session_index'] = r2_df['session'].map(session_index)
+    avg_shuff['session_index'] = avg_shuff['session'].map(session_index)
+    pal = sns.color_palette()
+    colmap = {'naive': 0, 'suc_preexp': 1, 'sucrose preexposed': 1, 'sucrose pre-exposed': 1}
+
+    tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
+    df_filtered = avg_shuff[avg_shuff['taste'].isin(tastes)]
+
+    # Calculate mean r2 values from r2_df
+    mean_r2 = r2_df.groupby(['exp_group', 'session', 'taste'])['r2'].mean().reset_index()
+
+    # Get unique sessions
+    sessions = df_filtered['session'].unique()
+    n_sessions = len(sessions)
+
+    # Set up the subplots
+    fig, axes = plt.subplots(1, n_sessions, figsize=(10,5), sharey=True)
+    # Iterate over each session and create a subplot
+    handles = []
+    for i, session in enumerate(sessions):
+        # Filter data for the session
+        session_data = df_filtered[df_filtered['session'] == session]
+        # Calculate percentiles for each taste and exp_group
+        percentiles = session_data.groupby(['taste', 'exp_group'])['r2'].quantile([0.025, 0.975]).unstack()
+        # Calculate overall percentiles across all tastes
+        overall_percentiles = session_data.groupby('exp_group')['r2'].quantile([0.025, 0.975]).unstack()
+        # Reset index for easier plotting
+        percentiles = percentiles.reset_index()
+        overall_percentiles = overall_percentiles.reset_index()
+        # Get unique exp_groups and a color palette
+        exp_groups = percentiles['exp_group'].unique()
+        # Width of each bar
+        bar_width = 0.35
+
+        # Plot bars for each taste
+        for j, taste in enumerate(tastes):
+            for k, group in enumerate(exp_groups):
+                group_data = percentiles[(percentiles['taste'] == taste) & (percentiles['exp_group'] == group)]
+                r2_data = r2_df[(r2_df['exp_group'] == group) & (r2_df['session'] == session) & (r2_df['taste'] == taste)]['r2']
+                shuff_r2 = avg_shuff[(avg_shuff['exp_group'] == group) & (avg_shuff['session'] == session) & (avg_shuff['taste'] == taste)]['r2']
+
+                if not group_data.empty:
+                    lower_bound = group_data[0.025].values[0]
+                    upper_bound = group_data[0.975].values[0]
+                    bar_pos = j + k * bar_width
+                    axes[i].bar(bar_pos, upper_bound - lower_bound, bar_width, bottom=lower_bound, color='gray', alpha=0.5,
+                                label=group if j == 0 and i == 0 else "")
+
+                    if not r2_data.empty:
+                        mean_r2, ci_lower, ci_upper = bootstrap_mean_ci(r2_data)
+
+                        axes[i].hlines(mean_r2, bar_pos - bar_width / 2, bar_pos + bar_width / 2,
+                                       color=pal[colmap[group]], lw=2)
+                        # Plot error bars for the confidence interval
+                        axes[i].errorbar(bar_pos, mean_r2, yerr=[[mean_r2 - ci_lower], [ci_upper - mean_r2]],
+                                         fmt='none', color=pal[colmap[group]], capsize=5)
+
+                        p_val = np.mean(shuff_r2 >= mean_r2)
+                        p_val_str = get_pval_stars(p_val)
+                        axes[i].text(bar_pos+0.1, ci_upper + 0.01, p_val_str, ha='center', va='bottom', color=pal[colmap[group]], size=textsize*0.8, rotation='vertical')
+
+        # Plot overall percentile bars and mean r2 values
+        for k, group in enumerate(exp_groups):
+            group_data = overall_percentiles[overall_percentiles['exp_group'] == group]
+            r2_data = r2_df[(r2_df['exp_group'] == group) & (r2_df['session'] == session)]['r2']
+            shuff_r2 = avg_shuff[(avg_shuff['exp_group'] == group) & (avg_shuff['session'] == session)]['r2']
+            if not group_data.empty:
+                lower_bound = group_data[0.025].values[0]
+                upper_bound = group_data[0.975].values[0]
+                bar_pos = len(tastes) + k * bar_width
+                axes[i].bar(bar_pos, upper_bound - lower_bound, bar_width, bottom=lower_bound, color='gray', alpha=0.5,
+                            label=group if i == 0 else "")
+                if not r2_data.empty:
+                    mean_r2, ci_lower, ci_upper = bootstrap_mean_ci(r2_data)
+                    axes[i].errorbar(bar_pos, mean_r2, yerr=[[mean_r2 - ci_lower], [ci_upper - mean_r2]],
+                                     fmt='none', color=pal[colmap[group]], capsize=5)
+                    # Plot mean r2 value
+                    axes[i].hlines(mean_r2, bar_pos - bar_width / 2, bar_pos + bar_width / 2, color=pal[colmap[group]],
+                                   lw=2)
+
+                    p_val = np.mean(shuff_r2 >= mean_r2)
+                    p_val_str = get_pval_stars(p_val)
+                    axes[i].text(bar_pos+0.1, ci_upper + 0.01, p_val_str, ha='center', va='bottom', color=pal[colmap[group]],size=textsize*0.8, rotation='vertical')
+
+        # Only set ylabel for the first subplot
+        if i == 0:
+            axes[i].set_ylabel('r2 Value', size=textsize)
+            axes[i].yaxis.set_tick_params(labelsize=textsize*0.9)
+
+        axes[i].set_ylim(0, 1)
+        # Set the x-ticks
+        axes[i].set_xticks(np.arange(len(tastes) + 1) + bar_width / 2)
+        axes[i].set_xticklabels(tastes + ['Combined'], rotation=45, size=textsize)
+        axes[i].xaxis.set_tick_params(labelsize=textsize*0.9)
+
+    handles = [mlines.Line2D([], [], color='gray', marker='s', linestyle='None', label='trial-shuffle 95% CI')]
+    for k, group in enumerate(exp_groups):
+        label = 'r2 mean & 95% CI: ' + group
+        handles.append(mlines.Line2D([], [], color=pal[colmap[group]], marker='s', linestyle='None', label=label))
+
+    # Add the legend to the figure
+    axes[-1].legend(handles=handles, loc='upper right', fontsize=textsize*0.8)
+    plt.subplots_adjust(wspace=0.01, top=0.95, bottom=0.3, right=0.98, left=0.1)
+    plt.show()
+
+    ####################################################################################################
+    # save the figure as png
+    savename = 'r2_summary_bar_plot'
+    exts = ['.png', '.svg']
+    for ext in exts:
+        if save_dir is not None:
+            if save_flag is not None:
+                savename = save_flag + '_' + savename
+            plt.savefig(save_dir + '/' + savename + ext)
 
 
 def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):

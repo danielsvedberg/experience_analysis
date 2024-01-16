@@ -14,9 +14,9 @@ proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'  # directory 
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
-def model_nonlinear_regression(df, subject_col, group_cols, trial_col, value_col, flag= None):
+def model_nonlinear_regression(df, subject_col, group_cols, trial_col, value_col, flag= None, yMin=None, yMax=None):
     groupings = [subject_col] + group_cols
-    params, r2, y_pred = ta.nonlinear_regression(df, subject_cols=groupings, trial_col=trial_col, value_col=value_col)
+    params, r2, y_pred = ta.nonlinear_regression(df, subject_cols=groupings, trial_col=trial_col, value_col=value_col, parallel=True, yMin=yMin, yMax=yMax)
     r2_df = pd.Series(r2).reset_index()  # turn dict into a series with multi-index
     r2_df = r2_df.reset_index(drop=True)  # reset the index so it becomes a dataframe
     colnames = groupings + ['r2']
@@ -46,11 +46,9 @@ def model_nonlinear_regression(df, subject_col, group_cols, trial_col, value_col
     # merge the params with df
     df2 = df.merge(params_df, on=groupings)
     df3 = df2.merge(r2_df, on=groupings)
-    #df3['modeled'] = np.concatenate(modeled)
-
     # %% get the null distribution of r2 values
-    shuff = ta.iter_shuffle(df3, niter=10000, subject_cols=groupings, trial_col=trial_col, value_col=value_col,
-                            save_dir=HA.save_dir, overwrite=True)
+    shuff = ta.iter_shuffle(df3, niter=10000, subject_cols=groupings, trial_col=trial_col, value_col=value_col, yMin=yMin, yMax=yMax,
+                            save_dir=HA.save_dir, overwrite=False)
 
     shuff_pval_df = ta.get_shuff_pvals(shuff, r2_df) # TODO figure out why r2_df/ df2 does not have column r2
 
@@ -65,7 +63,8 @@ def model_nonlinear_regression(df, subject_col, group_cols, trial_col, value_col
         save_flag = trial_col + '_' + flag
     else:
         save_flag = trial_col
-    ta.plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=save_flag, save_dir=HA.save_dir)
+    ta.plot_r2_pval_summary(avg_shuff, r2_df, save_flag=save_flag, save_dir=HA.save_dir, textsize=20)
+    #ta.plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=save_flag, save_dir=HA.save_dir)
 
 subject_col = 'exp_name'
 group_cols = ['exp_group','session','taste']
@@ -75,8 +74,11 @@ avg_gamma_mode_df = HA.get_avg_gamma_mode(overwrite=False)
 #refactor exp_group column in avg_gamma_mode_df from ['naive','suc_preexp'] to ['naive','sucrose preexposed']
 avg_gamma_mode_df['exp_group'] = avg_gamma_mode_df['exp_group'].replace({'suc_preexp':'sucrose preexposed'})
 avg_gamma_mode_df['session trial'] = avg_gamma_mode_df['session_trial']
+avg_gamma_mode_df['session'] = avg_gamma_mode_df['time_group'].astype(int)
+avg_gamma_mode_df['taste trial'] = avg_gamma_mode_df['taste_trial'].astype(int)
 #%% trialwise nonlinear regression
-model_nonlinear_regression(avg_gamma_mode_df, subject_col=subject_col, group_cols=group_cols, trial_col='session trial', value_col='pr(mode state)')
+for trial_col in ['session trial', 'taste trial']:
+    model_nonlinear_regression(avg_gamma_mode_df, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)')
 
 #################### analysis of accuracy ####################
 NB_decode = HA.get_NB_decode()  # get the decode dataframe with some post-processing
@@ -86,5 +88,5 @@ NB_decode['session'] = NB_decode['time_group'].astype(int)
 
 for i, group in NB_decode.groupby('epoch'):
     flag = str(i) + '_epoch'
-    model_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col='session trial', value_col='pr(correct)', flag=flag)
+    model_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col='session trial', value_col='pr(correct)', flag=flag, yMin=0, yMax=1)
 #################### analysis of timing ####################
