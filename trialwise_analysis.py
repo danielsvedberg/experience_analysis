@@ -299,7 +299,7 @@ def generate_fitted_data(fitted_parameters, time_steps=30):
     return longform_data
 
 
-def iter_shuffle(data, niter=10000, subject_cols=['Subject'], trial_col='Trial', value_col='Value', yMin=None,
+def iter_shuffle(data, nIter=10000, subject_cols=['Subject'], trial_col='Trial', value_col='Value', yMin=None,
                  yMax=None, save_dir=None, overwrite=True, parallel=True):
     shuffname = trial_col + '_' + value_col + '_nonlinearNullDist.feather'
     if overwrite is False:
@@ -309,13 +309,13 @@ def iter_shuffle(data, niter=10000, subject_cols=['Subject'], trial_col='Trial',
         except FileNotFoundError:
             pass
     elif parallel:
-        iters = iter_shuffle_parallel(data, niter=niter, subject_cols=subject_cols, trial_col=trial_col,
+        iters = iter_shuffle_parallel(data, nIter=nIter, subject_cols=subject_cols, trial_col=trial_col,
                                       value_col=value_col, save_dir=save_dir, overwrite=overwrite)
         return iters
     else:
         iters = []
-        for i in range(niter):
-            print("iter " + str(i) + " of " + str(niter))
+        for i in range(nIter):
+            print("iter " + str(i) + " of " + str(nIter))
             shuff = shuffle_time(data, subject_cols=subject_cols, trial_col=trial_col)
             params, r2, _ = nonlinear_regression(shuff, subject_cols=subject_cols, trial_col=trial_col, value_col=value_col,
                                                  yMin=yMin, yMax=yMax)
@@ -336,7 +336,7 @@ def iter_shuffle(data, niter=10000, subject_cols=['Subject'], trial_col='Trial',
 
 from joblib import Parallel, delayed
 
-def iter_shuffle_parallel(data, niter=10000, subject_cols=['Subject'], trial_col='Time', value_col='Value', yMin=None,
+def iter_shuffle_parallel(data, nIter=10000, subject_cols=['Subject'], trial_col='Time', value_col='Value', yMin=None,
                           yMax=None, save_dir=None, overwrite=True):
     def single_iteration(i):
         shuff = shuffle_time(data, subject_cols=subject_cols, trial_col=trial_col)
@@ -358,7 +358,7 @@ def iter_shuffle_parallel(data, niter=10000, subject_cols=['Subject'], trial_col
         except FileNotFoundError:
             pass
 
-    iters = Parallel(n_jobs=-1)(delayed(single_iteration)(i) for i in range(niter))
+    iters = Parallel(n_jobs=-1)(delayed(single_iteration)(i) for i in range(nIter))
     iters = pd.concat(iters)
     iters = iters.reset_index(drop=True)
 
@@ -597,8 +597,11 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
             savename = '/' + save_str
             plt.savefig(save_dir + savename)
 
+def mean_resample(col):
+    s = resample(col)
+    return np.nanmean(s)
 
-def calc_boot(group, trial_col, nIter=100, parallel=True):
+def calc_boot(group, trial_col, nIter=100, parallel=False):
     unique_trials = np.sort(group[trial_col].unique())
     trial = []
     models = []
@@ -616,14 +619,15 @@ def calc_boot(group, trial_col, nIter=100, parallel=True):
     boot_mean = []
     boot_low = []
     boot_high = []
+
     for col in models.T:
         if parallel:
-            samples = Parallel(n_jobs=-1)(delayed(resample)(col) for i in range(nIter))
+            samples = Parallel(n_jobs=-1)(delayed(mean_resample)(col) for i in range(nIter))
         else:
             samples = []
             for iter in range(nIter):
                 sample = resample(col)
-                samples.append(np.median(sample))
+                samples.append(np.nanmean(sample))
         boot_mean.append(np.nanmean(samples))
         bootci = np.nanpercentile(samples, [2.5, 97.5])
         boot_low.append(bootci[0])
@@ -657,9 +661,9 @@ def plot_shuff(ax, group, trials, color, linestyle):
     ax.plot(trials, model_mean, alpha=1, color=color, linestyle=linestyle, linewidth=1.5)
 
 
-def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(mode state)', model_col='modeled',
-                          time_col='session', save_dir=None, use_alpha_pos=False, dotalpha=0.1, textsize=12, flag=None,
-                          nIter=100, parallel=True, r2df=None):
+def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(mode state)', time_col='session',
+                          save_dir=None, use_alpha_pos=False, dotalpha=0.1, textsize=12, flag=None, nIter=100,
+                          parallel=True, r2df=None):
     unique_trials = np.sort(df[trial_col].unique())
     unique_exp_groups = df['exp_group'].unique()
     unique_exp_names = df['exp_name'].unique()
@@ -693,7 +697,7 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
         fig, axes = plt.subplots(1, n_time_groups, sharex=True, sharey=True, figsize=(10, 5))
         legend_handles = []
         # plot shuffled data:
-        for nm, group in shuff_df.groupby(['session', 'session_index', 'exp_group', 'exp_group_index']):
+        for nm, group in shuff_df.groupby([time_col, 'session_index', 'exp_group', 'exp_group_index']):
             ax = axes[nm[1]]
             linestyle = shuff_linestyles[nm[3]]
             plot_shuff(ax, group, color='gray', trials=unique_trials, linestyle=linestyle)
@@ -737,11 +741,11 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
         return fig, axes
 
     if flag is not None:
-        save_str = model_col + '_' + trial_col + '_' + flag + '_' + 'summary.png'
-        save_str2 = model_col + '_' + trial_col + '_' + flag + '_' + 'summary.svg'
+        save_str = dat_col + '_' + trial_col + '_' + flag + '_' + 'summary.png'
+        save_str2 = dat_col + '_' + trial_col + '_' + flag + '_' + 'summary.svg'
     else:
-        save_str = model_col + '_' + trial_col + '_' + 'summary.png'
-        save_str2 = model_col + '_' + trial_col + '_' + 'summary.svg'
+        save_str = dat_col + '_' + trial_col + '_' + 'summary.png'
+        save_str2 = dat_col + '_' + trial_col + '_' + 'summary.svg'
 
     if use_alpha_pos:
         unique_alpha_pos = df['alpha_pos'].unique()
