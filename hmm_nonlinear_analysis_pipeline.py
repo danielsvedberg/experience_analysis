@@ -14,7 +14,7 @@ proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'  # directory 
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
-def model_nonlinear_regression(df, subject_col, group_cols, trial_col, value_col, flag= None, yMin=None, yMax=None, niter=100, parallel=True):
+def model_nonlinear_regression(df, subject_col, group_cols, trial_col, value_col, flag= None, yMin=None, yMax=None, niter=100, parallel=True, overwrite=False):
     groupings = [subject_col] + group_cols
     params, r2, y_pred = ta.nonlinear_regression(df, subject_cols=groupings, trial_col=trial_col, value_col=value_col, parallel=parallel, yMin=yMin, yMax=yMax)
     r2_df = pd.Series(r2).reset_index()  # turn dict into a series with multi-index
@@ -49,7 +49,7 @@ def model_nonlinear_regression(df, subject_col, group_cols, trial_col, value_col
     df3 = df2.merge(r2_df, on=groupings)
     # %% get the null distribution of r2 values
     shuff = ta.iter_shuffle(df3, niter=niter, subject_cols=groupings, trial_col=trial_col, value_col=value_col, yMin=yMin, yMax=yMax,
-                            save_dir=HA.save_dir, overwrite=True, parallel=parallel)
+                            save_dir=HA.save_dir, overwrite=overwrite, parallel=parallel)
 
     shuff_pval_df = ta.get_shuff_pvals(shuff, r2_df) # TODO figure out why r2_df/ df2 does not have column r2
 
@@ -79,7 +79,7 @@ avg_gamma_mode_df['session'] = avg_gamma_mode_df['time_group'].astype(int)
 avg_gamma_mode_df['taste trial'] = avg_gamma_mode_df['taste_trial'].astype(int)
 #%% trialwise nonlinear regression
 for trial_col in ['session trial', 'taste trial']:
-    model_nonlinear_regression(avg_gamma_mode_df, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)')
+    model_nonlinear_regression(avg_gamma_mode_df, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)', overwrite=True, niter=1000, yMin=0, yMax=1)
 
 #################### analysis of accuracy ####################
 NB_decode = HA.get_NB_decode()  # get the decode dataframe with some post-processing
@@ -89,7 +89,7 @@ NB_decode['session'] = NB_decode['time_group'].astype(int)
 
 for i, group in NB_decode.groupby('epoch'):
     flag = str(i) + '_epoch' + '_accuracy'
-    model_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col='session trial', value_col='pr(correct)', flag=flag, yMin=0, yMax=1)
+    model_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col='session trial', value_col='pr(correct)', flag=flag, yMin=0, yMax=1, overwrite=True, niter=1000)
 #################### analysis of timing ####################
 
 NB_timings = HA.get_NB_timing()  # get the timings dataframe with some post-processing
@@ -102,4 +102,4 @@ for i, group in NB_timings.groupby('epoch'):
     for col in timing_cols:
         for trial_col in ['session trial', 'taste trial']:
             flag = str(i) + '_epoch_' + col + '_' + trial_col
-            model_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=col, flag=flag, yMin=None, yMax=None, niter=10)
+            model_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=col, flag=flag, yMin=None, yMax=None, niter=1000, overwrite=True)

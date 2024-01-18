@@ -1,4 +1,5 @@
 import numpy as np
+import random
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
 import pandas as pd
@@ -786,7 +787,7 @@ def bootstrap_mean_ci(data, n_bootstrap=100, ci=0.95):
     return np.nanmean(bootstrap_means), lower_bound, upper_bound
 
 
-def plot_r2_pval_summary(avg_shuff, r2_df, save_flag=None, save_dir=None, textsize=12):
+def plot_r2_pval_summary(avg_shuff, r2_df, save_flag=None, save_dir=None, textsize=12, nIter=100):
     unique_exp_groups = r2_df['exp_group'].unique()
     unique_time_groups = r2_df['session'].unique()
     r2_df['session_index'] = r2_df['session'].map(session_index)
@@ -795,13 +796,63 @@ def plot_r2_pval_summary(avg_shuff, r2_df, save_flag=None, save_dir=None, textsi
     colmap = {'naive': 0, 'suc_preexp': 1, 'sucrose preexposed': 1, 'sucrose pre-exposed': 1}
 
     tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
-    df_filtered = avg_shuff[avg_shuff['taste'].isin(tastes)]
+    shuff_filtered = avg_shuff[avg_shuff['taste'].isin(tastes)]
+
+    #make a new df called shuff_diff, wherein for each grouping of session, taste, and iternum of shuff_filtered, calculate the difference in r2 between each of the two exp_groups
+    grouping_cols = ['session', 'taste', 'iternum']
+    shuff_diffs = []
+    indices = []
+    for name, group in shuff_filtered.groupby(grouping_cols):
+        # get the r2 values for each exp_group
+        diffs = []
+        for exp_group in unique_exp_groups:
+            r2 = group[group['exp_group'] == exp_group]['r2'].to_numpy()
+            # append to shuff_diff
+            diffs.append(r2)
+        # calculate the difference in r2 between the two exp_groups
+        diff = abs(float(diffs[0] - diffs[1]))
+        # append to shuff_diff
+        shuff_diffs.append(diff)
+        indices.append(list(name))
+    shuff_diff = pd.DataFrame(indices, columns=grouping_cols)
+    shuff_diff['r2_diff'] = shuff_diffs
 
     # Calculate mean r2 values from r2_df
     mean_r2 = r2_df.groupby(['exp_group', 'session', 'taste'])['r2'].mean().reset_index()
 
+    # bootstrap mean r2 value with replacement for nIter iterations
+    groups = ['exp_group', 'session', 'taste']
+    boot_means = []
+    ids = []
+    iteridx = []
+    for i in range(nIter):
+        print(i)
+        for name, group in r2_df.groupby(groups):
+            k = len(group)
+            mean = np.nanmean(random.choices(group['r2'].to_numpy(), k=k))
+            boot_means.append(mean)
+            ids.append(name)
+            iteridx.append(i)
+    boot_mean_r2 = pd.DataFrame(ids, columns=groups)
+    boot_mean_r2['r2'] = boot_means
+    boot_mean_r2['iternum'] = iteridx
+
+    groups = ['session', 'taste', 'iternum']
+    boot_r2_diffs = []
+    ids = []
+    for name, group in boot_mean_r2.groupby(groups):
+        diffs = []
+        for exp_group in unique_exp_groups:
+            r2 = group[group['exp_group'] == exp_group]['r2'].to_numpy()
+            diffs.append(r2)
+        diff = abs(float(diffs[0] - diffs[1]))
+        boot_r2_diffs.append(diff)
+        ids.append(list(name))
+    boot_mean_r2_diff = pd.DataFrame(ids, columns=groups)
+    boot_mean_r2_diff['r2_diff'] = boot_r2_diffs
+
     # Get unique sessions
-    sessions = df_filtered['session'].unique()
+    sessions = shuff_filtered['session'].unique()
     n_sessions = len(sessions)
 
     # Set up the subplots
@@ -810,73 +861,87 @@ def plot_r2_pval_summary(avg_shuff, r2_df, save_flag=None, save_dir=None, textsi
     handles = []
     for i, session in enumerate(sessions):
         # Filter data for the session
-        session_data = df_filtered[df_filtered['session'] == session]
-        # Calculate percentiles for each taste and exp_group
-        percentiles = session_data.groupby(['taste', 'exp_group'])['r2'].quantile([0.025, 0.975]).unstack()
-        # Calculate overall percentiles across all tastes
-        overall_percentiles = session_data.groupby('exp_group')['r2'].quantile([0.025, 0.975]).unstack()
+        session_shuff = shuff_filtered[shuff_filtered['session'] == session]
+        # filter diff data for the session
+        session_shuff_diff = shuff_diff[shuff_diff['session'] == session]
+        # Calculate shuff_percentiles for each taste and exp_group
+        shuff_percentiles = session_shuff.groupby(['taste', 'exp_group'])['r2'].quantile([0.025, 0.975]).unstack()
+        # calculate shuff_percentiles for each taste in session_shuff_diff
+        diff_shuff_percentiles = session_shuff_diff.groupby(['taste'])['r2_diff'].quantile([0.025, 0.975]).unstack()
+        # Calculate overall shuff_percentiles across all tastes
+        overall_shuff_percentiles = session_shuff.groupby('exp_group')['r2'].quantile([0.025, 0.975]).unstack()
+        #calculate overall shuff_percentiles for diff
+        overall_diff_shuff_percentiles = session_shuff_diff['r2_diff'].quantile([0.025, 0.975])
+
         # Reset index for easier plotting
-        percentiles = percentiles.reset_index()
-        overall_percentiles = overall_percentiles.reset_index()
+        shuff_percentiles = shuff_percentiles.reset_index()
+        overall_shuff_percentiles = overall_shuff_percentiles.reset_index()
+        diff_shuff_percentiles = diff_shuff_percentiles.reset_index()
         # Get unique exp_groups and a color palette
-        exp_groups = percentiles['exp_group'].unique()
+        exp_groups = shuff_percentiles['exp_group'].unique()
         # Width of each bar
-        bar_width = 0.35
+        bar_width = 0.25
 
-        # Plot bars for each taste
-        for j, taste in enumerate(tastes):
-            for k, group in enumerate(exp_groups):
-                group_data = percentiles[(percentiles['taste'] == taste) & (percentiles['exp_group'] == group)]
-                r2_data = \
-                r2_df[(r2_df['exp_group'] == group) & (r2_df['session'] == session) & (r2_df['taste'] == taste)]['r2']
-                shuff_r2 = avg_shuff[(avg_shuff['exp_group'] == group) & (avg_shuff['session'] == session) & (
-                            avg_shuff['taste'] == taste)]['r2']
-
-                if not group_data.empty:
-                    lower_bound = group_data[0.025].values[0]
-                    upper_bound = group_data[0.975].values[0]
-                    bar_pos = j + k * bar_width
-                    axes[i].bar(bar_pos, upper_bound - lower_bound, bar_width, bottom=lower_bound, color='gray',
-                                alpha=0.5,
-                                label=group if j == 0 and i == 0 else "")
-
-                    if not r2_data.empty:
-                        mean_r2, ci_lower, ci_upper = bootstrap_mean_ci(r2_data)
-
-                        axes[i].hlines(mean_r2, bar_pos - bar_width / 2, bar_pos + bar_width / 2,
-                                       color=pal[colmap[group]], lw=2)
-                        # Plot error bars for the confidence interval
-                        axes[i].errorbar(bar_pos, mean_r2, yerr=[[mean_r2 - ci_lower], [ci_upper - mean_r2]],
-                                         fmt='none', color=pal[colmap[group]], capsize=5)
-
-                        p_val = np.nanmean(shuff_r2 >= mean_r2)
-                        p_val_str = get_pval_stars(p_val)
-                        axes[i].text(bar_pos + 0.1, ci_upper + 0.01, p_val_str, ha='center', va='bottom',
-                                     color=pal[colmap[group]], size=textsize * 0.8, rotation='vertical')
-
-        # Plot overall percentile bars and mean r2 values
-        for k, group in enumerate(exp_groups):
-            group_data = overall_percentiles[overall_percentiles['exp_group'] == group]
-            r2_data = r2_df[(r2_df['exp_group'] == group) & (r2_df['session'] == session)]['r2']
-            shuff_r2 = avg_shuff[(avg_shuff['exp_group'] == group) & (avg_shuff['session'] == session)]['r2']
+        def plot_bars(group_data, r2_data, mean_r2, shuff_r2, bar_pos, indices, color):
             if not group_data.empty:
-                lower_bound = group_data[0.025].values[0]
-                upper_bound = group_data[0.975].values[0]
-                bar_pos = len(tastes) + k * bar_width
-                axes[i].bar(bar_pos, upper_bound - lower_bound, bar_width, bottom=lower_bound, color='gray', alpha=0.5,
-                            label=group if i == 0 else "")
+                lower_bound = float(group_data[0.025])
+                upper_bound = float(group_data[0.975])
+
+                axes[i].bar(bar_pos, upper_bound - lower_bound, bar_width, bottom=lower_bound, color='gray',
+                            alpha=0.5,
+                            label=group if all(idx == 0 for idx in indices) else "")
+
                 if not r2_data.empty:
                     mean_r2, ci_lower, ci_upper = bootstrap_mean_ci(r2_data)
+
+                    axes[i].hlines(mean_r2, bar_pos - bar_width / 2, bar_pos + bar_width / 2,
+                                   color=color, lw=2)
+                    # Plot error bars for the confidence interval
                     axes[i].errorbar(bar_pos, mean_r2, yerr=[[mean_r2 - ci_lower], [ci_upper - mean_r2]],
-                                     fmt='none', color=pal[colmap[group]], capsize=5)
-                    # Plot mean r2 value
-                    axes[i].hlines(mean_r2, bar_pos - bar_width / 2, bar_pos + bar_width / 2, color=pal[colmap[group]],
-                                   lw=2)
+                                     fmt='none', color=color, capsize=5)
 
                     p_val = np.nanmean(shuff_r2 >= mean_r2)
                     p_val_str = get_pval_stars(p_val)
                     axes[i].text(bar_pos + 0.1, ci_upper + 0.01, p_val_str, ha='center', va='bottom',
-                                 color=pal[colmap[group]], size=textsize * 0.8, rotation='vertical')
+                                 color=color, size=textsize * 0.8, rotation='vertical')
+
+        # Plot bars for each taste
+        for j, taste in enumerate(tastes):
+            for k, group in enumerate(exp_groups):
+                group_data = shuff_percentiles[(shuff_percentiles['taste'] == taste) & (shuff_percentiles['exp_group'] == group)]
+                r2_data = \
+                r2_df[(r2_df['exp_group'] == group) & (r2_df['session'] == session) & (r2_df['taste'] == taste)]['r2']
+                shuff_r2 = avg_shuff[(avg_shuff['exp_group'] == group) & (avg_shuff['session'] == session) & (
+                            avg_shuff['taste'] == taste)]['r2']
+                bar_pos = j + k * bar_width
+                indices = [j, k]
+                color = pal[colmap[group]]
+                plot_bars(group_data, r2_data, mean_r2, shuff_r2, bar_pos, indices, color=color)
+            group_data = diff_shuff_percentiles[(diff_shuff_percentiles['taste'] == taste)]
+            r2_data = boot_mean_r2_diff[(boot_mean_r2_diff['session'] == session) & (boot_mean_r2_diff['taste'] == taste)]['r2_diff']
+            shuff_r2_diff = shuff_diff[(shuff_diff['session'] == session) & (shuff_diff['taste'] == taste)]['r2_diff']
+            bar_pos = (j)+(k+1)*bar_width
+            indices = [j, k+1]
+            plot_bars(group_data, r2_data, mean_r2, shuff_r2_diff, bar_pos, indices, color='black')
+
+
+        # Plot overall percentile bars and mean r2 values
+        for k, group in enumerate(exp_groups):
+            group_data = overall_shuff_percentiles[overall_shuff_percentiles['exp_group'] == group]
+            r2_data = r2_df[(r2_df['exp_group'] == group) & (r2_df['session'] == session)]['r2']
+            shuff_r2 = avg_shuff[(avg_shuff['exp_group'] == group) & (avg_shuff['session'] == session)]['r2']
+            bar_pos = len(tastes) + k * bar_width
+            indices = [i]
+            color = pal[colmap[group]]
+            plot_bars(group_data, r2_data, mean_r2, shuff_r2, bar_pos, indices, color=color)
+
+        group_data = overall_diff_shuff_percentiles
+        r2_data = boot_mean_r2_diff[(boot_mean_r2_diff['session'] == session)]['r2_diff']
+        shuff_r2_diff = shuff_diff[(shuff_diff['session'] == session)]['r2_diff']
+        bar_pos = len(tastes) + (k+1)*bar_width
+        indices = [i]
+        plot_bars(group_data, r2_data, mean_r2, shuff_r2_diff, bar_pos, indices, color='black')
+
 
         # Only set ylabel for the first subplot
         if i == 0:
@@ -886,13 +951,14 @@ def plot_r2_pval_summary(avg_shuff, r2_df, save_flag=None, save_dir=None, textsi
         axes[i].set_ylim(0, 1)
         # Set the x-ticks
         axes[i].set_xticks(np.arange(len(tastes) + 1) + bar_width / 2)
-        axes[i].set_xticklabels(tastes + ['Combined'], rotation=45, size=textsize)
+        axes[i].set_xticklabels(tastes + ['Combined'], rotation=60, size=textsize)
         axes[i].xaxis.set_tick_params(labelsize=textsize * 0.9)
 
     handles = [mlines.Line2D([], [], color='gray', marker='s', linestyle='None', label='trial-shuffle 95% CI')]
     for k, group in enumerate(exp_groups):
-        label = 'r2 mean & 95% CI: ' + group
+        label = group
         handles.append(mlines.Line2D([], [], color=pal[colmap[group]], marker='s', linestyle='None', label=label))
+    handles.append(mlines.Line2D([], [], color='black', marker='s', linestyle='None', label='|diff|'))
 
     # Add the legend to the figure
     axes[-1].legend(handles=handles, loc='upper right', fontsize=textsize * 0.8)
@@ -964,8 +1030,8 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
                                                   alpha=1)
                     legend_handles.append(legend_handle)
             if i == 0 and j == 0:
-                ax.legend(handles=legend_handles, loc='center right',
-                          bbox_to_anchor=(4.05, -1.3), ncol=1)
+                legend_handles.append(mlines.Line2D([], [], color='black', marker='o', linestyle='None', label='|diff|'))
+                ax.legend(handles=legend_handles, loc='center right', bbox_to_anchor=(4.05, -1.3), ncol=1)
     # add a title for each column
     for ax, col in zip(axes[0], unique_time_groups):
         label = 'session ' + str(col)
