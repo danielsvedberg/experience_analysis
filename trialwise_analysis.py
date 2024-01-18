@@ -445,7 +445,7 @@ def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode sta
             ax.set_xlabel(trial_col, size='large')
         plt.subplots_adjust(right=0.8)
         # plt.suptitle("HMM stereotypy: " + exp_group)
-        plt.show()
+
 
     # map a color to each exp name in unique exp names
     pal = sns.color_palette()
@@ -572,7 +572,6 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
             for ax in axes[-1, :]:
                 ax.set_xlabel(trial_col, size='large')
             plt.subplots_adjust(right=0.85)
-            plt.show()
 
         return fig, axes
 
@@ -633,7 +632,7 @@ def calc_boot(group, trial_col, nIter=100, parallel=True):
     return boot_mean, boot_low, boot_high
 
 
-def plot_boot(ax, nm, group, color, trial_col='session_trial', shade_alpha=0.2, nIter=100, parallel=True):
+def plot_boot(ax, nm, group, color, trial_col='session_trial', shade_alpha=0.2, nIter=100, parallel=False):
     unique_trials = np.sort(group[trial_col].unique())
     boot_mean, boot_low, boot_high = calc_boot(group, trial_col, nIter=nIter, parallel=parallel)
     ax.fill_between(unique_trials, boot_low, boot_high, alpha=shade_alpha, color=color)
@@ -892,7 +891,7 @@ def plot_r2_pval_summary(avg_shuff, r2_df, save_flag=None, save_dir=None, textsi
                             label=group if all(idx == 0 for idx in indices) else "")
 
                 if not r2_data.empty:
-                    mean_r2, ci_lower, ci_upper = bootstrap_mean_ci(r2_data)
+                    mean_r2, ci_lower, ci_upper = bootstrap_mean_ci(r2_data, n_bootstrap=nIter)
 
                     axes[i].hlines(mean_r2, bar_pos - bar_width / 2, bar_pos + bar_width / 2,
                                    color=color, lw=2)
@@ -963,7 +962,6 @@ def plot_r2_pval_summary(avg_shuff, r2_df, save_flag=None, save_dir=None, textsi
     # Add the legend to the figure
     axes[-1].legend(handles=handles, loc='upper right', fontsize=textsize * 0.8)
     plt.subplots_adjust(wspace=0.01, top=0.95, bottom=0.3, right=0.98, left=0.1)
-    plt.show()
 
     ####################################################################################################
     # save the figure as png
@@ -1049,7 +1047,6 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
 
     plt.subplots_adjust(right=0.85)
     plt.tight_layout()
-    plt.show()
     # save the figure as png
     if save_dir is not None:
         if save_flag is None:
