@@ -815,16 +815,16 @@ def bootstrap_mean_ci(data, n_bootstrap=100, ci=0.95):
     upper_bound = np.nanpercentile(bootstrap_means, (1 + ci) / 2 * 100)
     return np.nanmean(bootstrap_means), lower_bound, upper_bound
 
-def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=False, boot_data=True):
+def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, n_comp=1, two_tailed=False, boot_data=True):
     #get the lower 0.025 and upper 0.975 percentiles for the shuff_r2
     #these data will form the floating bars representing the null distribution
 
     if two_tailed==True:
-        pct_low = 2.5
-        pct_high = 97.5
+        pct_low = 2.5/n_comp
+        pct_high = 100 - (2.5/n_comp)
     else:
         pct_low = 0
-        pct_high = 95
+        pct_high = 100 - 5/n_comp
 
     lower_bound = np.nanpercentile(shuff_r2_data, pct_low)
     upper_bound = np.nanpercentile(shuff_r2_data, pct_high)
@@ -840,9 +840,9 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
     p_val = pval_from_null(shuff_r2_data, mean_r2)
 
     if two_tailed==True:
-        p_val_str = get_pval_stars(p_val, adjustment=2)
+        p_val_str = get_pval_stars(p_val, adjustment=2*n_comp)
     else:
-        p_val_str = get_pval_stars(p_val)
+        p_val_str = get_pval_stars(p_val, adjustment=n_comp)
 
     # plot the floating bar representing null distribution
     ax.bar(bar_pos, upper_bound - lower_bound, bar_width, bottom=lower_bound, color='gray',
@@ -860,7 +860,7 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
     ax.text(bar_pos + 0.1, ci_upper + 0.01, p_val_str, ha='center', va='bottom',
                  color=color, size=textsize * 0.8, rotation='vertical')
 
-def plot_r2_pval_summary(shuff_r2_df, r2_df, value_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=12, nIter=100):
+def plot_r2_pval_summary(shuff_r2_df, r2_df, value_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=12, nIter=100, n_comp=1):
     if value_col is None:
         value_col = 'r2'
     
@@ -896,7 +896,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, value_col=None, save_flag=None, sav
                 indices = [j]
                 color = pal[colmap[exp_group]]
                 label = exp_group
-                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=two_tailed)
+                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=two_tailed, n_comp = n_comp)
 
             # Plot overall percentile bars and mean r2 values
             r2_data = r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == session)][value_col]
@@ -906,7 +906,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, value_col=None, save_flag=None, sav
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, r2_data, overall_shuff_r2, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=two_tailed)
+            plot_bars(ax, r2_data, overall_shuff_r2, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=two_tailed, n_comp = n_comp)
 
             # Only set ylabel for the first subplot
             if i == 0:
@@ -941,7 +941,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, value_col=None, save_flag=None, sav
                 plt.savefig(save_dir + '/' + filename + ext)
 
 difference_index = {'1-2': 0, '2-3': 1, '1-3': 2}
-def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None, textsize=12, nIter=100):
+def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None, textsize=12, nIter=100, n_comp = 1):
     unique_exp_groups = r2_df['exp_group'].unique()
     unique_time_groups = r2_df['session'].unique()
     r2_df['session_index'] = r2_df['session'].map(session_index)
@@ -980,7 +980,7 @@ def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None
     expanded_groups = pd.DataFrame(shuff_r2_diffs['Group'].tolist(), columns=group_columns)
     # Concatenate the new columns with the original DataFrame
     shuff_r2_diffs = pd.concat([expanded_groups, shuff_r2_diffs.drop('Group', axis=1)], axis=1)
-    shuff_r2_diffs = shuff_r2_diffs.groupby(['exp_group', 'taste', 'iternum']).mean().reset_index()
+    shuff_r2_diffs = shuff_r2_diffs.groupby(['Session Difference', 'exp_group', 'taste', 'iternum']).mean().reset_index()
 
     # bootstrap mean r2 diff value with replacement for nIter iterations
     groups = ['exp_group', 'taste', 'Session Difference']
@@ -1015,7 +1015,7 @@ def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None
                 indices = [j]
                 color = pal[colmap[exp_group]]
                 label = exp_group
-                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=True)
+                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=True, n_comp=n_comp)
 
         # Plot overall percentile bars and mean r2 values
             r2_data = r2_diffs[(r2_diffs['exp_group'] == exp_group) & (r2_diffs['Session Difference'] == sess_diff)]['r2 difference']
@@ -1026,7 +1026,7 @@ def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, r2_data, overall_shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=True)
+            plot_bars(ax, r2_data, overall_shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=True, n_comp=n_comp)
 
             # Only set ylabel for the first subplot
             if i == 0:

@@ -97,7 +97,7 @@ def plot_nonlinear_regression(df3, shuff, subject_col, group_cols, trial_col, va
             save_flag = trial_col + '_' + value_col + '_' + flag
         else:
             save_flag = trial_col + '_' + value_col + '_' + exp_group + '_only'
-        ta.plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=HA.save_dir, textsize=20, nIter=nIter)
+        ta.plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=HA.save_dir, textsize=20, nIter=nIter, n_comp=3)
 
 def plot_session_differences(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20):
     groups = [subject_col] + group_cols
@@ -107,7 +107,7 @@ def plot_session_differences(df3, shuff, subject_col, group_cols, trial_col, val
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    ta.plot_daywise_r2_pval_diffs(shuff, avg_df3, save_flag=save_flag, save_dir=HA.save_dir, textsize=textsize, nIter=nIter)
+    ta.plot_daywise_r2_pval_diffs(shuff, avg_df3, save_flag=save_flag, save_dir=HA.save_dir, textsize=textsize, nIter=nIter, n_comp=3)
 
 def plot_predicted_change(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20):
     groups = [subject_col] + group_cols
@@ -136,7 +136,7 @@ def plot_predicted_change(df3, shuff, subject_col, group_cols, trial_col, value_
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    ta.plot_r2_pval_summary(avg_shuff, pred_change_df, value_col='pred. change', save_flag=save_flag, save_dir=HA.save_dir, two_tailed=True, textsize=textsize, nIter=nIter)
+    ta.plot_r2_pval_summary(avg_shuff, pred_change_df, value_col='pred. change', save_flag=save_flag, save_dir=HA.save_dir, two_tailed=True, textsize=textsize, nIter=nIter, n_comp=3)
 
 ########################################################################################################################
 subject_col = 'exp_name'
