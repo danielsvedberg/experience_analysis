@@ -58,7 +58,7 @@ def preprocess_nonlinear_regression(df, subject_col, group_cols, trial_col, valu
                             yMin=yMin, yMax=yMax,
                             save_dir=HA.save_dir, overwrite=overwrite, parallel=parallel)
 
-    if shuffle is [] or shuff is None:
+    if shuffle is [] or shuffle is None:
         raise ValueError('shuffle is None')
     return df3, shuffle
 
@@ -99,10 +99,44 @@ def plot_nonlinear_regression(df3, shuff, subject_col, group_cols, trial_col, va
             save_flag = trial_col + '_' + value_col + '_' + exp_group + '_only'
         ta.plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=HA.save_dir, textsize=20, nIter=nIter)
 
+def plot_session_differences(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20):
+    groups = [subject_col] + group_cols
+    avg_df3 = df3.groupby(groups).mean().reset_index()
 
-    #ta.plot_null_dist(shuff, r2_df_groupmean, save_flag=save_flag, save_dir=HA.save_dir)
+    if flag is not None:
+        save_flag = trial_col + '_' + value_col + '_' + flag
+    else:
+        save_flag = trial_col + '_' + value_col
+    ta.plot_daywise_r2_pval_diffs(shuff, avg_df3, save_flag=save_flag, save_dir=HA.save_dir, textsize=textsize, nIter=nIter)
 
+def plot_predicted_change(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20):
+    groups = [subject_col] + group_cols
+    trials = df3[trial_col].unique()
 
+    avg_df3 = df3.groupby(groups).mean().reset_index()
+
+    def add_pred_change(df):
+        pred_change = []
+        for i, row in df.iterrows():
+            params = row[['alpha', 'beta', 'c']]
+            pred_change.append(ta.calc_pred_change(trials,params))
+        df['pred. change'] = pred_change
+        return df
+    pred_change_df = add_pred_change(avg_df3)
+
+    pred_change_shuff = []
+    for i, row in shuff.iterrows():
+        params = row['params']
+        pred_change_shuff.append(ta.calc_pred_change(trials,params))
+    shuff['pred. change'] = pred_change_shuff
+
+    avg_shuff = shuff.groupby(group_cols + ['iternum']).mean().reset_index()
+
+    if flag is not None:
+        save_flag = trial_col + '_' + value_col + '_' + flag
+    else:
+        save_flag = trial_col + '_' + value_col
+    ta.plot_r2_pval_summary(avg_shuff, pred_change_df, value_col='pred. change', save_flag=save_flag, save_dir=HA.save_dir, two_tailed=True, textsize=textsize, nIter=nIter)
 
 ########################################################################################################################
 subject_col = 'exp_name'
@@ -118,10 +152,11 @@ avg_gamma_mode_df['taste trial'] = avg_gamma_mode_df['taste_trial'].astype(int)
 #%% trialwise nonlinear regression
 for trial_col in ['session trial', 'taste trial']:
     nIter = 10000
-    df3, shuff = preprocess_nonlinear_regression(avg_gamma_mode_df, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)', overwrite=True, nIter=nIter, yMin=0, yMax=1)
-    plot_nonlinear_regression(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)', nIter=nIter, textsize=20)
-    plot_nonlinear_regression_comparison(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)', nIter=nIter, textsize=20)
-
+    df3, shuff = preprocess_nonlinear_regression(avg_gamma_mode_df, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)', overwrite=False, nIter=nIter, yMin=0, yMax=1)
+    #plot_nonlinear_regression(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)', nIter=nIter, textsize=20)
+    #plot_nonlinear_regression_comparison(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)', nIter=nIter, textsize=20)
+    plot_predicted_change(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)', nIter=nIter, textsize=20)
+    plot_session_differences(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(mode state)', nIter=nIter, textsize=20)
 ##########################################################################################33
 
 #################### analysis of accuracy ###################
@@ -131,17 +166,16 @@ NB_decode['session trial'] = NB_decode['session_trial'].astype(int)
 NB_decode['taste trial'] = NB_decode['taste_trial'].astype(int)
 NB_decode['session'] = NB_decode['time_group'].astype(int)
 epochs = ['early', 'late']
-
-
 def model_id(epoch): #zip in is a tuple of (groupby, trial_col) where groupby is a tuple of (epoch, group) and trial_col is a string of 'session trial' or 'taste trial'
     group = NB_decode[NB_decode['epoch']==epoch]
     trial_col = 'session trial'
     flag = str(epoch) + '_epoch_accuracy'
     for trial_col in ['session trial', 'taste trial']:
-        df3, shuff = preprocess_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(correct)', overwrite=True, nIter=10000, yMin=0, yMax=1)
-        plot_nonlinear_regression(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(correct)', flag=flag, nIter=10000, textsize=20)
-        plot_nonlinear_regression_comparison(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(correct)', flag=flag, nIter=10000, textsize=20)
-
+        df3, shuff = preprocess_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(correct)', overwrite=False, nIter=10000, yMin=0, yMax=1)
+        #plot_nonlinear_regression(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(correct)', flag=flag, nIter=10000, textsize=20)
+        #plot_nonlinear_regression_comparison(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(correct)', flag=flag, nIter=10000, textsize=20)
+        #plot_predicted_change(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(correct)', flag=flag, nIter=10000, textsize=20)
+        plot_session_differences(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pr(correct)', flag=flag, nIter=10000, textsize=20)
 for epoch in epochs:
     model_id(epoch)
 
@@ -160,22 +194,19 @@ import itertools
 iterlist = itertools.product(epochs, timing_cols, trial_cols)
 
 
-def model_timing(NB_timings, zip_in):
+def model_timing(timings_df, zip_in):
     epoch = zip_in[0]
     value_col = zip_in[1]
     trial_col = zip_in[2]
     print(epoch, value_col, trial_col)
-    group = NB_timings[NB_timings['epoch']==epoch]
+    group = timings_df[timings_df['epoch']==epoch]
     flag = str(epoch) + '_epoch'
     yMin = min(group[value_col])
     yMax = max(group[value_col])
-    df3, shuff = preprocess_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, overwrite=True, nIter=10000, yMin=yMin, yMax=yMax)
-    plot_nonlinear_regression(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, flag=flag, nIter=10000, textsize=20)
-    plot_nonlinear_regression_comparison(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, flag=flag, nIter=10000, textsize=20)
-
+    df3, shuff = preprocess_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, overwrite=False, nIter=10000, yMin=yMin, yMax=yMax)
+    #plot_nonlinear_regression(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, flag=flag, nIter=10000, textsize=20)
+    #plot_nonlinear_regression_comparison(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, flag=flag, nIter=10000, textsize=20)
+    #plot_predicted_change(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, flag=flag, nIter=10000, textsize=20)
+    plot_session_differences(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, flag=flag, nIter=10000, textsize=20)
 for i in iterlist:
     model_timing(NB_timings, i)
-
-from joblib import Parallel, delayed
-Parallel(n_jobs=-1)(delayed(model_timing)(NB_timings, i) for i in iterlist)
-
