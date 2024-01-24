@@ -941,46 +941,19 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, value_col=None, save_flag=None, sav
                 plt.savefig(save_dir + '/' + filename + ext)
 
 difference_index = {'1-2': 0, '2-3': 1, '1-3': 2}
-def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None, textsize=12, nIter=100, n_comp = 1):
-    unique_exp_groups = r2_df['exp_group'].unique()
-    unique_time_groups = r2_df['session'].unique()
-    r2_df['session_index'] = r2_df['session'].map(session_index)
-    shuff_r2_df['session_index'] = shuff_r2_df['session'].map(session_index)
+#plots difference in value col (normally r2) across sessions
+def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=None, save_dir=None, textsize=12, nIter=100, n_comp=1):
+    if stat_col is None:
+        stat_col = 'r2'
+    diff_col = stat_col + ' difference'
+    exp_groups = r2_diffs['exp_group'].unique()
+    #r2_diffs['session_index'] = r2_diffs['session'].map(session_index)
+    #shuff_r2_diffs['session_index'] = shuff_r2_diffs['session'].map(session_index)
 
     pal = sns.color_palette()
     colmap = {'naive': 0, 'suc_preexp': 1, 'sucrose preexposed': 1, 'sucrose pre-exposed': 1}
 
     tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
-
-    #make a new dataframe called day_diffs that contains the difference in r2 between day 1 and day 2, and day 1 and day 3, and day 2 and day 3
-    def calculate_differences(group_name, group_df):
-        results = []
-        for i in range(len(group_df) - 1):
-            for j in range(i + 1, len(group_df)):
-                diff = group_df.iloc[i]['r2'] - group_df.iloc[j]['r2']
-                session_diff = f"{group_df.iloc[i]['session']}-{group_df.iloc[j]['session']}"
-                results.append({'Group': group_name, 'Session Difference': session_diff, 'r2 difference': diff})
-        return results
-
-    group_columns = ['exp_group', 'exp_name', 'taste']
-    grouped = r2_df.groupby(group_columns)
-    results = Parallel(n_jobs=-1)(delayed(calculate_differences)(group_name, group_df.sort_values('session')) for group_name, group_df in grouped)
-    flat_results = [item for sublist in results for item in sublist]
-    r2_diffs = pd.DataFrame(flat_results)
-    expanded_groups = pd.DataFrame(r2_diffs['Group'].tolist(), columns=group_columns)
-    # Concatenate the new columns with the original DataFrame
-    r2_diffs = pd.concat([expanded_groups, r2_diffs.drop('Group', axis=1)], axis=1)
-
-    # Apply function to shuff_r2_df
-    group_columns = ['exp_group', 'exp_name', 'taste', 'iternum']
-    grouped = shuff_r2_df.groupby(group_columns)
-    results = Parallel(n_jobs=-1)(delayed(calculate_differences)(group_name, group_df.sort_values('session')) for group_name, group_df in grouped)
-    flat_results = [item for sublist in results for item in sublist]
-    shuff_r2_diffs = pd.DataFrame(flat_results)
-    expanded_groups = pd.DataFrame(shuff_r2_diffs['Group'].tolist(), columns=group_columns)
-    # Concatenate the new columns with the original DataFrame
-    shuff_r2_diffs = pd.concat([expanded_groups, shuff_r2_diffs.drop('Group', axis=1)], axis=1)
-    shuff_r2_diffs = shuff_r2_diffs.groupby(['Session Difference', 'exp_group', 'taste', 'iternum']).mean().reset_index()
 
     # bootstrap mean r2 diff value with replacement for nIter iterations
     groups = ['exp_group', 'taste', 'Session Difference']
@@ -990,17 +963,18 @@ def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None
     sess_diffs = sorted(sess_diffs, key=lambda x: difference_index[x])
     n_diffs = len(sess_diffs)
 
-    ymin = min(r2_diffs['r2 difference'].min(), shuff_r2_diffs['r2 difference'].min())
-    ymax = max(r2_diffs['r2 difference'].max(), shuff_r2_diffs['r2 difference'].max())
+    #shuff_r2_diffs = shuff_r2_diffs.groupby(['exp_group', 'taste', 'Session Difference', 'iternum']).mean().reset_index()
+    ymin = min(r2_diffs[diff_col].min())
+    ymax = max(r2_diffs[diff_col].max())
     #if ymax > 2 or ymin < -2: set ymax and ymin to 2 and -2
-    if ymax > 1:
-        ymax = 1
-    if ymin < -1:
-        ymin = -1
+    if stat_col == 'r2':
+        if ymax > 1:
+            ymax = 1
+        if ymin < -1:
+            ymin = -1
 
     # Set up the subplots
     # Iterate over each session and create a subplot
-    exp_groups = r2_df['exp_group'].unique()
     # Width of each bar
     bar_width = 0.75
     for k, exp_group in enumerate(exp_groups):
@@ -1009,8 +983,8 @@ def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None
             ax = axes[i]
         # Plot bars for each taste
             for j, taste in enumerate(tastes):
-                r2_data = r2_diffs[(r2_diffs['exp_group'] == exp_group) & (r2_diffs['Session Difference'] == sess_diff) & (r2_diffs['taste'] == taste)]['r2 difference']
-                shuff_r2_data = shuff_r2_diffs[(shuff_r2_diffs['exp_group'] == exp_group) & (shuff_r2_diffs['Session Difference'] == sess_diff) & (shuff_r2_diffs['taste'] == taste)]['r2 difference']
+                r2_data = r2_diffs[(r2_diffs['exp_group'] == exp_group) & (r2_diffs['Session Difference'] == sess_diff) & (r2_diffs['taste'] == taste)][diff_col]
+                shuff_r2_data = shuff_r2_diffs[(shuff_r2_diffs['exp_group'] == exp_group) & (shuff_r2_diffs['Session Difference'] == sess_diff) & (shuff_r2_diffs['taste'] == taste)][diff_col]
                 bar_pos = j + k * bar_width
                 indices = [j]
                 color = pal[colmap[exp_group]]
@@ -1018,10 +992,10 @@ def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None
                 plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=True, n_comp=n_comp)
 
         # Plot overall percentile bars and mean r2 values
-            r2_data = r2_diffs[(r2_diffs['exp_group'] == exp_group) & (r2_diffs['Session Difference'] == sess_diff)]['r2 difference']
+            r2_data = r2_diffs[(r2_diffs['exp_group'] == exp_group) & (r2_diffs['Session Difference'] == sess_diff)][diff_col]
             shuff_r2_data = shuff_r2_diffs[(shuff_r2_diffs['exp_group'] == exp_group) & (shuff_r2_diffs['Session Difference'] == sess_diff)]
             #get the mean of shuff_r2_data grouped by iternum
-            overall_shuff_r2_data = shuff_r2_data.groupby('iternum').mean()['r2 difference']
+            overall_shuff_r2_data = shuff_r2_data.groupby('iternum').mean()[diff_col]
             bar_pos = len(tastes) + k * bar_width
             indices = [i]
             color = pal[colmap[exp_group]]
@@ -1030,7 +1004,7 @@ def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None
 
             # Only set ylabel for the first subplot
             if i == 0:
-                ax.set_ylabel('r2 difference', size=textsize)
+                ax.set_ylabel(diff_col, size=textsize)
                 ax.yaxis.set_tick_params(labelsize=textsize * 0.9)
 
             ax.set_ylim(ymin, ymax)
@@ -1052,7 +1026,7 @@ def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None
 
     ####################################################################################################
     # save the figure as png
-        savename = exp_group + '_r2_day_diff_plot'
+        savename = exp_group + '_' + stat_col + '_day_diff_plot'
         exts = ['.png', '.svg']
         for ext in exts:
             if save_dir is not None:
@@ -1062,7 +1036,10 @@ def plot_daywise_r2_pval_diffs(shuff_r2_df, r2_df, save_flag=None, save_dir=None
                     filename = savename
                 plt.savefig(save_dir + '/' + filename + ext)
 
-def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None, textsize=12, nIter=100):
+#plots difference in value col (normally r2) between groups
+#shuff_r2_df should already be averaged across groups (no individual exp names)
+#TODO: add n_comp,
+def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None, textsize=12, nIter=100, n_comp=1):
     unique_exp_groups = r2_df['exp_group'].unique()
     unique_time_groups = r2_df['session'].unique()
     r2_df['session_index'] = r2_df['session'].map(session_index)
@@ -1123,6 +1100,47 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
     boot_mean_r2_diff = pd.DataFrame(ids, columns=groups)
     boot_mean_r2_diff['r2_diff'] = boot_r2_diffs
 
+    overall_shuff_diffs = []
+    overall_indices = []
+    for name, group in shuff_r2_df.groupby(['session', 'iternum']):
+        # get the r2 values for each exp_group
+        diffs = []
+        for exp_group in unique_exp_groups:
+            r2 = group[group['exp_group'] == exp_group]['r2'].mean()
+            # append to shuff_diff
+            diffs.append(r2)
+        # calculate the difference in r2 between the two exp_groups
+        diff = abs(float(diffs[0] - diffs[1]))
+        # append to shuff_diff
+        overall_shuff_diffs.append(diff)
+        overall_indices.append(list(name))
+    overall_shuff_diff = pd.DataFrame(overall_indices, columns=['session', 'iternum'])
+    overall_shuff_diff['r2_diff'] = overall_shuff_diffs
+
+    overall_boot_means = []
+    overall_ids = []
+    for name, group in boot_mean_r2.groupby(['exp_group', 'session', 'iternum']):
+        mean = group['r2'].mean()
+        overall_boot_means.append(mean)
+        overall_ids.append(name)
+    overall_boot_mean_r2 = pd.DataFrame(overall_ids, columns=['exp_group', 'session', 'iternum'])
+    overall_boot_mean_r2['r2'] = overall_boot_means
+
+    # overall bootstrapped mean r2 difference
+    overall_boot_r2_diffs = []
+    overall_ids = []
+    for nm, group in overall_boot_mean_r2.groupby(['session', 'iternum']):
+        diffs = []
+        for exp_group in unique_exp_groups:
+            r2 = group[group['exp_group'] == exp_group]['r2'].mean()
+            diffs.append(r2)
+        diff = abs(float(diffs[0] - diffs[1]))
+        overall_boot_r2_diffs.append(diff)
+        overall_ids.append(list(nm))
+    overall_boot_mean_r2_diff = pd.DataFrame(overall_ids, columns=['session', 'iternum'])
+    overall_boot_mean_r2_diff['r2_diff'] = overall_boot_r2_diffs
+
+
     # Get unique sessions
     sessions = shuff_r2_df['session'].unique()
     n_sessions = len(sessions)
@@ -1135,14 +1153,11 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
     bar_width = 0.25
     for i, session in enumerate(sessions):
         ax = axes[i]
-
+        #plot the data for each taste
         for j, taste in enumerate(tastes):
             for k, exp_group in enumerate(exp_groups):
-
                 r2_data = \
-                r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == session) & (r2_df['taste'] == taste)][
-                    'r2']
-
+                boot_mean_r2[(boot_mean_r2['exp_group'] == exp_group) & (boot_mean_r2['session'] == session) & (boot_mean_r2['taste'] == taste)]['r2']
                 shuff_r2_data = shuff_r2_df[
                     (shuff_r2_df['exp_group'] == exp_group) & (shuff_r2_df['session'] == session) & (
                                 shuff_r2_df['taste'] == taste)]['r2']
@@ -1151,7 +1166,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
                 indices = [j, k]
                 color = pal[colmap[exp_group]]
                 label = exp_group
-                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize)
+                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, n_comp=n_comp, boot_data=False)
             # plot the data for difference between exp_groups
             r2_data = \
             boot_mean_r2_diff[(boot_mean_r2_diff['session'] == session) & (boot_mean_r2_diff['taste'] == taste)][
@@ -1161,25 +1176,25 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
             bar_pos = (j) + (k + 1) * bar_width
             indices = [j, k + 1]
             label = '|diff|'
-            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color='black', textsize=textsize)
+            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color='black', textsize=textsize, n_comp=n_comp, boot_data=False)
 
+        #plot the data for the average across tastes
         for k, exp_group in enumerate(exp_groups):
-        # Plot overall percentile bars and mean r2 values
-            r2_data = r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == session)]['r2']
-            shuff_r2_data = shuff_r2_df[(shuff_r2_df['exp_group'] == exp_group) & (shuff_r2_df['session'] == session)][
-                'r2']
+            r2_data = overall_boot_mean_r2[(overall_boot_mean_r2['exp_group'] == exp_group) & (overall_boot_mean_r2['session'] == session)]['r2']
+            shuff_r2_data = shuff_r2_df[(shuff_r2_df['exp_group'] == exp_group) & (shuff_r2_df['session'] == session)]
+            shuff_r2_data = shuff_r2_data.groupby(['iternum']).mean().reset_index()['r2'] #average across tastes
             bar_pos = len(tastes) + k * bar_width
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize)
+            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, n_comp=n_comp, boot_data=False)
         # plot the overall difference between exp_groups
-        r2_data = boot_mean_r2_diff[(boot_mean_r2_diff['session'] == session)]['r2_diff']
-        shuff_r2_data = shuff_diff[(shuff_diff['session'] == session)]['r2_diff']
+        r2_data = overall_boot_mean_r2_diff[(overall_boot_mean_r2_diff['session'] == session)]['r2_diff']
+        shuff_r2_data = overall_shuff_diff[(overall_shuff_diff['session'] == session)]['r2_diff']
         bar_pos = len(tastes) + (k + 1) * bar_width
         indices = [i]
         label = '|diff|'
-        plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color='black', textsize=textsize)
+        plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color='black', textsize=textsize, boot_data=False, n_comp=n_comp)
 
         # Only set ylabel for the first subplot
         if i == 0:
