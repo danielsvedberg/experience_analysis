@@ -12,3 +12,5 @@ def plot_hmm(rec_dir):
 #run plot_hmm in parallel across every item in rec_dirs
 from joblib import Parallel, delayed
 Parallel(n_jobs=4)(delayed(plot_hmm)(rec_dir) for rec_dir in rec_dirs)
+
+rec_dir

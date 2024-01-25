@@ -9,6 +9,7 @@ Created on Mon Sep  5 16:37:13 2022
 import blechpy
 from blechpy.analysis import poissonHMM as phmm
 from joblib import Parallel, delayed
+import analysis as ana
 
 proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'
 proj = blechpy.load_project(proj_dir)
@@ -21,3 +22,5 @@ def load_plot_hmm(rec_dir):
     handler.plot_saved_models()
     
 Parallel(n_jobs = 6)(delayed(load_plot_hmm)(i) for i in rec_dirs)
+
+HA = phmm.HmmAnalysis(proj)
