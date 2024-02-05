@@ -1070,13 +1070,14 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
 
 #plots difference in value col (normally r2) between groups
 #shuff_r2_df should already be averaged across groups (no individual exp names)
-def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None, textsize=12, nIter=100, n_comp=1, ymin=None, ymax=None):
+def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, textsize=12, nIter=100, n_comp=1, ymin=None, ymax=None):
     #shuff r2 df should be averaged across exp_names
-
+    if stat_col is None:
+        stat_col = 'r2'
     if ymin is None:
-        ymin = min(shuff_r2_df['r2'].min(), r2_df['r2'].min())
+        ymin = min(shuff_r2_df[stat_col].min(), r2_df[stat_col].min())
     if ymax is None:
-        ymax = max(shuff_r2_df['r2'].max(), r2_df['r2'].max())
+        ymax = max(shuff_r2_df[stat_col].max(), r2_df[stat_col].max())
 
     unique_exp_groups = r2_df['exp_group'].unique()
     unique_time_groups = r2_df['session'].unique()
@@ -1095,7 +1096,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
         # get the r2 values for each exp_group
         diffs = []
         for exp_group in unique_exp_groups:
-            r2 = float(group[group['exp_group'] == exp_group]['r2'])
+            r2 = float(group[group['exp_group'] == exp_group][stat_col])
             diffs.append(r2) # append to shuff_diff
         diff = abs(diffs[0] - diffs[1]) # calculate the difference in r2 between the two exp_groups
         shuff_diffs.append(diff) # append to shuff_diff
@@ -1109,7 +1110,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
         # get the r2 values for each exp_group
         diffs = []
         for exp_group in unique_exp_groups:
-            r2 = group[group['exp_group'] == exp_group]['r2'].mean() #average across tastes
+            r2 = group[group['exp_group'] == exp_group][stat_col].mean() #average across tastes
             diffs.append(r2) # append to shuff_diff
         diff = abs(diffs[0] - diffs[1]) # calculate the difference in r2 between the two exp_groups
         overall_shuff_diffs.append(diff) # append to shuff_diff
@@ -1126,22 +1127,22 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
         print(i)
         for name, group in r2_df.groupby(groups):
             k = len(group)
-            mean = np.nanmean(random.choices(group['r2'].to_numpy(), k=k))
+            mean = np.nanmean(random.choices(group[stat_col].to_numpy(), k=k))
             boot_means.append(mean)
             ids.append(name)
             iteridx.append(i)
     boot_mean_r2 = pd.DataFrame(ids, columns=groups)
-    boot_mean_r2['r2'] = boot_means
+    boot_mean_r2[stat_col] = boot_means
     boot_mean_r2['iternum'] = iteridx
     #get taste-averaged r2 values
     overall_boot_means = []
     overall_ids = []
     for name, group in boot_mean_r2.groupby(['exp_group', 'session', 'iternum']): #get each group
-        mean = group['r2'].mean() #average across tastes
+        mean = group[stat_col].mean() #average across tastes
         overall_boot_means.append(mean)
         overall_ids.append(name)
     overall_boot_mean_r2 = pd.DataFrame(overall_ids, columns=['exp_group', 'session', 'iternum'])
-    overall_boot_mean_r2['r2'] = overall_boot_means
+    overall_boot_mean_r2[stat_col] = overall_boot_means
 
     # get the mean r2 difference in the bootstrapped r2 data
     groups = ['session', 'taste', 'iternum']
@@ -1150,7 +1151,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
     for nm, group in boot_mean_r2.groupby(groups):
         diffs = []
         for exp_group in unique_exp_groups:
-            r2 = float(group[group['exp_group'] == exp_group]['r2']) #get the value of r2 for the exp group
+            r2 = float(group[group['exp_group'] == exp_group][stat_col]) #get the value of r2 for the exp group
             diffs.append(r2)
         diff = abs(diffs[0] - diffs[1]) #get the diffs between exp groups
         boot_r2_diffs.append(diff)
@@ -1164,7 +1165,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
     for nm, group in overall_boot_mean_r2.groupby(['session', 'iternum']):
         diffs = []
         for exp_group in unique_exp_groups:
-            r2 = float(group[group['exp_group'] == exp_group]['r2']) #get the singular value of r2 for the exp group
+            r2 = float(group[group['exp_group'] == exp_group][stat_col]) #get the singular value of r2 for the exp group
             diffs.append(r2)
         diff = abs(diffs[0] - diffs[1])
         overall_boot_r2_diffs.append(diff)
@@ -1189,10 +1190,10 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
         for j, taste in enumerate(tastes):
             for k, exp_group in enumerate(exp_groups):
                 r2_data = \
-                boot_mean_r2[(boot_mean_r2['exp_group'] == exp_group) & (boot_mean_r2['session'] == session) & (boot_mean_r2['taste'] == taste)]['r2']
+                boot_mean_r2[(boot_mean_r2['exp_group'] == exp_group) & (boot_mean_r2['session'] == session) & (boot_mean_r2['taste'] == taste)][stat_col]
                 shuff_r2_data = shuff_r2_df[
                     (shuff_r2_df['exp_group'] == exp_group) & (shuff_r2_df['session'] == session) & (
-                                shuff_r2_df['taste'] == taste)]['r2']
+                                shuff_r2_df['taste'] == taste)][stat_col]
 
                 bar_pos = j + k * bar_width
                 indices = [j, k]
@@ -1212,9 +1213,9 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
 
         #plot the data for the average across tastes
         for k, exp_group in enumerate(exp_groups):
-            r2_data = overall_boot_mean_r2[(overall_boot_mean_r2['exp_group'] == exp_group) & (overall_boot_mean_r2['session'] == session)]['r2']
+            r2_data = overall_boot_mean_r2[(overall_boot_mean_r2['exp_group'] == exp_group) & (overall_boot_mean_r2['session'] == session)][stat_col]
             shuff_r2_data = shuff_r2_df[(shuff_r2_df['exp_group'] == exp_group) & (shuff_r2_df['session'] == session)]
-            shuff_r2_data = shuff_r2_data.groupby(['iternum']).mean().reset_index()['r2'] #average across tastes
+            shuff_r2_data = shuff_r2_data.groupby(['iternum']).mean().reset_index()[stat_col] #average across tastes
             bar_pos = len(tastes) + k * bar_width
             indices = [i]
             color = pal[colmap[exp_group]]
@@ -1254,7 +1255,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, save_flag=None, save_dir=None
 
     ####################################################################################################
     # save the figure as png
-    savename = 'r2_diffs_summary_bar_plot'
+    savename = stat_col + '_diffs_summary_bar_plot'
     exts = ['.png', '.svg']
     for ext in exts:
         if save_dir is not None:

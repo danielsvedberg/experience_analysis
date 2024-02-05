@@ -74,13 +74,16 @@ def plot_nonlinear_line_graphs(df3, shuff, subject_col, group_cols, trial_col, v
                              parallel=parallel, yMin=yMin, yMax=yMax)
     for exp_group, group in df3.groupby(['exp_group']):
         group_shuff = shuff.groupby('exp_group').get_group(exp_group)
-        flag = exp_group + '_' + flag
+        if flag is not None:
+            save_flag = exp_group + '_' + flag
+        else:
+            save_flag = exp_group
         ta.plot_fits_summary_avg(group, shuff_df=group_shuff, dat_col=value_col, trial_col=trial_col,
                                  save_dir=HA.save_dir, use_alpha_pos=False, textsize=textsize, dotalpha=0.15,
                                  flag=flag, nIter=nIter, parallel=parallel, yMin=yMin, yMax=yMax)
 
 #this function plots the bar graphs of the differences in r2 between exp groups
-def plot_nonlinear_regression_comparison(df3, shuff, subject_col, group_cols, trial_col, value_col, flag= None, nIter=100, ymin=None, ymax=None, textsize=20):
+def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, ymin=None, ymax=None, textsize=20):
     groups = [subject_col] + group_cols
     avg_shuff = shuff.groupby(group_cols + ['iternum']).mean().reset_index()
     avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
@@ -89,7 +92,7 @@ def plot_nonlinear_regression_comparison(df3, shuff, subject_col, group_cols, tr
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    ta.plot_r2_pval_diffs_summary(avg_shuff, avg_df3, save_flag=save_flag, save_dir=HA.save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)#re-run and replot with nIter=nIter
+    ta.plot_r2_pval_diffs_summary(avg_shuff, avg_df3, stat_col, save_flag=save_flag, save_dir=HA.save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)#re-run and replot with nIter=nIter
 
 #for each group, plot the bar graphs quantifying the r2 values
 def plot_nonlinear_regression_stats(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20, ymin=None, ymax=None):
@@ -192,22 +195,25 @@ group_cols = ['exp_group','session','taste']
 def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nIter=10000, flag=None):
     subject_col = 'exp_name'
     plot_nonlinear_line_graphs(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, yMin=ymin, yMax=ymax, flag=flag)
-    #plot the stats quantificaiton of the r2 values
-    plot_nonlinear_regression_stats(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
-    # #plot the stats quantificaation of the r2 values with head to head of naive vs sucrose preexposed
-    plot_nonlinear_regression_comparison(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
-    # #plot the sessionwise differences in the r2 values
-    plot_session_differences(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
-                             value_col=value_col, stat_col='r2', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
-    r2_pred_change, shuff_r2_pred_change = get_pred_change(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col)
+    # #plot the stats quantificaiton of the r2 values
+    # plot_nonlinear_regression_stats(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
+    # # #plot the stats quantificaation of the r2 values with head to head of naive vs sucrose preexposed
+    #plot_nonlinear_regression_comparison(df3, shuff, stat_col='r2', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
+    # # #plot the sessionwise differences in the r2 values
+    # plot_session_differences(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
+    #                          value_col=value_col, stat_col='r2', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
+    #r2_pred_change, shuff_r2_pred_change = get_pred_change(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col)
     # # #plot the predicted change in value col over the course of the session, with stats
-    plot_predicted_change(r2_pred_change, shuff_r2_pred_change, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
-                          value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
-    # # #plot the session differences in the predicted change of value col
-    plot_session_differences(r2_pred_change, shuff_r2_pred_change, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
-                             value_col=value_col, stat_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
+    # plot_predicted_change(r2_pred_change, shuff_r2_pred_change, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
+    #                       value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
+    # # # #plot the session differences in the predicted change of value col
+    # plot_session_differences(r2_pred_change, shuff_r2_pred_change, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
+    #                          value_col=value_col, stat_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
 
-
+    #plot the within session difference between naive and preexp for pred. change
+    #ymin = min(r2_pred_change['pred. change'].min(), shuff_r2_pred_change['pred. change'].min())
+    #ymax = max(r2_pred_change['pred. change'].max(), shuff_r2_pred_change['pred. change'].max())
+    #plot_nonlinear_regression_comparison(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
 ########################################################################################################################
 
 #################### analysis of gamma mode ####################
@@ -223,9 +229,9 @@ for trial_col in ['session trial']:#, 'taste trial']:
     df3, shuff = preprocess_nonlinear_regression(avg_gamma_mode_df, subject_col=subject_col, group_cols=group_cols,
                                                          trial_col=trial_col, value_col='pr(mode state)', overwrite=False,
                                                          nIter=10000, yMin=0, yMax=1)
-    df3['pr(mode trial)'] = df3['pr(mode state)']
+    df3['stereotypy'] = df3['pr(mode state)']
     #shuff['pr(mode trial)'] = shuff['pr(mode state)']
-    plotting_pipeline(df3, shuff, trial_col=trial_col, value_col='pr(mode trial)', ymin=0, ymax=1, nIter=10000)
+    plotting_pipeline(df3, shuff, trial_col=trial_col, value_col='stereotypy', ymin=0, ymax=1, nIter=10000)
 
 # ta.plot_fits(df3, dat_col='pr(mode trial)', trial_col='session trial', save_dir=HA.save_dir, use_alpha_pos=False)
 # naive_only = df3[df3['exp_group']=='naive']
@@ -240,7 +246,7 @@ NB_decode['pr(correct)'] = NB_decode['p_correct'].astype(float)
 NB_decode['session trial'] = NB_decode['session_trial'].astype(int)
 NB_decode['taste trial'] = NB_decode['taste_trial'].astype(int)
 NB_decode['session'] = NB_decode['time_group'].astype(int)
-epochs = ['early']
+epochs = ['early', 'late']
 def model_id(epoch): #zip in is a tuple of (groupby, trial_col) where groupby is a tuple of (epoch, group) and trial_col is a string of 'session trial' or 'taste trial'
     group = NB_decode[NB_decode['epoch']==epoch]
     trial_col = 'session trial'
@@ -261,9 +267,9 @@ NB_timings['t(start)'] = NB_timings['t_start']
 NB_timings['t(end)'] = NB_timings['t_end']
 NB_timings['t(med)'] = NB_timings['t_med']
 group_cols = ['exp_group','session','taste']
-timing_cols = ['t(start)', 't(end)', 't(med)']#, 't_med', 'duration']
+timing_cols = ['t(start)']#, 't(end)', 't(med)']#, 't_med', 'duration']
 trial_cols = ['session trial']
-epochs = ['early', 'late']
+epochs = ['late']#['early', 'late']
 import itertools
 iterlist = itertools.product(epochs, timing_cols, trial_cols)
 
@@ -277,7 +283,7 @@ for epoch, value_col, trial_col in iterlist:
     flag = str(epoch)
     yMin = 0
     yMax = max(group[value_col])
-    df3, shuff = preprocess_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, overwrite=True, nIter=10000, yMin=yMin, yMax=yMax, flag=flag)
+    df3, shuff = preprocess_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, overwrite=False, nIter=10000, yMin=yMin, yMax=yMax, flag=flag)
     plotting_pipeline(df3, shuff, trial_col=trial_col, value_col=value_col, ymin=yMin, ymax=yMax, nIter=10000, flag=flag)
 
 
