@@ -724,10 +724,10 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
                 legend_handles.append(legend_handle)
 
         # plot data points:
-        # for nm, group in plot_df.groupby(['session', 'session_index', 'exp_group', 'exp_group_index']):
-        #     ax = axes[nm[1]]
-        #     color = pal[nm[3]]
-        #     plot_scatter(ax, group, color=color, dat_col=dat_col, trial_col=trial_col, dotalpha=dotalpha)
+        for nm, group in plot_df.groupby(['session', 'session_index', 'exp_group', 'exp_group_index']):
+            ax = axes[nm[1]]
+            color = pal[nm[3]]
+            plot_scatter(ax, group, color=color, dat_col=dat_col, trial_col=trial_col, dotalpha=dotalpha)
 
         # plot average model:
         for nm, group in plot_df.groupby(['session', 'session_index', 'exp_group', 'exp_group_index']):
@@ -754,7 +754,7 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
         plt.subplots_adjust(wspace=0.01, top=0.875, bottom=0.15, right=0.98, left=0.1)
 
         ax = axes[-1]
-        ax.legend(handles=legend_handles, loc='lower right', ncol=1, fontsize=textsize * 0.8)
+        ax.legend(handles=legend_handles, loc='best', ncol=1, fontsize=textsize * 0.8)
 
         return fig, axes
 
@@ -1394,3 +1394,95 @@ def preprocess_nonlinear_regression(df, subject_col, group_cols, trial_col, valu
     if shuffle is [] or shuffle is None:
         raise ValueError('shuffle is None')
     return df3, shuffle
+
+def plot_nonlinear_regression_stats(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20, ymin=None, ymax=None, save_dir=None):
+    groups = [subject_col] + group_cols
+    avg_shuff = shuff.groupby(groups + ['iternum']).mean().reset_index() #average across exp_names
+    avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
+
+    for exp_group, group in avg_df3.groupby(['exp_group']):
+        avg_group_shuff = avg_shuff.groupby('exp_group').get_group(exp_group)
+
+        if flag is not None:
+            save_flag = trial_col + '_' + value_col + '_' + flag
+        else:
+            save_flag = trial_col + '_' + value_col + '_' + exp_group + '_only'
+        plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)
+
+def get_session_differences(df3, shuff, stat_col='r2'):
+    diff_col = stat_col + ' difference'
+    #make a new dataframe called day_diffs that contains the difference in r2 between day 1 and day 2, and day 1 and day 3, and day 2 and day 3
+    def calculate_differences(group_name, group_df):
+        results = []
+        for i in range(len(group_df) - 1):
+            for j in range(i + 1, len(group_df)):
+                diff = group_df.iloc[i][stat_col] - group_df.iloc[j][stat_col]
+                session_diff = f"{group_df.iloc[i]['session']}-{group_df.iloc[j]['session']}"
+                results.append({'Group': group_name, 'Session Difference': session_diff, diff_col: diff})
+        return results
+
+    group_columns = ['exp_group', 'exp_name', 'taste']
+    grouped = df3.groupby(group_columns)
+    results = Parallel(n_jobs=-1)(delayed(calculate_differences)(group_name, group_df.sort_values('session')) for group_name, group_df in grouped)
+    flat_results = [item for sublist in results for item in sublist]
+    r2_diffs = pd.DataFrame(flat_results)
+    expanded_groups = pd.DataFrame(r2_diffs['Group'].tolist(), columns=group_columns)
+    # Concatenate the new columns with the original DataFrame
+    r2_diffs = pd.concat([expanded_groups, r2_diffs.drop('Group', axis=1)], axis=1)
+
+    # Apply function to shuff_r2_df
+    group_columns = ['exp_group', 'exp_name', 'taste', 'iternum']
+    grouped = shuff.groupby(group_columns)
+    results = Parallel(n_jobs=-1)(delayed(calculate_differences)(group_name, group_df.sort_values('session')) for group_name, group_df in grouped)
+    flat_results = [item for sublist in results for item in sublist]
+    shuff_r2_diffs = pd.DataFrame(flat_results)
+    expanded_groups = pd.DataFrame(shuff_r2_diffs['Group'].tolist(), columns=group_columns)
+    # Concatenate the new columns with the original DataFrame
+    shuff_r2_diffs = pd.concat([expanded_groups, shuff_r2_diffs.drop('Group', axis=1)], axis=1)
+    shuff_r2_diffs = shuff_r2_diffs.groupby(['Session Difference', 'exp_group', 'taste', 'iternum']).mean().reset_index()
+    return r2_diffs, shuff_r2_diffs
+
+def plot_session_differences(df3, shuff, subject_col, group_cols, trial_col, value_col, stat_col=None, flag=None, nIter=100, textsize=20, ymin=None, ymax=None, save_dir=None):
+    if stat_col is None:
+        stat_col = 'r2'
+
+    r2_diffs, shuff_r2_diffs = get_session_differences(df3, shuff, stat_col=stat_col)
+    groups = [subject_col] + group_cols
+    #avg_df3 = df3.groupby(groups).mean().reset_index()
+
+    if flag is not None:
+        save_flag = trial_col + '_' + value_col + '_' + flag
+    else:
+        save_flag = trial_col + '_' + value_col
+    plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)
+
+def get_pred_change(df3, shuff, subject_col, group_cols, trial_col):
+    groups = [subject_col] + group_cols
+    trials = df3[trial_col].unique()
+
+    avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
+    def add_pred_change(df):
+        pred_change = []
+        for i, row in df.iterrows():
+            params = row[['alpha', 'beta', 'c']]
+            pred_change.append(calc_pred_change(trials, params))
+        df['pred. change'] = pred_change
+        return df
+
+    pred_change_df = add_pred_change(avg_df3)
+
+    pred_change_shuff = []
+    for i, row in shuff.iterrows():
+        params = row['params']
+        pred_change_shuff.append(calc_pred_change(trials, params))
+    shuff['pred. change'] = pred_change_shuff
+    return pred_change_df, shuff
+def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20, ymin=None, ymax=None, save_dir=None):
+
+    avg_shuff = pred_change_shuff.groupby(group_cols + ['iternum']).mean().reset_index()
+
+    if flag is not None:
+        save_flag = trial_col + '_' + value_col + '_' + flag
+    else:
+        save_flag = trial_col + '_' + value_col
+    plot_r2_pval_summary(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, two_tailed=True, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)

@@ -195,25 +195,25 @@ group_cols = ['exp_group','session','taste']
 def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nIter=10000, flag=None):
     subject_col = 'exp_name'
     plot_nonlinear_line_graphs(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, yMin=ymin, yMax=ymax, flag=flag)
-    # #plot the stats quantificaiton of the r2 values
-    # plot_nonlinear_regression_stats(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
-    # # #plot the stats quantificaation of the r2 values with head to head of naive vs sucrose preexposed
-    #plot_nonlinear_regression_comparison(df3, shuff, stat_col='r2', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
-    # # #plot the sessionwise differences in the r2 values
-    # plot_session_differences(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
-    #                          value_col=value_col, stat_col='r2', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
-    #r2_pred_change, shuff_r2_pred_change = get_pred_change(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col)
-    # # #plot the predicted change in value col over the course of the session, with stats
-    # plot_predicted_change(r2_pred_change, shuff_r2_pred_change, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
-    #                       value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
-    # # # #plot the session differences in the predicted change of value col
-    # plot_session_differences(r2_pred_change, shuff_r2_pred_change, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
-    #                          value_col=value_col, stat_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
+    #plot the stats quantificaiton of the r2 values
+    plot_nonlinear_regression_stats(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
+    # #plot the stats quantificaation of the r2 values with head to head of naive vs sucrose preexposed
+    plot_nonlinear_regression_comparison(df3, shuff, stat_col='r2', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
+    # #plot the sessionwise differences in the r2 values
+    plot_session_differences(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
+                             value_col=value_col, stat_col='r2', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
+    r2_pred_change, shuff_r2_pred_change = get_pred_change(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col)
+    # #plot the predicted change in value col over the course of the session, with stats
+    plot_predicted_change(r2_pred_change, shuff_r2_pred_change, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
+                          value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
+    # # #plot the session differences in the predicted change of value col
+    plot_session_differences(r2_pred_change, shuff_r2_pred_change, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
+                             value_col=value_col, stat_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
 
-    #plot the within session difference between naive and preexp for pred. change
-    #ymin = min(r2_pred_change['pred. change'].min(), shuff_r2_pred_change['pred. change'].min())
-    #ymax = max(r2_pred_change['pred. change'].max(), shuff_r2_pred_change['pred. change'].max())
-    #plot_nonlinear_regression_comparison(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
+    # plot the within session difference between naive and preexp for pred. change
+    ymin = min(r2_pred_change['pred. change'].min(), shuff_r2_pred_change['pred. change'].min())
+    ymax = max(r2_pred_change['pred. change'].max(), shuff_r2_pred_change['pred. change'].max())
+    plot_nonlinear_regression_comparison(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
 ########################################################################################################################
 
 #################### analysis of gamma mode ####################
