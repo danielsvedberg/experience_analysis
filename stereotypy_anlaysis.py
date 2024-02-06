@@ -1,21 +1,17 @@
-#first I need to loop through each recording
-#then I need to load the h5 file of each recording
-#then I need to loop through the unique dins for each recording
-#then I need to load the rate arrays for each din
-#then I need to get the average firing rate for each din across all the trials
-#then I need to get the cosine distance between the average firing rate and the firing rate of each trial
-#then I need to calculate the euclidean distance between the average firing rate and the firing rate of each trial
-
 import blechpy
 import numpy as np
 import blechpy.dio.h5io as h5io
 import pandas as pd
 from joblib import Parallel, delayed
+import trialwise_analysis as ta
+import analysis as ana
 
 proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy' # directory where the project is
 proj = blechpy.load_project(proj_dir) #load the project
 rec_info = proj.rec_info.copy() #get the rec_info table
 rec_dirs = rec_info['rec_dir']
+
+PA = ana.ProjectAnalysis(proj)
 
 def get_trial_info(dat):
     dintrials = dat.dig_in_trials
@@ -65,8 +61,12 @@ def process_rec_dir(rec_dir):
         })
         df_list.append(df)
     df = pd.concat(df_list, ignore_index=True)
-    #add index info to df from dintrials using merge
-    df = pd.merge(df, dintrials, on='taste_trial')
+    #add index info to df from dintrials using merge on taste_trial and channel
+    df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
+    #remove all rows where taste == 'Spont'
+    df = df.loc[df['taste'] != 'Spont']
+    #subtract the min of 'session_trial' from 'session_trial' to get the session_trial relative to the start of the recording
+    df['session_trial'] = df['session_trial'] - df['session_trial'].min()
     return df
 
 
@@ -79,3 +79,10 @@ final_df = pd.concat(final_dfs, ignore_index=True)
 
 #merge in rec_info into final_df
 final_df = pd.merge(final_df, rec_info, on='rec_dir')
+final_df['session'] = final_df['rec_num']
+
+subject_col = 'exp_name'
+group_cols = ['exp_group','session','taste']
+trial_col = 'session_trial'
+value_col = 'euclidean_distance'
+preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df,subject_col,group_cols,trial_col,value_col,nIter=100, save_dir=PA.save_dir, overwrite=True)

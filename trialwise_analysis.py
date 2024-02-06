@@ -1346,3 +1346,51 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
         else:
             savename = '/' + save_flag + '_r2_perm_test.png'
         plt.savefig(save_dir + savename)
+
+def preprocess_nonlinear_regression(df, subject_col, group_cols, trial_col, value_col, yMin=None, yMax=None, parallel=True, overwrite=False, nIter=10000, save_dir=None, flag=None):
+    groupings = [subject_col] + group_cols
+    params, r2, y_pred = nonlinear_regression(df, subject_cols=groupings, trial_col=trial_col, value_col=value_col,
+                                                 parallel=parallel, yMin=yMin, yMax=yMax)
+    r2_df = pd.Series(r2).reset_index()  # turn dict into a series with multi-index
+    r2_df = r2_df.reset_index(drop=True)  # reset the index so it becomes a dataframe
+    colnames = groupings + ['r2']
+    column_mapping = dict(zip(r2_df.columns, colnames))
+    r2_df = r2_df.rename(columns=column_mapping)
+
+    #r2_df_groupmean = r2_df.groupby(group_cols).mean().reset_index()
+    # %% plot the nonlinear regression fits with the raw data
+    identifiers = []
+    alpha = []
+    beta = []
+    c = []
+    for i, group in df.groupby(groupings):
+        pr = params[i]
+        identifiers.append(i)
+        alpha.append(pr[0])
+        beta.append(pr[1])
+        c.append(pr[2])
+
+    ids_df = pd.DataFrame(identifiers, columns=groupings)
+    params_df = ids_df.copy()
+    params_df['alpha'] = alpha
+    params_df['beta'] = beta
+    params_df['c'] = c
+
+    # merge the params with df
+    df2 = df.merge(params_df, on=groupings)
+    df3 = df2.merge(r2_df, on=groupings)
+    # for each row of df3, get the modeled value for that row, by passing the trial number and alpha, beta, c values to the model function
+    modeled = []
+    for i, row in df3.iterrows():
+        pr = row[['alpha', 'beta', 'c']]
+        mod = model(row[trial_col], *pr)
+        modeled.append(mod)
+    df3['modeled'] = modeled
+    # get the null distribution of r2 values
+    shuffle = iter_shuffle(df3, nIter=nIter, subject_cols=groupings, trial_col=trial_col, value_col=value_col,
+                            yMin=yMin, yMax=yMax,
+                            save_dir=save_dir, overwrite=overwrite, parallel=parallel, flag=flag)
+
+    if shuffle is [] or shuffle is None:
+        raise ValueError('shuffle is None')
+    return df3, shuffle
