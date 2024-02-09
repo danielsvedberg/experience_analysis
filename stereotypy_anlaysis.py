@@ -289,7 +289,7 @@ def kmeans_cluster(rec_dir, n_clusters=2):
         rate = np.nan_to_num(rate)
         for bin in range(rate.shape[2]):
 
-            kmeans = KMeans(n_clusters=2, random_state=0).fit(rate[:,:,bin].T)
+            kmeans = KMeans(n_clusters=2, random_state=0).fit(rate[:,:,:].T)
             labels = kmeans.labels_
             df = pd.DataFrame({
                 'rec_dir': rec_dir,
