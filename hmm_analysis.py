@@ -420,6 +420,8 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
     # spike_array is trial x neuron x time
     rates = []
     trial_nums = []
+    start_times = []
+    end_times = []
     for trial, (spikes, path) in enumerate(zip(spike_array, seqs)):
         
         if trial not in valid_trials: # Skip if state is not in trial
@@ -464,11 +466,13 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
         else:
             trial_nums.append(trial)
             rates.append(tmp)
+            start_times.append(t1)
+            end_times.append(t2)
     
         if any(np.isnan(rates[0])):
             raise Exception("empty spike array")
 
-    return np.array(rates), np.array(trial_nums)
+    return np.array(rates), np.array(trial_nums), np.array(start_times), np.array(end_times)
 
 def get_baseline_rates(rec_dir, hmm_id, units=None, min_dur=50, max_dur = 3000,):
     h5_file = get_hmm_h5(rec_dir)
@@ -513,7 +517,7 @@ def get_classifier_data(group, states, label_col, all_units,
         un = units[rec_dir]
         #if error is "selection lists cannot have repeated values" then you have repeated units in all_units, go fix PA.detect_held_units()
         #get baseline data:
-        tmp_ps_r, tmp_ps_trials = get_state_firing_rates(rec_dir,hmm_id,b_state, 
+        tmp_ps_r, tmp_ps_trials ,start, end = get_state_firing_rates(rec_dir,hmm_id,b_state,
                                                     units = un,
                                                     remove_baseline=remove_baseline,
                                                     other_state=None)
@@ -529,7 +533,7 @@ def get_classifier_data(group, states, label_col, all_units,
             continue
             
         #get early state data:
-        tmp_e_r, tmp_e_trials = get_state_firing_rates(rec_dir, hmm_id, e_state,
+        tmp_e_r, tmp_e_trials ,start, end = get_state_firing_rates(rec_dir, hmm_id, e_state,
                                                    units=un,
                                                    remove_baseline=remove_baseline,
                                                    other_state=None)
@@ -543,7 +547,7 @@ def get_classifier_data(group, states, label_col, all_units,
             identifiers.extend(tmp_e_id)
         
         #get late state data:
-        tmp_l_r, tmp_l_trials = get_state_firing_rates(rec_dir, hmm_id, l_state,
+        tmp_l_r, tmp_l_trials ,start, end = get_state_firing_rates(rec_dir, hmm_id, l_state,
                                                    units=un,
                                                    remove_baseline=remove_baseline,
                                                    other_state=None) 
@@ -563,6 +567,79 @@ def get_classifier_data(group, states, label_col, all_units,
     rates = np.vstack(rates)
     identifiers = np.array(identifiers)  # rec_dir, hmm_id, taste, trial_#
     return labels, rates, identifiers
+
+
+def get_classifier_data2(group, states, label_col, all_units,
+                        remove_baseline=False):
+    units = get_common_units(group, all_units)
+    if units == {}:
+        return None, None, None
+
+    labels = []
+    rates = []
+    identifiers = []
+    for i, row in group.iterrows():
+        rec_dir = row['rec_dir']
+        hmm_id = int(row['hmm_id'])
+        label = row[label_col]
+        b_state = states[label + '_bsln']
+        e_state = states[label + '_early']
+        l_state = states[label + '_late']
+
+        un = units[rec_dir]
+        # if error is "selection lists cannot have repeated values" then you have repeated units in all_units, go fix PA.detect_held_units()
+        # get baseline data:
+        tmp_ps_r, tmp_ps_trials ,start, end = get_state_firing_rates(rec_dir, hmm_id, b_state,
+                                                         units=un,
+                                                         remove_baseline=remove_baseline,
+                                                         other_state=None)
+        tmp_ps_l = np.repeat('prestim', tmp_ps_r.shape[0])
+
+        tmp_ps_id = [(rec_dir, hmm_id, row[label_col], x, b_state, True) for x in tmp_ps_trials]
+
+        if len(tmp_ps_r) != 0:
+            labels.append(tmp_ps_l)
+            rates.append(tmp_ps_r)
+            identifiers.extend(tmp_ps_id)
+        else:
+            continue
+
+        # get early state data:
+        tmp_e_r, tmp_e_trials , start, end = get_state_firing_rates(rec_dir, hmm_id, e_state,
+                                                       units=un,
+                                                       remove_baseline=remove_baseline,
+                                                       other_state=None)
+
+        tmp_e_l = np.repeat(row[label_col] + '_early', tmp_e_r.shape[0])
+        tmp_e_id = [(rec_dir, hmm_id, row[label_col], x, e_state, False) for x in tmp_e_trials]
+
+        if len(tmp_e_r) != 0:
+            labels.append(tmp_e_l)
+            rates.append(tmp_e_r)
+            identifiers.extend(tmp_e_id)
+
+        # get late state data:
+        tmp_l_r, tmp_l_trials , start, end = get_state_firing_rates(rec_dir, hmm_id, l_state,
+                                                       units=un,
+                                                       remove_baseline=remove_baseline,
+                                                       other_state=None)
+        tmp_l_l = np.repeat(row[label_col] + '_late', tmp_l_r.shape[0])
+        tmp_l_id = [(rec_dir, hmm_id, row[label_col], x, l_state, False) for x in tmp_l_trials]
+
+        if len(tmp_l_r) != 0:
+            labels.append(tmp_l_l)
+            rates.append(tmp_l_r)
+            identifiers.extend(tmp_l_id)
+
+    # if no valid trials were found for any taste
+    if len(rates) == 0:
+        return None, None, None
+
+    labels = np.concatenate(labels)
+    rates = np.vstack(rates)
+    identifiers = np.array(identifiers)  # rec_dir, hmm_id, taste, trial_#
+    return labels, rates, identifiers
+
 
 #the error that happens is that all_units has duplicate entries for DS39, must filter them out at some point
 def get_common_units(group, all_units):
@@ -967,7 +1044,6 @@ def analyze_NB_state_classification(best_hmms,all_units):
             if (labels is not None) & (rates is not None):
                 model = stats.NBClassifier(labels, rates, row_id=identifiers)
                 res = model.leave1out_fit()
-
                 NB_res.append(res)  
                 n_trials_decoded = []
                 
@@ -1016,6 +1092,94 @@ def analyze_NB_state_classification(best_hmms,all_units):
     
     return NB_res, NB_meta #should do process_NB_classification next
 
+def NB_state_classification(best_hmms, all_units):
+# classify all the states at once
+    best_hmms = best_hmms.copy()
+    all_units = all_units.copy()
+    label_col = 'taste'
+    id_cols = ['exp_name', 'exp_group', 'time_group']
+
+    all_units = all_units.query('area == "GC" and single_unit == True')
+    best_hmms_ = best_hmms.dropna(subset=['hmm_id'])
+    best_hmms_['single_state_trials'] = best_hmms_.apply(lambda x: check_single_state_trials(x, min_dur=50), axis=1)
+
+    NB_res = []
+    for name, group in best_hmms_.groupby(id_cols):
+        un = get_common_units(group, all_units)
+        res = NB_classify_rec(group, un)
+        NB_res.append(res)
+    result = pd.concat(NB_res, axis=0, ignore_index=True, sort=False)
+    return result
+#classify rec is the sub function to NB_state_classification
+def NB_classify_rec(group, units):
+    labels = []
+    rates = []
+    identifiers = []
+    trials = []
+    state_starts = []
+    state_ends = []
+    for i, row in group.iterrows():
+        rec_dir = row['rec_dir']
+        un = units[rec_dir]
+        h5 = get_hmm_h5(rec_dir)
+        hmm, _, _ = ph.load_hmm_from_hdf5(h5, row['hmm_id'])
+
+        for i in range(hmm.n_states):
+            label = row['taste'] + '_' + str(i)
+            tmp_r, tmp_trials , start, end = get_state_firing_rates(row['rec_dir'], row['hmm_id'], i, units=un, other_state=None,
+                                                       remove_baseline=False)
+            tmp_id = [(rec_dir, row['hmm_id'], row['taste'], x, i) for x in tmp_trials]
+            # for each index in dim 0 of tmp_r, append the label and id
+            trials.extend(tmp_trials)
+            rates.extend(tmp_r)
+            state_starts.extend(start)
+            state_ends.extend(end)
+            identifiers.extend(tmp_id)
+            if len(tmp_r) != 0:
+                for j in range(tmp_r.shape[0]):
+                    labels.append(label)
+
+    # bind rates along dim 0
+    rates = np.vstack(rates)
+    # turn labels to a numpy array
+    labels = np.array(labels)
+    state_starts = np.array(state_starts)
+    state_ends = np.array(state_ends)
+    NB_res = []
+
+    if (labels is not None) & (rates is not None):
+        model = stats.NBClassifier(labels, rates, row_id=identifiers)
+
+        res = model.leave1out_fit()
+        res_frame = res.class_probs
+        res_frame['t_start'] = state_starts
+        res_frame['t_end'] = state_ends
+        res_frame['label'] = labels
+        res_frame['Y'] = res.Y
+        res_frame['Y_pred'] = res.Y_predicted
+        res_frame['row_ID'] = identifiers
+        res_frame[['rec_dir', 'hmm_id', 'taste', 'trial', 'state']] = pd.DataFrame(res_frame['row_ID'].tolist(),
+                                                                                   index=res_frame.index)
+        #drop the row_ID column
+        res_frame = res_frame.drop(columns='row_ID')
+        NB_res.append(res_frame)
+        NB_res = pd.concat(NB_res)
+        #make 2 new columns called 'taste_pred' and 'state_pred' from the 'Y_pred' column, by splitting the entries in 'Y_pred' by '_'
+        NB_res[['taste_pred', 'state_pred']] = NB_res['Y_pred'].str.split('_', expand=True)
+        #make a column called 'p_correct' where for each row, is the value in the column with a name matching the entry in 'Y' for that row
+        NB_res['p_correct'] = NB_res.lookup(NB_res.index, NB_res['Y'])
+        for i in ['Suc', 'NaCl', 'CA', 'QHCl']:
+            #create a column using the name of i, where for each row, the value is the sum of the columns containing the string i
+            NB_res[i] = NB_res.filter(like=i).sum(axis=1)
+        NB_res['p_taste_correct'] = NB_res.lookup(NB_res.index, NB_res['taste'])
+
+        return NB_res  # should do process_NB_classification next
+    else:
+        print('epic fail')
+        return None
+
+
+
 def generate_state_combos(group):
     id_tastes = group.taste
     
@@ -1056,7 +1220,8 @@ def generate_state_combos(group):
         
     print(state_df)
     return state_df, el_tastes
-    
+
+
 def nb_group(group, all_units):
     label_col = 'taste'
     state_df, el_tastes = generate_state_combos(group)
@@ -1799,7 +1964,7 @@ def analyze_hmm_state_timing(best_hmms, min_dur=100):
                 'state_group', 'state_num', 't_start', 't_end', 't_med','duration', 'pos_in_trial',
                 'unit_type', 'area', 'dt', 'n_states', 'notes', 'valid']
     
-    best_hmms = best_hmms.dropna(subset=['hmm_id', 'early_state']).copy()
+    #best_hmms = best_hmms.dropna(subset=['hmm_id', 'early_state']).copy()
 
     best_hmms.loc[:,'hmm_id'] = best_hmms['hmm_id'].astype('int')
     #best_hmms['ID_state'] = best_hmms['ID_state'].astype('int')
@@ -1827,11 +1992,10 @@ def analyze_hmm_state_timing(best_hmms, min_dur=100):
         for ids, path in zip(row_id, best_seqs):
             tmp = template.copy()
             tmp['trial'] = int(ids[-1])
-            tmp['trial_group'] = (lambda x: int(x/5)+1)(tmp['trial'])
-            
-            id_valid = is_state_in_seq(path, row['early_state'], min_pts=min_pts, time=time)
+            #commented out for new NB analysis
+            #id_valid = is_state_in_seq(path, row['early_state'], min_pts=min_pts, time=time)
             #tmp['valid'] = (e_valid and l_valid)
-            tmp['valid'] = (id_valid)
+            #tmp['valid'] = (id_valid)
 
             summary = summarize_sequence(path).astype('int')
             # Skip single state trials
@@ -1851,10 +2015,9 @@ def analyze_hmm_state_timing(best_hmms, min_dur=100):
                 s_tmp['t_med'] = median([s_tmp['t_end'], s_tmp['t_start']])
                 s_tmp['duration'] = s_row[3]/dt
                 # only first appearance of state is marked as early or late
-                if s_row[0] == row['early_state'] and not early_flag:
-                    s_tmp['state_group'] = 'ID'
-                    ID_flag = True
-
+                # if s_row[0] == row['early_state'] and not early_flag:
+                #     s_tmp['state_group'] = 'ID'
+                #     ID_flag = True
                 s_tmp['pos_in_trial'] = j
                 out.append(s_tmp)
             

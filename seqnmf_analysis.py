@@ -144,7 +144,7 @@ Diss = np.zeros((int(comb(numfits, 2, exact=True)), 10))
 for k in range(1, 11):
     print(f'running seqNMF with K = {k}')
     for ii in range(numfits):
-        Ws[ii, k], Hs[ii, k] = seqnmf.seqnmf(X, k, L, 0)
+        Ws[ii, k], Hs[ii, k] , cost, loadings, power = seqnmf.seqnmf(X, k, L, 0)
     inds = np.array([index for index in comb(np.arange(numfits), 2, exact=True)])
     for i, (ind1, ind2) in enumerate(inds):
         Diss[i, k-1] = DISSX(Hs[ind1, k], Ws[ind1, k], Hs[ind2, k], Ws[ind2, k])

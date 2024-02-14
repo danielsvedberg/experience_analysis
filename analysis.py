@@ -1420,6 +1420,30 @@ class HmmAnalysis(object):
         BIC_file = os.path.join(self.save_dir, 'bic_comparison.svg')
         nplt.plot_BIC(ho, self.project, save_file=BIC_file)
 
+    def analyze_NB_ID2(self, overwrite=False):
+        save_dir = self.save_dir
+        ID_decode_sf = os.path.join(save_dir, 'all_states_decode.feather')
+
+        if os.path.isfile(ID_decode_sf) and not overwrite:
+            NB_res = feather.read_dataframe(ID_decode_sf)
+            return NB_res
+        else:
+            best_hmms = self.get_best_hmms(sorting='AIC')
+            proj = self.project
+            PA = ProjectAnalysis(proj)
+            din_trial_df = proj.get_dig_in_trial_df(reformat=True)
+            all_units, held_units = PA.get_unit_info()
+            NB_res = hmma.NB_state_classification(best_hmms, all_units)
+            #rename trial to 'taste_trial'
+            NB_res = NB_res.rename(columns = {'trial': 'taste_trial'})
+            #merge with dig_in_trial_df along 'rec_dir' and 'taste_trial' and 'taste'
+            NB_res = pd.merge(NB_res, din_trial_df, on=['rec_dir', 'taste_trial', 'taste'], how='left')
+            #drop the 'label' column
+            NB_res = NB_res.drop(columns=['label'])
+            #save NB_res to feather
+            feather.write_dataframe(NB_res, ID_decode_sf)
+            return NB_res
+
     def analyze_NB_ID(self, overwrite=True, multi_process=False, sorting="best_AIC"):
         '''
         critical function for pizza talk decoding analysis of HMM states

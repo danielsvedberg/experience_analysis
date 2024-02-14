@@ -9,7 +9,7 @@ import numpy as np
 import trialwise_analysis as ta
 import scipy.stats as stats
 
-proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts'  # directory where the project is
+proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 

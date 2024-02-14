@@ -308,6 +308,7 @@ class NBClassifier(object):
         n_splits = lpo.get_n_splits(Y)
         correct = 0
         predictions = np.zeros((n_splits,), object)
+        class_probs = []
         for train_idx, test_idx in lpo.split(Y):
             train_x = X[train_idx, :]
             train_y = Y[train_idx]
@@ -315,14 +316,17 @@ class NBClassifier(object):
             test_y = Y[test_idx]
             gnb = GaussianNB()
             y_pred = gnb.fit(train_x, train_y).predict(test_x)
+            probs = pd.DataFrame(gnb.predict_proba(test_x), columns=gnb.classes_)
+            class_probs.append(probs)
             predictions[test_idx] = y_pred[0]
             correct += (test_y == y_pred).sum()
+        class_probs = pd.concat(class_probs).reset_index(drop=True)
 
         full_model = GaussianNB()
         full_model.fit(X,Y)
         accuracy = 100* (correct/n_splits)
         self.model = full_model
-        self.result = ClassifierResult(accuracy, X, Y, predictions, row_id=self.row_id, model=full_model)
+        self.result = ClassifierResult(accuracy, X, Y, predictions, row_id=self.row_id, model=full_model, class_probs=class_probs)
         return self.result
 
 
@@ -370,7 +374,7 @@ class LDAClassifier(object):
 
 
 class ClassifierResult(object):
-    def __init__(self, accuracy, x, y, y_pred, row_id=None, model=None, loss = None):
+    def __init__(self, accuracy, x, y, y_pred, row_id=None, model=None, loss = None, class_probs=None):
         # fully trained model, leave1out accuracy, leave1out predictions
         self.accuracy = accuracy
         self.X = x
@@ -379,6 +383,7 @@ class ClassifierResult(object):
         self.model = model
         self.row_id = row_id
         self.loss = loss
+        self.class_probs = class_probs
 
 
 def anova_3way(df, value_col, factor_cols, alpha=0.05):
