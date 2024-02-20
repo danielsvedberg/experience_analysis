@@ -26,6 +26,7 @@ def get_trial_info(dat):
     dintrials = dintrials[['taste_trial', 'taste', 'session_trial', 'channel', 'on_time']]
     return dintrials
 
+#%% calculate and plot euclidean and cosine distances for each taste trial
 def process_rec_dir(rec_dir):
     df_list = []
     dat = blechpy.load_dataset(rec_dir)
@@ -168,46 +169,17 @@ def make_euc_dist_matrix(rec_dir):
 num_cores = -1  # Use all available cores
 final_dfs = Parallel(n_jobs=num_cores)(delayed(make_euc_dist_matrix)(rec_dir) for rec_dir in rec_dirs)
 final_df = pd.concat(final_dfs, ignore_index=True)
-#save final_df to feather
-final_df.to_feather(PA.save_dir + '/trial_euc_dists.feather')
-
 final_df = pd.merge(final_df, rec_info, on='rec_dir')
 final_df['session'] = final_df['rec_num']
 
-#scale the euc_dist column for each grouping of exp_group
+#save final_df to feather
+final_df.to_feather(PA.save_dir + '/trial_euc_dists.feather')
 final_df['euc_dist'] = final_df.groupby(['exp_group'])['euc_dist'].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
+
 
 #group final_df by 'taste_trial', 'trial_B', 'taste', 'exp_group', and 'session', and take the mean of euclidean distance
 taste_mean_df = final_df.groupby(['taste_trial', 'trial_B', 'taste', 'channel','exp_group', 'session']).mean().reset_index()
 all_mean_df = final_df.groupby(['taste_trial', 'trial_B', 'exp_group','session']).mean().reset_index()
-
-
-#k means clustering
-from sklearn.cluster import KMeans
-
-
-#for each grouping of session and exp_group, calculate the k-means clustering of the mean euclidean distance for each taste trial
-#and plot the results
-df_list = []
-for nm, group in final_df.groupby(['exp_group', 'session', 'exp_name','taste']):
-    exp_group, session, exp_name, taste = nm
-    taste_matrix = group.pivot(index='trial_B', columns='taste_trial', values='euc_dist')
-    #replace NaN with 0
-    taste_matrix = np.nan_to_num(taste_matrix)
-    kmeans = KMeans(n_clusters=2, random_state=0).fit(taste_matrix.T)
-    labels = kmeans.labels_
-    trials = np.arange(len(labels))
-    #make a dataframe from the labels and trials
-    df = pd.DataFrame({
-        'cluster': labels,
-        'trial': trials
-    })
-    df['exp_group'] = exp_group
-    df['session'] = session
-    df['exp_name'] = exp_name
-    df['taste'] = taste
-    df_list.append(df)
-cluster_df = pd.concat(df_list, ignore_index=True)
 
 #get a matrix of the mean euclidean distance for each taste trial for each taste and session
 #instantiate a 4x3 grid of subplots
@@ -274,27 +246,186 @@ fig.savefig(PA.save_dir + '/all_euc_dist_heatmap.png')
 
 
 
-def kmeans_cluster(rec_dir, n_clusters=2):
+
+#%% heirarchical clustering analysis of euclidean distance
+
+
+from scipy.spatial.distance import pdist
+def make_euc_dist_matrix2(rec_dir):
     df_list = []
     dat = blechpy.load_dataset(rec_dir)
     dintrials = get_trial_info(dat)
+    dintrials['taste_trial'] = dintrials['taste_trial'] - 1
     time_array, rate_array = h5io.get_rate_data(rec_dir)
     #set up a dict to store a matrix for each key in rate_array
-    euc_dist_mats = {}
     for din, rate in rate_array.items():
-        print(din)
-        #downsample rate of dim 2 so that instead of 7000ms, we have 700ms, by taking the rolling average over 10ms
-        rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
-        #replace nan with 0
-        rate = np.nan_to_num(rate)
-        for bin in range(rate.shape[2]):
+        #make a virtual matrix of the euclidean distance between each trial for each bin
+        bins = np.arange(2000, 5000)
+        dists = []
+        for b in bins:
+            euc_dist = pdist(rate[:,:,b].T, 'euclidean')
+            dists.append(euc_dist)
+        #turn dists into a matrix
+        euc_dists = np.array(dists)
+        #take the mean of euc dists along the 0 axis
+        euc_dists = euc_dists.mean(axis=0)
+        #make an index called dist_idx which is just the number index of the euc_dists array
+        dist_idx = np.arange(len(euc_dists))
+        #make a dataframe from the euc_distances, and bins
+        euc_dist_df = pd.DataFrame({'euc_dist': euc_dists, 'dist_idx': dist_idx})
+        #add the rec_dir and din to the dataframe
+        euc_dist_df['rec_dir'] = rec_dir
+        euc_dist_df['channel'] = int(din[-1])
+        euc_dist_df['n_trials'] = rate.shape[1]
+        #add the dataframe to df_list
+        df_list.append(euc_dist_df)
+    #concatenate all the dataframes in df_list
+    df = pd.concat(df_list, ignore_index=True)
+    return df
 
-            kmeans = KMeans(n_clusters=2, random_state=0).fit(rate[:,:,:].T)
-            labels = kmeans.labels_
-            df = pd.DataFrame({
-                'rec_dir': rec_dir,
-                'channel': int(din[-1]),
-                'bin': bin,
-                'label': labels
-            })
-            df_list.append(df)
+#get rows of rec_info where exp_group is 'naive' and session is 1
+df = rec_info.loc[(rec_info['exp_group'] == 'naive') & (rec_info['rec_num'] == 1)]
+din = ['dig_in_0']
+
+import numpy as np
+from scipy.spatial.distance import pdist, squareform
+from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
+from sklearn.metrics import silhouette_score
+import matplotlib.pyplot as plt
+
+def cluster_data(sample, t):
+    distance_matrix = pdist(sample)
+    linkage_matrix = linkage(distance_matrix, method='average')
+    cluster_labels = fcluster(linkage_matrix, t=t, criterion='distance')
+    return cluster_labels
+def opti_t_bin(X):
+    t_range = np.linspace(0.1, 100, 100)
+    best_score = -1
+    best_t = None  # Initialize best_t to ensure it has a value even if all scores are below -1
+    for t in t_range:
+        cluster_labels = cluster_data(X, t)
+        if len(np.unique(cluster_labels)) == 1 or len(np.unique(cluster_labels)) == len(X):
+            continue  # Silhouette score is not meaningful for a single cluster
+        score = silhouette_score(X, cluster_labels)
+        if score > best_score:
+            best_score = score
+            best_t = t
+            print('Best t:', best_t, 'Best score:', best_score)
+    return best_t
+def optimize_bin(rate, bin_value):
+    X = rate[:, :, bin_value].T
+    return opti_t_bin(X)
+def optimize_t(rec_dir):
+    bins = np.arange(200, 500)
+    optimal_ts = []
+    time_array, rate_array = h5io.get_rate_data(rec_dir)
+    for din, rate in rate_array.items():
+        if din is not 'dig_in_4':
+            #downsample by averaging every 10 bins
+            rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
+            # z-score the rate
+            #rate = (rate - rate.mean()) / rate.std()
+            #average rate across bins
+            X = rate[:, :, bins].mean(axis=2).T
+            optimized = opti_t_bin(X)
+            #optimized = Parallel(n_jobs=-1)(delayed(optimize_bin)(rate, b) for b in bins)
+            #replace all entries in list optimal_ts that are None with Nan
+            if optimized is None:
+                optimized = np.nan
+            #optimized = #[np.nan if x is None else x for x in optimized]
+            optimal_ts.append(np.nanmean(optimized))
+    optimal_ts = np.nanmean(optimal_ts)
+    return optimal_ts
+
+rec_dirs = rec_info['rec_dir']
+ts = []
+for rec_dir in rec_dirs:
+    print(rec_dir)
+    ts.append(optimize_t(rec_dir))
+
+#make a dataframe with rec_dir and ts
+ts_df = pd.DataFrame({'rec_dir': rec_dirs, 'best_t_val': ts})
+rec_info = proj.rec_info.copy()
+#merge ts_df with rec_info
+rec_info = pd.merge(rec_info, ts_df, on='rec_dir')
+
+def make_consensus_matrix(rec_info):
+    bins = np.arange(200, 500)
+    matrices = []
+    names = []
+    for name, group in rec_info.groupby(['exp_group', 'rec_num']):
+        names.append(name)
+        consensus_matrix = np.zeros((30,30))
+        for _, row in group.iterrows():
+            rec_dir = row['rec_dir']
+            time_array, rate_array = h5io.get_rate_data(rec_dir)
+            for din, rate in rate_array.items():
+                #downsample rate from 7000 bins to 700 by averaging every 10 bins
+                rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
+                #z-score the rate
+                #rate = (rate - rate.mean()) / rate.std()
+                if din != 'dig_in_4':
+                    n_trials = rate.shape[1]
+                    for b in bins:
+                        X = rate[:, :, b].T
+                        cluster_labels = cluster_data(X, t=row['best_t_val'])
+                        for i in range(n_trials):
+                            for j in range(n_trials):
+                                if j > i:
+                                    if cluster_labels[i] == cluster_labels[j]:
+                                        consensus_matrix[i, j] += 1
+
+        div_factor = len(group) * (len(rate_array.keys()) - 1) * len(bins)
+        consensus_matrix /= div_factor
+        matrices.append(consensus_matrix)
+    return matrices, names
+
+matrices, names = make_consensus_matrix(rec_info)
+
+for i, mat in enumerate(matrices):
+    #fold mat to make it symmetrical
+    mat = squareform((mat + mat.T) / 2)
+    consensus_linkage_matrix = linkage(mat, method='average')
+    plt.figure(figsize=(10, 7))
+    label = str(list(names[i]))
+    dendrogram(consensus_linkage_matrix)
+    #make the title label
+    plt.title(label)
+    plt.show()
+
+
+
+# Parallelize processing of each rec_dir
+num_cores = -1  # Use all available cores
+final_dfs = Parallel(n_jobs=num_cores)(delayed(make_euc_dist_matrix2)(rec_dir) for rec_dir in rec_dirs)
+final_df = pd.concat(final_dfs, ignore_index=True)
+final_df = pd.merge(final_df, rec_info, on='rec_dir')
+final_df['session'] = final_df['rec_num']
+#save final_df to feather
+final_df.to_feather(PA.save_dir + '/trial_euc_dists2.feather')
+
+#scale the euc_dist column for each grouping of exp_group
+final_df['euc_dist'] = final_df.groupby(['exp_group'])['euc_dist'].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
+
+channel_taste_map = {0: 'Suc', 1: 'NaCl', 2: 'CA', 3: 'QHCl', 4: 'Spont'}
+#make channel int
+final_df['channel'] = final_df['channel'].astype(int)
+#add tastes to final_df using the taste_map
+final_df['taste'] = final_df['channel'].map(channel_taste_map)
+#filter out spont trials
+final_df = final_df.loc[final_df['taste'] != 'Spont']
+#group final_df by 'taste_trial', 'trial_B', 'taste', 'exp_group', and 'session', and take the mean of euclidean distance
+taste_mean_df = final_df.groupby(['dist_idx', 'taste', 'channel','exp_group', 'session']).mean().reset_index()
+all_mean_df = final_df.groupby(['dist_idx', 'exp_group','session']).mean().reset_index()
+
+from scipy.spatial.distance import pdist, squareform
+from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
+from sklearn.metrics import silhouette_score
+#make a matrix of the mean euclidean distance for each taste trial for each taste and session
+for nm, group in all_mean_df.groupby(['exp_group', 'session']):
+    Z = linkage(group['euc_dist'], 'ward')
+    fig, ax = plt.subplots()
+    dn = dendrogram(Z, ax=ax)
+    ax.set_title(nm)
+    plt.show()
+

@@ -318,11 +318,14 @@ def iter_shuffle(data, nIter=10000, subject_cols=['Subject'], trial_col='Trial',
             #check if iters is actually a dataframe
             if type(iters) != pd.core.frame.DataFrame:
                 raise ValueError('iters is not a dataframe, try re-running with overwrite=True')
+            elif iters is None:
+                raise ValueError('iters is None, try re-running with overwrite=True')
             else:
                 return iters
         except FileNotFoundError:
+            print('file ' + shuffname + ' not found, overwriting')
             overwrite = True
-    elif overwrite is True:
+    if overwrite is True:
         if parallel:
             iters = iter_shuffle_parallel(data, nIter=nIter, subject_cols=subject_cols, trial_col=trial_col,
                                           value_col=value_col, save_dir=save_dir, overwrite=overwrite, yMin=yMin, yMax=yMax)
@@ -1357,8 +1360,6 @@ def preprocess_nonlinear_regression(df, subject_col, group_cols, trial_col, valu
     column_mapping = dict(zip(r2_df.columns, colnames))
     r2_df = r2_df.rename(columns=column_mapping)
 
-    #r2_df_groupmean = r2_df.groupby(group_cols).mean().reset_index()
-    # %% plot the nonlinear regression fits with the raw data
     identifiers = []
     alpha = []
     beta = []
