@@ -118,175 +118,7 @@ ta.plot_nonlinear_regression_stats(preprodf, shuffle, subject_col=subject_col, g
 pred_change_df, pred_change_shuff = ta.get_pred_change(preprodf, shuffle, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col)
 ta.plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, value_col=value_col, trial_col=trial_col, save_dir=PA.save_dir, flag=flag, textsize=textsize, nIter=nIter)
 
-# make a matrix of the Euclidean distance for each taste trial for each taste and session, then take the average
-def make_euc_dist_matrix(rec_dir):
-    df_list = []
-    dat = blechpy.load_dataset(rec_dir)
-    dintrials = get_trial_info(dat)
-    dintrials['taste_trial'] = dintrials['taste_trial'] - 1
-    time_array, rate_array = h5io.get_rate_data(rec_dir)
-    #set up a dict to store a matrix for each key in rate_array
-    euc_dist_mats = {}
-    for din, rate in rate_array.items():
-        #make a virtual matrix of the euclidean distance between each trial for each bin
-        euc_distances = []
-        taste_trial_A = []
-        taste_trial_B = []
-        for i in range(rate.shape[1]):
-            for j in range(rate.shape[1]):
-                if j > i:
-                    pass
-                else:
-                    slice_distances = np.zeros(rate.shape[2])
-                    for s in range(rate.shape[2]):
-                        euc_dist = np.linalg.norm(rate[:,i,s] - rate[:,j,s])
-                        slice_distances[s] = euc_dist
-                    euc_distances.append(np.mean(slice_distances))
-                    taste_trial_A.append(i)
-                    taste_trial_B.append(j)
-        #make a dataframe from the euc_distances, with columns 'taste_trial_A', 'taste_trial_B', and 'euc_dist'
-        euc_dist_df = pd.DataFrame({
-            'taste_trial': taste_trial_A,
-            'trial_B': taste_trial_B,
-            'euc_dist': euc_distances
-        })
-        #add the rec_dir and din to the dataframe
-        euc_dist_df['rec_dir'] = rec_dir
-        euc_dist_df['channel'] = int(din[-1])
-        #add the dataframe to df_list
-        df_list.append(euc_dist_df)
-    #concatenate all the dataframes in df_list
-    df = pd.concat(df_list, ignore_index=True)
-    #add index info to df from dintrials using merge on taste_trial and channel
-    df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
-    #remove all rows where taste == 'Spont'
-    df = df.loc[df['taste'] != 'Spont']
-    #subtract the min of 'session_trial' from 'session_trial' to get the session_trial relative to the start of the recording
-    df['session_trial'] = df['session_trial'] - df['session_trial'].min()
-    return df
-
-# Parallelize processing of each rec_dir
-num_cores = -1  # Use all available cores
-final_dfs = Parallel(n_jobs=num_cores)(delayed(make_euc_dist_matrix)(rec_dir) for rec_dir in rec_dirs)
-final_df = pd.concat(final_dfs, ignore_index=True)
-final_df = pd.merge(final_df, rec_info, on='rec_dir')
-final_df['session'] = final_df['rec_num']
-
-#save final_df to feather
-final_df.to_feather(PA.save_dir + '/trial_euc_dists.feather')
-final_df['euc_dist'] = final_df.groupby(['exp_group'])['euc_dist'].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
-
-
-#group final_df by 'taste_trial', 'trial_B', 'taste', 'exp_group', and 'session', and take the mean of euclidean distance
-taste_mean_df = final_df.groupby(['taste_trial', 'trial_B', 'taste', 'channel','exp_group', 'session']).mean().reset_index()
-all_mean_df = final_df.groupby(['taste_trial', 'trial_B', 'exp_group','session']).mean().reset_index()
-
-#get a matrix of the mean euclidean distance for each taste trial for each taste and session
-#instantiate a 4x3 grid of subplots
-
-tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
-sessions = [1, 2, 3]
-exp_groups = ["naive","suc_preexp"]
-for exp_group in exp_groups:
-    fig, axs = plt.subplots(4, 3, figsize=(9,10))
-    for i, taste in enumerate(tastes):
-        for j, session in enumerate(sessions):
-            group = taste_mean_df[(taste_mean_df['taste'] == taste) & (taste_mean_df['session'] == session) & (taste_mean_df['exp_group'] == exp_group)]
-            for_pivot = group[['taste_trial', 'trial_B', 'euc_dist']]
-            taste_matrix = for_pivot.pivot(index='trial_B', columns='taste_trial', values='euc_dist')
-            ax = axs[i, j]
-            cax = ax.matshow(taste_matrix, cmap='viridis')
-            if j != 0:
-                ax.set_yticks([])
-            if i != 0:
-                ax.set_xticks([])
-            if i == 0:
-                ax.set_title('Session ' + str(session), pad=20, fontsize=20)
-            if j == 2:
-                #set a y label on the right axis with the taste
-                ax.yaxis.set_label_position("right")
-                ax.set_ylabel(taste, rotation=-90, labelpad=60, fontsize=20)
-                #also include the colorbar
-                fig.colorbar(cax, ax=ax)
-    for ax in axs[:,0]:
-        ax.set_ylabel('Trial')
-    #put a title over the entire figure with the exp_group
-    fig.suptitle(exp_group, fontsize=20)
-    #reduce the space between columns in the subplot
-    plt.subplots_adjust(wspace=0, hspace=0.01)
-    plt.show()
-    #save the figure
-    fig.savefig(PA.save_dir + '/taste_euc_dist_heatmap_' + exp_group + '.png')
-
-
-fig, ax = plt.subplots(2,3, figsize=(10,5))
-for k, exp_group in enumerate(exp_groups):
-    for j, session in enumerate(sessions):
-        group = all_mean_df[(all_mean_df['session'] == session) & (all_mean_df['exp_group'] == exp_group)]
-        for_pivot = group[['taste_trial', 'trial_B', 'euc_dist']]
-        all_matrix = for_pivot.pivot(index='trial_B', columns='taste_trial', values='euc_dist')
-        cax = ax[k,j].matshow(all_matrix, cmap='viridis')
-        if j != 0:
-            ax[k,j].set_yticks([])
-        if k != 0:
-            ax[k,j].set_xticks([])
-        if k == 0:
-            ax[k,j].set_title('Session ' + str(session), pad=20, fontsize=20)
-        if j == 2:
-            ax[k,j].yaxis.set_label_position("right")
-            ax[k,j].set_ylabel(exp_group, rotation=-90, labelpad=60, fontsize=20)
-            fig.colorbar(cax, ax=ax[k,j])
-for ax in ax[:,0]:
-    ax.set_ylabel('Trial')
-plt.subplots_adjust(wspace=0, hspace=0.01)
-plt.show()
-#save the figure
-fig.savefig(PA.save_dir + '/all_euc_dist_heatmap.png')
-#plot a correlation matrix of the mean euclidean distance for each taste trial for each taste and session
-
-
-
-
-#%% heirarchical clustering analysis of euclidean distance
-
-
-from scipy.spatial.distance import pdist
-def make_euc_dist_matrix2(rec_dir):
-    df_list = []
-    dat = blechpy.load_dataset(rec_dir)
-    dintrials = get_trial_info(dat)
-    dintrials['taste_trial'] = dintrials['taste_trial'] - 1
-    time_array, rate_array = h5io.get_rate_data(rec_dir)
-    #set up a dict to store a matrix for each key in rate_array
-    for din, rate in rate_array.items():
-        #make a virtual matrix of the euclidean distance between each trial for each bin
-        bins = np.arange(2000, 5000)
-        dists = []
-        for b in bins:
-            euc_dist = pdist(rate[:,:,b].T, 'euclidean')
-            dists.append(euc_dist)
-        #turn dists into a matrix
-        euc_dists = np.array(dists)
-        #take the mean of euc dists along the 0 axis
-        euc_dists = euc_dists.mean(axis=0)
-        #make an index called dist_idx which is just the number index of the euc_dists array
-        dist_idx = np.arange(len(euc_dists))
-        #make a dataframe from the euc_distances, and bins
-        euc_dist_df = pd.DataFrame({'euc_dist': euc_dists, 'dist_idx': dist_idx})
-        #add the rec_dir and din to the dataframe
-        euc_dist_df['rec_dir'] = rec_dir
-        euc_dist_df['channel'] = int(din[-1])
-        euc_dist_df['n_trials'] = rate.shape[1]
-        #add the dataframe to df_list
-        df_list.append(euc_dist_df)
-    #concatenate all the dataframes in df_list
-    df = pd.concat(df_list, ignore_index=True)
-    return df
-
-#get rows of rec_info where exp_group is 'naive' and session is 1
-df = rec_info.loc[(rec_info['exp_group'] == 'naive') & (rec_info['rec_num'] == 1)]
-din = ['dig_in_0']
-
+#%%
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
@@ -350,7 +182,7 @@ rec_info = proj.rec_info.copy()
 rec_info = pd.merge(rec_info, ts_df, on='rec_dir')
 
 def make_consensus_matrix(rec_info):
-    bins = np.arange(200, 500)
+    bins = np.arange(210, 500)
     matrices = []
     names = []
     for name, group in rec_info.groupby(['exp_group', 'rec_num']):
@@ -362,8 +194,6 @@ def make_consensus_matrix(rec_info):
             for din, rate in rate_array.items():
                 #downsample rate from 7000 bins to 700 by averaging every 10 bins
                 rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
-                #z-score the rate
-                #rate = (rate - rate.mean()) / rate.std()
                 if din != 'dig_in_4':
                     n_trials = rate.shape[1]
                     for b in bins:
@@ -375,57 +205,163 @@ def make_consensus_matrix(rec_info):
                                     if cluster_labels[i] == cluster_labels[j]:
                                         consensus_matrix[i, j] += 1
 
-        div_factor = len(group) * (len(rate_array.keys()) - 1) * len(bins)
+        div_factor = len(group) * (len(rate_array.keys()) - 1)* len(bins)
         consensus_matrix /= div_factor
         matrices.append(consensus_matrix)
     return matrices, names
 
 matrices, names = make_consensus_matrix(rec_info)
 
+#get the maximum and minimum for every 3 entries of matrices
+max_vals = []
+min_vals = []
+for i in range(0, len(matrices), 3):
+    max_val = max([np.max(mat) for mat in matrices[i:i+3]])
+    min_val = min([np.min(mat) for mat in matrices[i:i+3]])
+    max_vals.append(max_val)
+    min_vals.append(min_val)
+
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+
+exp_group_order = {'naive': 0, 'suc_preexp': 1}
+session_order = {1: 0, 2: 1, 3: 2}
+exp_group_names = ['Naive', 'Suc. Pre-exposed']
+exp_group_colors = ['Blues', 'Oranges']
+
+# Adjust the figure layout
+fig = plt.figure(figsize=(10.5, 6))
+gs = gridspec.GridSpec(2, 4, width_ratios=[0.1, 1, 1, 1], hspace=0.05)  # Extra column for the color bars on the left
+
+# Create axes for the plots, adjusting for the extra column for the color bars
+axs = [[fig.add_subplot(gs[i, j+1]) for j in range(3)] for i in range(2)]
+
+# Create separate color bars for each row in the first column
+cbar_axes = [fig.add_subplot(gs[i, 0]) for i in range(2)]
+
 for i, mat in enumerate(matrices):
-    #fold mat to make it symmetrical
+    name = names[i]
+    exp_group = name[0]
+    session = name[1]
+    j = exp_group_order[exp_group]
+    k = session_order[session]
+    ax = axs[j][k]  # Adjust for the shifted indexing due to color bar column
+    cmap = plt.get_cmap(exp_group_colors[j])
+    cax = ax.matshow(mat, vmin=min_vals[j], vmax=max_vals[j], origin='lower', cmap=cmap)
+    if k != 0:
+        ax.set_yticks([])
+    else:
+        #ax.set_ylabel('Trial', fontsize=20)
+        ax.set_yticks([0,9,19,29])
+        ax.set_yticklabels(ax.get_yticks(), fontsize=14)
+    if j != 1:
+        ax.set_xticks([])
+    else:
+        ax.set_xlabel('Trial', fontsize=20)
+        ax.set_xticks([0,9,19,29])
+        ax.set_xticklabels(ax.get_xticks(), fontsize=14)
+        ax.xaxis.set_ticks_position('bottom')
+    if j == 0:
+        ax.set_title('Session ' + str(session), pad=-6, fontsize=20)
+    # Set the ylabel on the right side of the last column of the data plots
+    if k == 2:  # Corrected condition to match the last column of the data plots
+        ax.yaxis.set_label_position("right")
+        ax.set_ylabel(exp_group_names[j], rotation=270, labelpad=20, fontsize=20)
+
+    # Add one color bar per row in the first column
+    if k == 1:  # This ensures color bars are added once per row
+        cb = fig.colorbar(cax, cax=cbar_axes[j], orientation='vertical')
+        cbar_axes[j].yaxis.set_ticks_position('left')
+        cbar_axes[j].set_ylabel('Similarity index', fontsize=20, rotation=90, labelpad=-80)
+
+plt.tight_layout()
+plt.show()
+#save the damn figure
+fig.savefig(PA.save_dir + '/consensus_matrix.png')
+fig.savefig(PA.save_dir + '/consensus_matrix.svg')
+
+linkages = []
+max_vals = []
+for i, mat in enumerate(matrices):
     mat = squareform((mat + mat.T) / 2)
     consensus_linkage_matrix = linkage(mat, method='average')
-    plt.figure(figsize=(10, 7))
-    label = str(list(names[i]))
-    dendrogram(consensus_linkage_matrix)
-    #make the title label
-    plt.title(label)
-    plt.show()
+    linkages.append(consensus_linkage_matrix)
+    #get the maximum value of the linkage matrix
+    max_val = consensus_linkage_matrix[-1, 2]
+    max_vals.append(max_val)
+#get the maximum of every 3 entries of max_vals
+max_vals = [max(max_vals[i:i+3]) for i in range(0, len(max_vals), 3)]
 
+#now plot the dendograms
+#make a 2x3 grid of subplots
+fig, axs = plt.subplots(2, 3, figsize=(10.5, 6))
+#iterate over the matrices and names
+leaves = []
+for i, link in enumerate(linkages):
 
+    name = names[i]
+    exp_group = name[0]
+    session = name[1]
 
-# Parallelize processing of each rec_dir
-num_cores = -1  # Use all available cores
-final_dfs = Parallel(n_jobs=num_cores)(delayed(make_euc_dist_matrix2)(rec_dir) for rec_dir in rec_dirs)
-final_df = pd.concat(final_dfs, ignore_index=True)
-final_df = pd.merge(final_df, rec_info, on='rec_dir')
-final_df['session'] = final_df['rec_num']
-#save final_df to feather
-final_df.to_feather(PA.save_dir + '/trial_euc_dists2.feather')
+    j = exp_group_order[exp_group]
+    k = session_order[session]
+    max_y = max_vals[j] * 1.1
+    print(max_y)
+    #fold mat to make it symmetrical
 
-#scale the euc_dist column for each grouping of exp_group
-final_df['euc_dist'] = final_df.groupby(['exp_group'])['euc_dist'].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
+    ax = axs[j, k]
+    leaf = dendrogram(link, ax=ax, leaf_rotation=90, leaf_font_size=8,  get_leaves=True)
+    leaves.append(leaf)
+    #set max of y axis to max_y
+    ax.set_ylim(0, max_y)
 
-channel_taste_map = {0: 'Suc', 1: 'NaCl', 2: 'CA', 3: 'QHCl', 4: 'Spont'}
-#make channel int
-final_df['channel'] = final_df['channel'].astype(int)
-#add tastes to final_df using the taste_map
-final_df['taste'] = final_df['channel'].map(channel_taste_map)
-#filter out spont trials
-final_df = final_df.loc[final_df['taste'] != 'Spont']
-#group final_df by 'taste_trial', 'trial_B', 'taste', 'exp_group', and 'session', and take the mean of euclidean distance
-taste_mean_df = final_df.groupby(['dist_idx', 'taste', 'channel','exp_group', 'session']).mean().reset_index()
-all_mean_df = final_df.groupby(['dist_idx', 'exp_group','session']).mean().reset_index()
+    #for the first row, set the title to the session number
+    if j == 0:
+        ax.set_title('Session ' + str(session))
+    #for the last column, set the ylabel to the exp_group on the right axis
+    if k == 2:
+        ax.set_ylabel(exp_group_names[j], rotation=-90, labelpad=20, fontsize=20)
+        ax.yaxis.set_label_position("right")
 
-from scipy.spatial.distance import pdist, squareform
-from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
-from sklearn.metrics import silhouette_score
-#make a matrix of the mean euclidean distance for each taste trial for each taste and session
-for nm, group in all_mean_df.groupby(['exp_group', 'session']):
-    Z = linkage(group['euc_dist'], 'ward')
-    fig, ax = plt.subplots()
-    dn = dendrogram(Z, ax=ax)
-    ax.set_title(nm)
-    plt.show()
+    #for the first column, set the ylabel to 'Cluster similarity"
+    if k == 0:
+        ax.set_ylabel('Cluster similarity', fontsize=20)
+    else:
+        ax.set_yticks([])
+
+    #for the last row, set the xlabel to 'Trial'
+    if j == 1:
+        ax.set_xlabel('Trial', fontsize=20)
+plt.subplots_adjust(wspace=0.05, hspace=0.2)
+plt.show()
+#save the figure
+fig.savefig(PA.save_dir + '/dendograms.png')
+fig.savefig(PA.save_dir + '/dendograms.svg')
+
+#TODO: for each dendogram, get the cluster labels for each trial
+
+#sweep over different values of t to get the best silhouette score
+mat = matrices[0]
+mat = ((mat + mat.T) / 2)
+distvec = 1-squareform(mat)
+linkages = linkage(distvec, method='average')
+tvals = np.linspace(0.0001, 1, 1000)
+best_t = []
+scores = []
+cluster_labels = []
+for t in tvals:
+    clabs = fcluster(linkages, t=t, criterion='distance')
+    if len(np.unique(clabs)) == 1 or len(np.unique(clabs)) == len(mat):
+        print("no score")
+    else:
+        score = silhouette_score(mat, clabs)
+        print('t:', t, 'score:', score)
+        best_t.append(t)
+        scores.append(score)
+        cluster_labels.append(clabs)
+
+#make a dataframe with best_t and scores and get the row with the best t
+score_df = pd.DataFrame({'t': best_t, 'score': scores, 'cluster_labels': cluster_labels})
+best_t = score_df.loc[score_df['score'].idxmax()]
+
 
