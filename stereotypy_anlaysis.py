@@ -7,10 +7,12 @@ import trialwise_analysis as ta
 import analysis as ana
 import matplotlib.pyplot as plt
 import feather
+import seaborn as sns
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from sklearn.metrics import silhouette_score
+
 
 proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
 proj = blechpy.load_project(proj_dir)  # load the project
@@ -130,7 +132,6 @@ ta.plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, value_co
                          save_dir=PA.save_dir, flag=flag, textsize=textsize, nIter=nIter)
 
 # %% plotting functions
-import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
 exp_group_order = {'naive': 0, 'suc_preexp': 1}
@@ -334,156 +335,18 @@ plot_correlation_matrices(matrices, names)
 plot_heirarchical_clustering(matrices, names)
 
 
-# %% consensus clustering (first attempt)
-
-def cluster_data(sample, t):
-    distance_matrix = pdist(sample)
-    linkage_matrix = linkage(distance_matrix, method='average')
-    cluster_labels = fcluster(linkage_matrix, t=t, criterion='distance')
-    return cluster_labels
-
-
-def opti_t_bin(X):
-    linkages = linkage(pdist(X), method='average')
-    distances = linkages[:, 2]
-    min_t = distances.min()
-    max_t = distances.max()
-    t_range = np.linspace(min_t, max_t, 100)
-    best_score = -1
-    best_t = None  # Initialize best_t to ensure it has a value even if all scores are below -1
-    for t in t_range:
-        cluster_labels = cluster_data(X, t)
-        if len(np.unique(cluster_labels)) == 1 or len(np.unique(cluster_labels)) == len(X):
-            continue  # Silhouette score is not meaningful for a single cluster
-        score = silhouette_score(X, cluster_labels)
-        if score > best_score:
-            best_score = score
-            best_t = t
-            print('Best t:', best_t, 'Best score:', best_score)
-    return best_t
-
-
-def optimize_bin(rate, bin_value):
-    X = rate[:, :, bin_value].T
-    return opti_t_bin(X)
-
-
-def optimize_t(rec_dir):
-    bins = np.arange(200, 500)
-    optimal_ts = []
-    time_array, rate_array = h5io.get_rate_data(rec_dir)
-    for din, rate in rate_array.items():
-        if din is not 'dig_in_4':
-            # downsample by averaging every 10 bins
-            rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
-            # z-score the rate
-            # rate = (rate - rate.mean()) / rate.std()
-            # average rate across bins
-            X = rate[:, :, bins].mean(axis=2).T
-            optimized = opti_t_bin(X)
-            # optimized = Parallel(n_jobs=-1)(delayed(optimize_bin)(rate, b) for b in bins)
-            # replace all entries in list optimal_ts that are None with Nan
-            if optimized is None:
-                optimized = np.nan
-            # optimized = #[np.nan if x is None else x for x in optimized]
-            optimal_ts.append(np.nanmean(optimized))
-    optimal_ts = np.nanmean(optimal_ts)
-    return optimal_ts
-
-
-rec_dirs = rec_info['rec_dir']
-ts = []
-for rec_dir in rec_dirs:
-    print(rec_dir)
-    ts.append(optimize_t(rec_dir))
-
-# make a dataframe with rec_dir and ts
-ts_df = pd.DataFrame({'rec_dir': rec_dirs, 'best_t_val': ts})
-rec_info = proj.rec_info.copy()
-# merge ts_df with rec_info
-rec_info = pd.merge(rec_info, ts_df, on='rec_dir')
-
-
-def make_consensus_matrix(rec_info):
-    bins = np.arange(210, 500)
-    matrices = []
-    names = []
-    for name, group in rec_info.groupby(['exp_group', 'rec_num']):
-        names.append(name)
-        consensus_matrix = np.empty((30, 30, 4, len(bins)))
-        consensus_matrix[:] = np.nan
-        for _, row in group.iterrows():
-            rec_dir = row['rec_dir']
-            time_array, rate_array = h5io.get_rate_data(rec_dir)
-            for din, rate in rate_array.items():
-                dinnum = int(din[-1])
-                # downsample rate from 7000 bins to 700 by averaging every 10 bins
-                rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
-                if din != 'dig_in_4':
-                    n_trials = rate.shape[1]
-                    for bidx, b in enumerate(bins):
-                        X = rate[:, :, b].T
-                        cluster_labels = cluster_data(X, t=row['best_t_val'])
-                        for i in range(n_trials):
-                            for j in range(n_trials):
-                                if j > i:
-                                    if cluster_labels[i] != cluster_labels[j]:
-                                        consensus_matrix[i, j, dinnum, bidx] = 1
-                                    else:
-                                        consensus_matrix[i, j, dinnum, bidx] = 0
-                                if j == i:
-                                    consensus_matrix[i, j, dinnum, bidx] = 0
-
-        consensus_matrix = np.nanmean(consensus_matrix, axis=3)
-        consensus_matrix = np.nanmean(consensus_matrix, axis=2)
-        # replace all nan with 0
-        consensus_matrix = np.nan_to_num(consensus_matrix)
-        #make the matrix symmetrical
-        consensus_matrix = (consensus_matrix + consensus_matrix.T) / 2
-
-        if np.isnan(consensus_matrix).all():
-            raise ValueError('The entire consensus matrix is nan')
-        matrices.append(consensus_matrix)
-    return matrices, names
-
-matrices, names = make_consensus_matrix(rec_info)
-
-plot_correlation_matrices(matrices, names)
-plot_heirarchical_clustering(matrices, names)
-
-# sweep over different values of t to get the best silhouette score
-mat = matrices[0]
-mat = ((mat + mat.T) / 2)
-distvec = 1 - squareform(mat)
-linkages = linkage(distvec, method='average')
-tvals = np.linspace(0.0001, 1, 1000)
-best_t = []
-scores = []
-cluster_labels = []
-for t in tvals:
-    clabs = fcluster(linkages, t=t, criterion='distance')
-    if len(np.unique(clabs)) == 1 or len(np.unique(clabs)) == len(mat):
-        print("no score")
-    else:
-        score = silhouette_score(mat, clabs)
-        print('t:', t, 'score:', score)
-        best_t.append(t)
-        scores.append(score)
-        cluster_labels.append(clabs)
-
-# make a dataframe with best_t and scores and get the row with the best t
-score_df = pd.DataFrame({'t': best_t, 'score': scores, 'cluster_labels': cluster_labels})
-best_t = score_df.loc[score_df['score'].idxmax()]
-
-
-
 # %% consensus clustering (second attempt) with averaging distances for each trial and then performing consensus clustering
 ##THIS THAT GOOD SHIT RIGHT HERE 02/22/24
 def make_consensus_matrix2(rec_info):
     bins = np.arange(210, 500)
+    df_list = []
     matrices = []
     names = []
     for name, group in rec_info.groupby(['exp_group', 'rec_num']):
+        top_branch_dist = []
+        dinnums = []
+        cluster_arrays = []
+        rec_dirs = []
         names.append(name)
         consensus_matrix = np.empty((30, 30, len(group), 4))
         consensus_matrix[:] = np.nan
@@ -494,6 +357,7 @@ def make_consensus_matrix2(rec_info):
             for din, rate in rate_array.items():
                 dinnum = int(din[-1])
                 if din != 'dig_in_4':
+                    dinnums.append(dinnum)
                     # downsample rate from 7000 bins to 700 by averaging every 10 bins
                     rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
                     n_trials = rate.shape[1]
@@ -508,6 +372,8 @@ def make_consensus_matrix2(rec_info):
                     dm = (dm + dm.T) / 2
                     linkages = linkage(squareform(dm), method='ward')
                     distances = linkages[:, 2]
+                    top_branch_dist.append(distances[-2])
+
                     min_t = distances.min()
                     max_t = distances.max()
 
@@ -521,6 +387,8 @@ def make_consensus_matrix2(rec_info):
                                 best_score = score
                                 cluster_labels = clabs
 
+                    cluster_arrays.append(cluster_labels)
+                    rec_dirs.append(rec_dir)
                     for i in range(n_trials):
                         for j in range(n_trials):
                             if j > i:
@@ -531,24 +399,35 @@ def make_consensus_matrix2(rec_info):
                             elif j == i:
                                 consensus_matrix[i, j, exp_num, dinnum] = 0
 
+                    #make a df with the cluster labels and top branch distance and dinnum
+        cluster_dict = {'channel': dinnums, 'top_branch_dist': top_branch_dist}
+        cluster_df = pd.DataFrame(cluster_dict)
+        cluster_df['cluster_labels'] = cluster_arrays
+        cluster_df['exp_group'] = name[0]
+        cluster_df['session'] = name[1]
+        cluster_df['rec_dir'] = rec_dirs
+        df_list.append(cluster_df)
+        df = pd.concat(df_list, ignore_index=True)
         consensus_matrix = np.nanmean(consensus_matrix, axis=(2, 3))
         # replace all nan with 0
         consensus_matrix = np.nan_to_num(consensus_matrix)
         # fold the consensus matrix to make it symmetrical
         consensus_matrix = (consensus_matrix + consensus_matrix.T) / 2
         matrices.append(consensus_matrix)
-    return matrices, names
+    return matrices, names, df
 
-matrices, names = make_consensus_matrix2(rec_info)
+matrices, names, df = make_consensus_matrix2(rec_info)
 
-plot_correlation_matrices(matrices, names)
+plot_correlation_matrices(matrices, names, save=True)
 plot_heirarchical_clustering(matrices, names)
 
 # sweep over different values of t to get the best silhouette score
 dfs = []
+linkages = []
 for i, mat in enumerate(matrices):
     distvec = squareform(mat)
     linkage_mat = linkage(distvec, method='ward')
+    linkages.append(linkage_mat)
     distances = linkage_mat[:, 2]
     t_min, t_max = distances.min(), distances.max()
     tvals = np.linspace(t_min, t_max, 1000)
@@ -577,5 +456,210 @@ for i, mat in enumerate(matrices):
 best_t_df = pd.concat(dfs, axis=1).T
 thresholds = list(best_t_df['t'])
 # plot the dendograms
-fig, leaves = plot_heirarchical_clustering(matrices, names, threshold=thresholds)
+fig, leaves = plot_heirarchical_clustering(matrices, names, threshold=thresholds, save=True)
 
+
+#merge df with rec_info
+df = pd.merge(df, rec_info, on=(['rec_dir', 'exp_group']))
+
+#group df by rec_dir and scale top_branch_dist from 0 to 1 in each group
+df['top_branch_dist'] = df.groupby('rec_dir')['top_branch_dist'].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
+
+#for each row in df, get the largest set of cluster labels in the array stored in each row of cluster labels
+#then make a new column called 'cluster_A' and store the length of the largest set of cluster labels in each index
+#then make a new column called 'cluster_B' and store the length of the second largest set of cluster labels in each index
+#then make a new column called 'cluster_A_avg_trial' and store the average index of the largest set of cluster labels in each index
+#then make a new column called 'cluster_B_avg_trial' and store the average index of the second largest set of cluster labels in each index
+
+clust_A_idxs = []
+clust_B_idxs = []
+clust_A_size = []
+clust_B_size = []
+clust_A_avg_trial = []
+clust_B_avg_trial = []
+for i, row in df.iterrows():
+    cluster_labels = row['cluster_labels']
+    unique_labels, counts = np.unique(cluster_labels, return_counts=True)
+
+    # Get the indices of the two largest clusters
+    indices_largest_clusters = np.argsort(-counts)[:2]
+
+    # Extract labels of the two largest clusters
+    largest_clusters_labels = unique_labels[indices_largest_clusters]
+
+    average_indices = []
+    for label in largest_clusters_labels:
+        # Find indices (positions) of data points belonging to the current cluster
+        indices = np.where(cluster_labels == label)[0]
+
+        # Calculate the mean index for the current cluster
+        mean_index = np.mean(indices)
+
+        # Append the mean index to the list
+        average_indices.append(mean_index)
+    #get the index of avg_indices that is the smallest
+    smallest_index = np.argmin(average_indices)
+    largest_index = np.argmax(average_indices)
+
+    #in clust A idxs, store the indices of cluster_labels that are equal to the label of the smallest index
+    clust_A_idxs.append(np.where(cluster_labels == largest_clusters_labels[smallest_index])[0])
+    clust_B_idxs.append(np.where(cluster_labels == largest_clusters_labels[largest_index])[0])
+    clust_A_size.append(counts[indices_largest_clusters[smallest_index]])
+    clust_B_size.append(counts[indices_largest_clusters[largest_index]])
+    clust_A_avg_trial.append(average_indices[smallest_index])
+    clust_B_avg_trial.append(average_indices[largest_index])
+
+df['clust_A_idxs'] = clust_A_idxs
+df['clust_B_idxs'] = clust_B_idxs
+df['clust_A_size'] = clust_A_size
+df['clust_B_size'] = clust_B_size
+df['clust_A_avg_trial'] = clust_A_avg_trial
+df['clust_B_avg_trial'] = clust_B_avg_trial
+
+#longform df by melting clust_A_size and clust_B_size as well as clust_A_avg_trial and clust_B_avg_trial
+df_clust_size = pd.melt(df, id_vars=['exp_group', 'session', 'channel', 'exp_name'], value_vars=['clust_A_size', 'clust_B_size'], var_name='cluster', value_name='size')
+#refactor values in cluster column so instead of 'clust_A_size' and 'clust_B_size' it is 'A' and 'B'
+df_clust_size['cluster'] = df_clust_size['cluster'].str.replace('_size', '')
+
+df_clust_trial = pd.melt(df, id_vars=['exp_group', 'session', 'channel', 'exp_name'], value_vars=['clust_A_avg_trial', 'clust_B_avg_trial'], var_name='cluster', value_name='avg_trial')
+#refactor values in cluster column so instead of 'clust_A_avg_trial' and 'clust_B_avg_trial' it is 'A' and 'B'
+df_clust_trial['cluster'] = df_clust_trial['cluster'].str.replace('_avg_trial', '')
+#merge
+df_clust = pd.merge(df_clust_size, df_clust_trial, on=['exp_group', 'session', 'channel', 'exp_name', 'cluster'])
+#replace 'clust_A' and 'clust_B' with 'A' and 'B'
+df_clust['cluster'] = df_clust['cluster'].str.replace('clust_', '')
+#relabel A in to 'early' and B into 'late'
+df_clust['cluster'] = df_clust['cluster'].str.replace('A', 'early')
+df_clust['cluster'] = df_clust['cluster'].str.replace('B', 'late')
+
+#make a bar plot of the size of the two largest clusters for each channel
+#TODO statistics for this
+g = sns.catplot(data=df_clust, kind='bar', x='cluster', y='size', row='exp_group', col='session', margin_titles=True,
+                linewidth = 2, edgecolor='black', facecolor = (0, 0, 0, 0))
+#map a catplot with stripplot to the same axes
+g.map_dataframe(sns.stripplot, x='cluster', y='size', dodge=True, color='black')
+#relabel the y axis to "cluster size (trials)"
+g.set_ylabels('cluster size (trials)')
+#remove 'exp group' from the row labels
+g.set_titles(row_template = '{row_name}', col_template = '{col_var} {col_name}')
+
+plt.show()
+#save the plot
+g.savefig(PA.save_dir + '/cluster_size_barplot.png')
+g.savefig(PA.save_dir + '/cluster_size_barplot.svg')
+
+df_list = []
+for i, row in df.iterrows():
+    clust_A_idxs = row['clust_A_idxs']
+    clust_B_idxs = row['clust_B_idxs']
+    clust_idxs = np.concatenate([clust_A_idxs, clust_B_idxs])
+    clust_A_labels = np.repeat('early', len(clust_A_idxs))
+    clust_B_labels = np.repeat('late', len(clust_B_idxs))
+    clust_labels = np.concatenate([clust_A_labels, clust_B_labels])
+    newdf = pd.DataFrame({'clust_idx': clust_idxs, 'cluster': clust_labels})
+    newdf[['exp_group', 'session', 'channel', 'exp_name']] = row[['exp_group', 'session', 'channel', 'exp_name']]
+    df_list.append(newdf)
+newdf = pd.concat(df_list, ignore_index=True)
+
+#plot a violin plot of the cluster idx
+#make the plot twice as wide as it is tall
+g = sns.catplot(data=newdf, kind='violin', x='session', y='clust_idx', row='exp_group', col='cluster', margin_titles=True,
+                color='white', linewidth=2, edgecolor='black', saturation=1, aspect=1.5)
+g.map_dataframe(sns.swarmplot, x='session', y='clust_idx', dodge=True, color='black', alpha=0.25)
+g.set_ylabels('trial number')
+g.set_titles(row_template = '{row_name}', col_template = '{col_name} {col_var}')
+plt.show()
+#save the plot
+g.savefig(PA.save_dir + '/cluster_idx_violinplot.png')
+g.savefig(PA.save_dir + '/cluster_idx_violinplot.svg')
+
+distances = []
+intra_A_distances = []
+intra_B_distances = []
+#loop through every row in df
+for i, row in df.iterrows():
+    bins = np.arange(210, 500)
+    #load the rec_dir
+    rec_dir = row['rec_dir']
+    #get the rate arrays
+    time_array, rate_array = h5io.get_rate_data(rec_dir)
+    #create a string for the dig in from the channel
+    din = 'dig_in_' + str(row['channel'])
+    #get the entry in rate_array that corresponds to the dig in
+    rate = rate_array[din]
+    #downsample rate from 7000 bins to 700 by averaging every 10 bins
+    rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
+    #iterate through each bin in bins with enumerate and get the average distance matrix across the bins
+    dist_mats = []
+    for b in bins:
+        #get the rate for the current bin
+        X = rate[:, :, b].T
+        #calculate the pairwise distance matrix for the rate
+        dm = squareform(pdist(X, metric='correlation'))
+        #fold the distance matrix to make it symmetrical
+        dm = (dm + dm.T) / 2
+        #append the distance matrix to the list
+        dist_mats.append(dm)
+    #take the average of the distance matrices
+    avg_dm = np.mean(dist_mats, axis=0)
+    intra_A_dm = avg_dm[np.ix_(row['clust_A_idxs'], row['clust_A_idxs'])]
+    intra_B_dm = avg_dm[np.ix_(row['clust_B_idxs'], row['clust_B_idxs'])]
+    #linearize intra_A_dm and intra_B_dm
+    intra_A_dm = squareform(intra_A_dm)
+    intra_B_dm = squareform(intra_B_dm)
+    AB_distances = avg_dm[np.ix_(row['clust_A_idxs'], row['clust_B_idxs'])]
+    #linearize AB_distances
+    AB_distances = AB_distances.flatten()
+    #append the linearized AB_distances to the list
+    distances.append(AB_distances)
+    intra_A_distances.append(intra_A_dm)
+    intra_B_distances.append(intra_B_dm)
+#make a dataframe with the distances
+df['AB_distances'] = distances
+df['intra_A_distances'] = intra_A_distances
+df['intra_B_distances'] = intra_B_distances
+
+#spread the distances into longform
+df_long = df[['exp_group', 'session', 'channel', 'exp_name', 'AB_distances']].explode('AB_distances')
+#make df_long['session' and 'channel'] int
+df_long['session'] = df_long['session'].astype(int)
+df_long['channel'] = df_long['channel'].astype(int)
+#make AB_distances float
+df_long['AB_distances'] = df_long['AB_distances'].astype(float)
+#plot a violin plot of the distances
+
+colors = {'naive': 'blue', 'suc_preexp': 'orange'}
+g=sns.catplot(data=df_long, kind='violin', x='session', y='AB_distances', row='exp_group', margin_titles=True, linewidth=2, edgecolor='black', saturation=1, aspect=3, color='white')
+g.map_dataframe(sns.stripplot, x='session', y='AB_distances', dodge=True, hue='exp_group', alpha=0.05, jitter = 0.4)
+g.set_titles(row_template = '{row_name}')
+g.set_ylabels('early-late cluster distance')
+plt.show()
+#save the plot
+g.savefig(PA.save_dir + '/early_late_cluster_distance_violinplot.png')
+g.savefig(PA.save_dir + '/early_late_cluster_distance_violinplot.svg')
+
+#make df_long2 melting intra_A_distances and intra_B_distances
+intra_dist_df = df[['exp_group', 'session', 'channel', 'exp_name', 'intra_A_distances', 'intra_B_distances']]
+intra_dist_df = pd.melt(intra_dist_df, id_vars=['exp_group', 'session', 'channel', 'exp_name'], value_vars=['intra_A_distances', 'intra_B_distances'], var_name='cluster', value_name='intra_cluster_distance')
+#refactor cluster column so instead of 'intra_A_distances' and 'intra_B_distances' it is 'A' and 'B'
+intra_dist_df['cluster'] = intra_dist_df['cluster'].str.replace('_distances', '')
+intra_dist_df['cluster'] = intra_dist_df['cluster'].str.replace('intra_', '')
+#explode intra_cluster_distance
+intra_dist_df = intra_dist_df.explode('intra_cluster_distance')
+#make intra_cluster_distance float
+intra_dist_df['intra_cluster_distance'] = intra_dist_df['intra_cluster_distance'].astype(float)
+#refector A and B to 'early' and 'late'
+intra_dist_df['cluster'] = intra_dist_df['cluster'].str.replace('A', 'early')
+intra_dist_df['cluster'] = intra_dist_df['cluster'].str.replace('B', 'late')
+#refactor exp_group to 'Naive' and 'Suc. Pre-exposed'
+intra_dist_df['exp_group'] = intra_dist_df['exp_group'].str.replace('naive', 'Naive')
+intra_dist_df['exp_group'] = intra_dist_df['exp_group'].str.replace('suc_preexp', 'Suc. Pre-exposed')
+
+g = sns.catplot(data=intra_dist_df, kind='violin', x='session', y='intra_cluster_distance', row='exp_group', col='cluster', margin_titles=True, linewidth=2, edgecolor='black', saturation=1, aspect=2, color='white')
+g.map_dataframe(sns.stripplot, x='session', y='intra_cluster_distance', dodge=True, color='black', alpha=0.1, jitter=0.4)
+g.set_ylabels('intra-cluster distance')
+g.set_titles(row_template = '{row_name}', col_template = '{col_name} {col_var}')
+plt.show()
+#save the plots
+g.savefig(PA.save_dir + '/intra_cluster_distance_violinplot.png')
+g.savefig(PA.save_dir + '/intra_cluster_distance_violinplot.svg')
