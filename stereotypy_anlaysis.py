@@ -9,9 +9,16 @@ import matplotlib.pyplot as plt
 import feather
 import seaborn as sns
 import numpy as np
+import scipy.stats as stats
 from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from sklearn.metrics import silhouette_score
+
+licks = np.array([10,7,8,9,30,4])
+#make licks a column vector
+licks = licks.reshape(-1, 1)
+test = pdist(licks)
+test = squareform(test)
 
 
 proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
@@ -144,8 +151,8 @@ def plot_correlation_matrices(matrices, names, save=False):
     max_vals = []
     min_vals = []
     for i in range(0, len(matrices), 3):
-        max_val = max([np.max(mat) for mat in matrices[i:i + 3]])
-        min_val = min([np.min(mat) for mat in matrices[i:i + 3]])
+        max_val = max([np.max(m) for m in matrices[i:i + 3]])
+        min_val = min([np.min(m) for m in matrices[i:i + 3]])
         max_vals.append(max_val)
         min_vals.append(min_val)
 
@@ -206,9 +213,9 @@ def plot_correlation_matrices(matrices, names, save=False):
 def plot_heirarchical_clustering(matrices, names, threshold=None, save=False):
     linkages = []
     max_vals = []
-    for i, mat in enumerate(matrices):
-        mat = squareform(mat)#(mat + mat.T) / 2)
-        consensus_linkage_matrix = linkage(mat, method='ward')
+    for i, m in enumerate(matrices):
+        m = squareform(m)#(mat + mat.T) / 2)
+        consensus_linkage_matrix = linkage(m, method='ward')
         linkages.append(consensus_linkage_matrix)
         # get the maximum value of the linkage matrix
         max_val = consensus_linkage_matrix[-1, 2]
@@ -216,7 +223,7 @@ def plot_heirarchical_clustering(matrices, names, threshold=None, save=False):
     # get the maximum of every 3 entries of max_vals
     max_vals = [max(max_vals[i:i + 3]) for i in range(0, len(max_vals), 3)]
 
-    # now plot the dendograms
+    # now plot the dendograms =
     # make a 2x3 grid of subplots
     fig, axs = plt.subplots(2, 3, figsize=(10.5, 6))
     # iterate over the matrices and names
@@ -266,77 +273,11 @@ def plot_heirarchical_clustering(matrices, names, threshold=None, save=False):
         fig.savefig(PA.save_dir + '/dendograms.svg')
     return(fig, leaves)
 
-
-# %% average euclidean distance matrix (oldest approach)
-# make a matrix of the Euclidean distance for each taste trial for each taste and session, then take the average
-def make_euc_dist_matrix(rec_dir):
-    bins = np.arange(2000, 5000)
-    df_list = []
-    dat = blechpy.load_dataset(rec_dir)
-    dintrials = get_trial_info(dat)
-    dintrials['taste_trial'] = dintrials['taste_trial'] - 1
-    time_array, rate_array = h5io.get_rate_data(rec_dir)
-    # set up a dict to store a matrix for each key in rate_array
-    euc_dist_mats = []
-    dins = []
-    rec_dirs = []
-    for din, rate in rate_array.items():
-        if din != 'dig_in_4':
-            dinnum = int(din[-1])
-            euc_distances = np.empty((30, 30, len(bins)))
-            n_trials = rate.shape[1]
-            # fill with nan
-            euc_distances[:] = np.nan
-            for bidx, b in enumerate(bins):
-                X = rate[:, :, b].T
-                euc_dist = pdist(X)
-                euc_dist = squareform(euc_dist)
-                euc_distances[0:n_trials, 0:n_trials, bidx] = euc_dist
-            # average across bins
-            euc_distances = np.nanmean(euc_distances, axis=2)
-            # fold the distance matrix to make it symmetrical
-            euc_distances = (euc_distances + euc_distances.T) / 2
-            # z-score the euc_distances
-            euc_distances = (euc_distances - np.mean(euc_distances)) / np.std(euc_distances)
-            # add the negative of the lowest value to all entries of euc_distances
-            # euc_distances = euc_distances - np.min(euc_distances)
-            euc_dist_mats.append(euc_distances)
-            dins.append(dinnum)
-            rec_dirs.append(rec_dir)
-    # make a dataframe with rec_dir and euc_distances and dins
-    euc_distances = pd.DataFrame({'rec_dir': rec_dirs, 'euc_dist': euc_dist_mats, 'din': dins})
-
-    return euc_distances
-
-# Parallelize processing of each rec_dir
-num_cores = -1  # Use all available cores
-distances = Parallel(n_jobs=num_cores)(delayed(make_euc_dist_matrix)(rec_dir) for rec_dir in rec_dirs)
-
-# Concatenate all resulting data frames into one
-final_df = pd.concat(distances, ignore_index=True)
-
-final_df = pd.merge(final_df, rec_info, on='rec_dir')
-final_df['session'] = final_df['rec_num']
-
-matrices = []
-names = []
-for name, group in final_df.groupby(['exp_group', 'session']):
-    names.append(name)
-    euc_dist_mats = np.empty((30, 30, len(group)))
-    euc_dist_mats[:] = np.nan
-    group = group.reset_index(drop=True)
-    for i, row in group.iterrows():
-        euc_dist_mats[:, :, i] = row['euc_dist']
-    euc_dist_mats = np.nanmean(euc_dist_mats, axis=2)
-    # replace all nan with 0
-    matrices.append(euc_dist_mats)
-
-plot_correlation_matrices(matrices, names)
-plot_heirarchical_clustering(matrices, names)
-
-
 # %% consensus clustering (second attempt) with averaging distances for each trial and then performing consensus clustering
 ##THIS THAT GOOD SHIT RIGHT HERE 02/22/24
+
+def average_difference(u, v):
+    return np.mean(np.abs(u - v))
 def make_consensus_matrix2(rec_info):
     bins = np.arange(210, 500)
     df_list = []
@@ -360,12 +301,14 @@ def make_consensus_matrix2(rec_info):
                     dinnums.append(dinnum)
                     # downsample rate from 7000 bins to 700 by averaging every 10 bins
                     rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
+                    # zscore the rate
+                    rate = (rate - np.mean(rate)) / np.std(rate)
                     n_trials = rate.shape[1]
                     #create empty distance matrix
                     dms = np.zeros((n_trials, n_trials, len(bins)))
                     for b, bn in enumerate(bins):
                         X = rate[:, :, bn].T
-                        dms[:,:,b] = squareform(pdist(X))
+                        dms[:,:,b] = squareform(pdist(X, metric=average_difference))
 
                     dm = np.mean(dms, axis=2)
                     #fold the distance matrix to make it symmetrical
@@ -573,51 +516,74 @@ plt.show()
 g.savefig(PA.save_dir + '/cluster_idx_violinplot.png')
 g.savefig(PA.save_dir + '/cluster_idx_violinplot.svg')
 
-distances = []
-intra_A_distances = []
-intra_B_distances = []
+#compute intra and inter-cluster distances
+dflist = []
 #loop through every row in df
-for i, row in df.iterrows():
+for nm, group in df.groupby(['exp_name']):
+
+    inter_distances = []
+    intra_A_distances = []
+    intra_B_distances = []
+    all_trials_distances = []
+
     bins = np.arange(210, 500)
-    #load the rec_dir
-    rec_dir = row['rec_dir']
-    #get the rate arrays
-    time_array, rate_array = h5io.get_rate_data(rec_dir)
-    #create a string for the dig in from the channel
-    din = 'dig_in_' + str(row['channel'])
-    #get the entry in rate_array that corresponds to the dig in
-    rate = rate_array[din]
-    #downsample rate from 7000 bins to 700 by averaging every 10 bins
-    rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
-    #iterate through each bin in bins with enumerate and get the average distance matrix across the bins
-    dist_mats = []
-    for b in bins:
-        #get the rate for the current bin
-        X = rate[:, :, b].T
-        #calculate the pairwise distance matrix for the rate
-        dm = squareform(pdist(X, metric='correlation'))
-        #fold the distance matrix to make it symmetrical
-        dm = (dm + dm.T) / 2
-        #append the distance matrix to the list
-        dist_mats.append(dm)
-    #take the average of the distance matrices
-    avg_dm = np.mean(dist_mats, axis=0)
-    intra_A_dm = avg_dm[np.ix_(row['clust_A_idxs'], row['clust_A_idxs'])]
-    intra_B_dm = avg_dm[np.ix_(row['clust_B_idxs'], row['clust_B_idxs'])]
-    #linearize intra_A_dm and intra_B_dm
-    intra_A_dm = squareform(intra_A_dm)
-    intra_B_dm = squareform(intra_B_dm)
-    AB_distances = avg_dm[np.ix_(row['clust_A_idxs'], row['clust_B_idxs'])]
-    #linearize AB_distances
-    AB_distances = AB_distances.flatten()
-    #append the linearized AB_distances to the list
-    distances.append(AB_distances)
-    intra_A_distances.append(intra_A_dm)
-    intra_B_distances.append(intra_B_dm)
-#make a dataframe with the distances
-df['AB_distances'] = distances
-df['intra_A_distances'] = intra_A_distances
-df['intra_B_distances'] = intra_B_distances
+    nbins = len(bins)
+    an_dist_mats = np.empty((len(group), nbins, 30, 30))
+    an_dist_mats[:] = np.nan
+    n_trials_list = []
+    group = group.reset_index(drop=True)
+    for i, row in group.iterrows():
+        #load the rec_dir
+        rec_dir = row['rec_dir']
+        #create a string for the dig in from the channel
+        din = 'dig_in_' + str(row['channel'])
+        #get the rate arrays
+        time_array, rate_array = h5io.get_rate_data(rec_dir, din=row['channel'])
+        #get the number of trials
+        n_trials = rate_array.shape[1]
+        n_trials_list.append(n_trials)
+        #downsample rate from 7000 bins to 700 by averaging every 10 bins
+        rate = rate_array.reshape(rate_array.shape[0], rate_array.shape[1], -1, 10).mean(axis=3)
+        #zscore the rate
+        rate = (rate - np.mean(rate)) / np.std(rate)
+        #iterate through each bin in bins with enumerate and get the average distance matrix across the bins
+        for bdx, b in enumerate(bins):
+            #get the rate for the current bin
+            X = rate[:, :, b].T
+            #calculate the pairwise distance matrix for the rate
+            dm = squareform(pdist(X, metric=average_difference))
+
+            an_dist_mats[i, bdx, 0:dm.shape[0], 0:dm.shape[0]] = dm
+
+    #average an_dist_mats across the bins
+    an_dist_mats = np.nanmean(an_dist_mats, axis=1)
+
+    for i, row in group.iterrows():
+        n_trials = n_trials_list[i]
+        avg_dm = an_dist_mats[i, 0:n_trials, 0:n_trials]
+        intra_A_dm = avg_dm[np.ix_(row['clust_A_idxs'], row['clust_A_idxs'])]
+        intra_B_dm = avg_dm[np.ix_(row['clust_B_idxs'], row['clust_B_idxs'])]
+        #get the upper triangle of the intra_A_dm and intra_B_dm and linearize
+        intra_A_dm = intra_A_dm[np.triu_indices(intra_A_dm.shape[0], k=1)]
+        intra_B_dm = intra_B_dm[np.triu_indices(intra_B_dm.shape[0], k=1)]
+        AB_distances = avg_dm[np.ix_(row['clust_A_idxs'], row['clust_B_idxs'])]
+        all_trial_dm = avg_dm[np.ix_(np.arange(n_trials), np.arange(n_trials))]
+        all_trial_dm = all_trial_dm[np.triu_indices(all_trial_dm.shape[0], k=1)]
+        #linearize AB_distances
+        AB_distances = AB_distances.flatten()
+        #append the linearized AB_distances to the list
+        inter_distances.append(AB_distances)
+        intra_A_distances.append(intra_A_dm)
+        intra_B_distances.append(intra_B_dm)
+        all_trials_distances.append(all_trial_dm)
+    #make a dataframe with the inter_distances
+    group['AB_distances'] = inter_distances
+    group['intra_A_distances'] = intra_A_distances
+    group['intra_B_distances'] = intra_B_distances
+    group['all_trial_distances'] = all_trials_distances
+    dflist.append(group)
+#concatenate the list of dataframes into one dataframe
+df = pd.concat(dflist, ignore_index=True)
 
 #spread the distances into longform
 df_long = df[['exp_group', 'session', 'channel', 'exp_name', 'AB_distances']].explode('AB_distances')
@@ -626,11 +592,11 @@ df_long['session'] = df_long['session'].astype(int)
 df_long['channel'] = df_long['channel'].astype(int)
 #make AB_distances float
 df_long['AB_distances'] = df_long['AB_distances'].astype(float)
+df_long = df_long.groupby(['exp_group', 'session','channel','exp_name']).mean().reset_index()
 #plot a violin plot of the distances
-
 colors = {'naive': 'blue', 'suc_preexp': 'orange'}
-g=sns.catplot(data=df_long, kind='violin', x='session', y='AB_distances', row='exp_group', margin_titles=True, linewidth=2, edgecolor='black', saturation=1, aspect=3, color='white')
-g.map_dataframe(sns.stripplot, x='session', y='AB_distances', dodge=True, hue='exp_group', alpha=0.05, jitter = 0.4)
+g=sns.catplot(data=df_long, kind='box', x='session', y='AB_distances', row='exp_group', margin_titles=True, linewidth=2, aspect=3, color='white')
+g.map_dataframe(sns.stripplot, x='session', y='AB_distances', dodge=True, hue='exp_name', alpha=1, jitter=0.4, palette='colorblind')
 g.set_titles(row_template = '{row_name}')
 g.set_ylabels('early-late cluster distance')
 plt.show()
@@ -655,11 +621,38 @@ intra_dist_df['cluster'] = intra_dist_df['cluster'].str.replace('B', 'late')
 intra_dist_df['exp_group'] = intra_dist_df['exp_group'].str.replace('naive', 'Naive')
 intra_dist_df['exp_group'] = intra_dist_df['exp_group'].str.replace('suc_preexp', 'Suc. Pre-exposed')
 
-g = sns.catplot(data=intra_dist_df, kind='violin', x='session', y='intra_cluster_distance', row='exp_group', col='cluster', margin_titles=True, linewidth=2, edgecolor='black', saturation=1, aspect=2, color='white')
-g.map_dataframe(sns.stripplot, x='session', y='intra_cluster_distance', dodge=True, color='black', alpha=0.1, jitter=0.4)
+intra_dist_df = intra_dist_df.groupby(['exp_group', 'session','channel','exp_name', 'cluster']).mean().reset_index()
+#make a channel-exp_name joint column
+intra_dist_df['channel_exp_name'] = intra_dist_df['channel'].astype(str) + '_' + intra_dist_df['exp_name']
+
+g = sns.relplot(data=intra_dist_df, kind='line', x='session', y='intra_cluster_distance', row='exp_group', col='cluster', hue='channel_exp_name', linewidth=2, aspect=3, facet_kws={'margin_titles': True})
+plt.show()
+
+#add 'taste' column to intra_dist_df by matching channel according to taste_map
+taste_map = {0: 'Suc', 1: 'NaCl', 2: 'CA', 3: 'QHCl', 4: 'Spont'}
+intra_dist_df['taste'] = intra_dist_df['channel'].map(taste_map)
+g = sns.catplot(data=intra_dist_df, kind='box', x='cluster', y='intra_cluster_distance', row='exp_group', col='session', margin_titles=True, linewidth=2, saturation=1, aspect=0.75, color='white')
+g.map_dataframe(sns.swarmplot, x='cluster', y='intra_cluster_distance', dodge=True, alpha=1, palette='colorblind')
 g.set_ylabels('intra-cluster distance')
-g.set_titles(row_template = '{row_name}', col_template = '{col_name} {col_var}')
+g.set_titles(row_template='{row_name}', col_template='{col_name} {col_var}')
 plt.show()
 #save the plots
 g.savefig(PA.save_dir + '/intra_cluster_distance_violinplot.png')
 g.savefig(PA.save_dir + '/intra_cluster_distance_violinplot.svg')
+
+#it doesn't make sense to compare distances between sessions because there are different numbers of neurons in each session
+all_dist_df = df[['exp_group', 'session', 'channel', 'exp_name', 'all_trial_distances']]
+all_dist_df = pd.melt(all_dist_df, id_vars=['exp_group', 'session', 'channel', 'exp_name'], value_vars=['all_trial_distances'], var_name='cluster', value_name='all_trial_distance')
+all_dist_df = all_dist_df.explode('all_trial_distance')
+all_dist_df['all_trial_distance'] = all_dist_df['all_trial_distance'].astype(float)
+all_dist_df['exp_group'] = all_dist_df['exp_group'].str.replace('naive', 'Naive')
+all_dist_df['exp_group'] = all_dist_df['exp_group'].str.replace('suc_preexp', 'Suc. Pre-exposed')
+#filter out exp group Suc. Pre-exposed
+all_dist_df = all_dist_df.loc[all_dist_df['exp_group'] == 'Naive']
+#all_dist_df = all_dist_df.groupby(['exp_group', 'session','channel','exp_name']).mean().reset_index()
+g = sns.catplot(data=all_dist_df, kind='box', x='session', y='all_trial_distance', hue='exp_name', row='channel', margin_titles=True, linewidth=2, aspect=3)
+plt.legend(loc='upper right')
+g.map_dataframe(sns.stripplot, x='session', y='all_trial_distance', dodge=True, hue='exp_name', alpha=1, palette='colorblind')
+#show the legend
+
+plt.show()

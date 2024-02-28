@@ -138,10 +138,67 @@ def plot_psth_heatmaps(matrices):
                 cb.set_ticks([0.2, 0.4, 0.6, 0.8])
     plt.subplots_adjust(right=0.85, left=0.1)
     plt.show()
+    plt.savefig(PA.save_dir + 'psth_heatmaps.png')
 
 plot_psth_heatmaps(all_taste_psth)
-#save plot to file
-plt.savefig(PA.save_dir + 'psth_heatmaps.png')
+
+def plot_psth_heatmap2(matrices):
+    exp_group_colors = ['Blues', 'Oranges']
+    # get the maximum and minimum for every 3 entries of matrices
+
+    # Adjust the figure layout
+    fig = plt.figure(figsize=(10, 5))
+    gs = gridspec.GridSpec(1, 4, width_ratios=[1, 1, 1, 0.1])  # Extra column for the color bars on the left
+
+    # Create axes for the plots, adjusting for the extra column for the color bars
+    axs = [fig.add_subplot(gs[i]) for i in range(3)]
+
+    # Create separate color bars for each row in the first column
+    cbar_axes = fig.add_subplot(gs[3])
+
+    for i in range(3):
+        mat = matrices[i, :, :]
+        # scale mat from 0 to 1
+        mat = mat / mat.max()
+        mat = mat[:, 50:400]
+        session = i + 1
+
+        ax = axs[i]  # Adjust for the shifted indexing due to color bar column
+
+        cax = ax.matshow(mat, vmin=0, vmax=1, origin='lower', cmap='Blues', aspect='auto')
+
+        if i == 0:
+            ax.set_ylabel('Trial', fontsize=20)
+            ax.set_yticks([0, 9, 19, 29])
+            ax.set_yticklabels(ax.get_yticks() + 1, fontsize=14)
+        else:
+            ax.set_yticks([])
+
+        ax.set_xlabel('Trial', fontsize=20)
+        # set the x ticks so that for every 100 indices, there is a tick, and set the tick labels to go from -2000 to 4000
+        ax.set_xticks([50, 150, 250])
+        ax.set_xticklabels(ax.get_xticks() * 10 - 500, fontsize=14)
+        ax.set_xlabel('Time (ms)', fontsize=20)
+        ax.xaxis.set_ticks_position('bottom')
+
+        ax.set_title('Session ' + str(session), pad=-6, fontsize=20)
+
+        # Add one color bar per row in the first column
+        if i == 1:  # This ensures color bars are added once per row
+            cb = fig.colorbar(cax, cax=cbar_axes, orientation='vertical')
+            cbar_axes.yaxis.set_ticks_position('right')
+            cbar_axes.yaxis.set_label_position('right')
+            cbar_axes.set_ylabel('rate index', fontsize=20, rotation=270, labelpad=20)
+            cb.set_ticks([0.2, 0.4, 0.6, 0.8])
+
+    plt.subplots_adjust(right=0.85, left=0.1)
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(PA.save_dir + 'naive_psth_heatmaps.png')
+
+
+naive_mat = all_taste_psth[0, :, :, :]
+plot_psth_heatmap2(naive_mat)
 
 
 
