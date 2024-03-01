@@ -102,8 +102,8 @@ def find_held_units(proj, percent_criterion=95, raw_waves=False):
             rec1 = row['rec_dir']
             rec_name1 = row['rec_name']
             unit1 = row['unit_name']
-            reg_spike = row['regular_spiking']
-            fast_spike = row['fast_spiking']
+            #reg_spike = row['regular_spiking']
+            #fast_spike = row['fast_spiking']
             rec_num = row['rec_num']
             time_group = row['time_group']
             
@@ -113,9 +113,9 @@ def find_held_units(proj, percent_criterion=95, raw_waves=False):
                 continue
 
             next_group = rec_order[idx+1]
-            g2 = group.query('rec_num == @next_group and '
-                             'regular_spiking == @reg_spike and '
-                             'fast_spiking == @fast_spike')
+            g2 = group.query('rec_num == @next_group')# and '
+                             #'regular_spiking == @reg_spike and '
+                             #'fast_spiking == @fast_spike')
             if g2.empty:
                 continue
 
@@ -556,50 +556,3 @@ def apply_exclude(row):
             return True
 
     return False
-
-def _get_all_units_deprecated(proj):
-    # Columns:
-    #   - exp_name, exp_group, rec_name, rec_group, rec_dir, unit_num,
-    #   - electrode, area, single, unit_type
-    all_units = pd.DataFrame(columns=['exp_name', 'exp_group', 'rec_name',
-                                      'rec_group', 'rec_dir', 'unit_name',
-                                      'unit_num', 'electrode', 'area',
-                                      'single_unit', 'regular_spiking',
-                                      'fast_spiking'])
-    for i, row in proj._exp_info.iterrows():
-        exp_name = row['exp_name']
-        exp_group = row['exp_group']
-        exp_dir = row['exp_dir']
-        exp = blechpy.load_experiment(exp_dir)
-        for rec_name, rec_dir in exp.rec_labels.items():
-            if 'preCTA' in rec_name:
-                rec_group = 'preCTA'
-            elif 'postCTA' in rec_name:
-                rec_group = 'postCTA'
-            elif 'Train' in rec_name:
-                rec_group = 'ctaTrain'
-            elif 'Test' in rec_name:
-                rec_group = 'ctaTest'
-            elif rec_name in E1:
-                rec_group = 'Exposure_1'
-            # elif rec_name in E2:
-            #     rec_group = 'Exposure_2'
-            else:
-                # TODO: Make more elegant, ask for input
-                raise ValueError('Rec %s does not fit into a group' % rec_name)
-
-            dat = load_dataset(rec_dir)
-            units = dat.get_unit_table().copy()
-            units['exp_name'] = exp_name
-            units['exp_group'] = exp_group
-            units['rec_name'] = rec_name
-            units['rec_group'] = rec_group
-            units['rec_dir'] = rec_dir
-
-            em = dat.electrode_mapping.copy().set_index('Electrode')
-            units['area'] = units['electrode'].map(em['area'])
-            units = units[all_units.columns]
-            all_units = all_units.append(units).reset_index(drop=True)
-
-    return all_units
-

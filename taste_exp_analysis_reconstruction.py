@@ -18,10 +18,10 @@ import os
 
 # you need to make a project analysis using blechpy.project() first
 # rec_dir =  '/media/dsvedberg/Ubuntu Disk/taste_experience'
-rec_dir = '/media/dsvedber g/Ubuntu Disk/taste_experience_resorts'
+rec_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'
 proj = blechpy.load_project(rec_dir)
 PA = ana.ProjectAnalysis(proj)
-[all_units, held_df] = PA.get_unit_info()  # overwrite = True) #run and check for correct area then run get best hmm
+[all_units, held_df] = PA.get_unit_info(overwrite = True) #run and check for correct area then run get best hmm
 HA = ana.HmmAnalysis(proj)
 HA.get_hmm_overview()  # overwrite = True) #use overwrrite = True to debug
 # HA.sort_hmms_by_params()#overwrite = True)
