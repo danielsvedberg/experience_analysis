@@ -27,7 +27,7 @@ def optimize_t(mat, dm):
         clabs = fcluster(linkages, t=t, criterion='distance')  # get the cluster labels for this t value
         # impose the requirement that there be at least 2 clusters, and fewer clusters than trials
         if (len(np.unique(clabs)) > 1) and (len(np.unique(clabs)) < len(mat)):
-            score = silhouette_score(dm, clabs)
+            score = silhouette_score(mat, clabs)
             if score > best_score:
                 best_score = score
                 cluster_labels = clabs
