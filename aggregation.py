@@ -12,6 +12,7 @@ from blechpy.analysis import spike_analysis as sas
 from blechpy.dio import h5io
 from blechpy.utils import print_tools as pt
 from collections.abc import Mapping
+from joblib import Parallel, delayed
 
 
 PAL_MAP = {'Spont': -1, 'Suc': 1, 'QHCl': 4,
@@ -77,45 +78,34 @@ def get_all_units(proj):
 
     return all_units
 
-def find_held_units(proj, percent_criterion=95, raw_waves=False):
-    all_units = get_all_units(proj)
-    sing_units = all_units[all_units['single_unit']==True]
-    sing_units['intra_J3'] = sing_units.apply(lambda x: get_unit_J3(x['rec_dir'],
-                                                                    x['unit_name'],
-                                                                    raw_waves=raw_waves),
-                                              axis=1)
-    all_units.loc[sing_units.index, 'intra_J3'] = sing_units['intra_J3']
-    threshold = np.percentile(sing_units['intra_J3'], percent_criterion)
-    rec_dirs = sing_units['rec_dir'].unique().tolist()
-
-    # Loop through animal, electrode, rec pairs
-    # Store rec1, el1, unit1, rec2, el2, unit2, interJ3, held, held_unit_name
+def get_held_dfs(group_name, group):
     held_df = pd.DataFrame(columns=['rec1', 'unit1', 'rec2', 'unit2',
                                     'inter_J3', 'held', 'held_unit_name', 'exp_group', 'rec_num','time_group', 'exp_name'])
-    for group_name, group in sing_units.groupby(['exp_name', 'electrode']):
-        anim = group_name[0]
-        electrode = group_name[1]
-        
-        rec_order = sorted(group.rec_num.unique())
-        for i, row in group.iterrows():
+
+    anim = group_name
+    for nm, grp in group.groupby('electrode'):
+        electrode = nm
+
+        rec_order = sorted(grp.rec_num.unique())
+        for i, row in grp.iterrows():
             rec_group = row['rec_group']
             rec1 = row['rec_dir']
             rec_name1 = row['rec_name']
             unit1 = row['unit_name']
-            #reg_spike = row['regular_spiking']
-            #fast_spike = row['fast_spiking']
+            # reg_spike = row['regular_spiking']
+            # fast_spike = row['fast_spiking']
             rec_num = row['rec_num']
             time_group = row['time_group']
-            
+
             idx = rec_order.index(rec_num)
-            
-            if idx == len(rec_order)-1:
+
+            if idx == len(rec_order) - 1:
                 continue
 
-            next_group = rec_order[idx+1]
-            g2 = group.query('rec_num == @next_group')# and '
-                             #'regular_spiking == @reg_spike and '
-                             #'fast_spiking == @fast_spike')
+            next_group = rec_order[idx + 1]
+            g2 = grp.query('rec_num == @next_group')  # and '
+            # 'regular_spiking == @reg_spike and '
+            # 'fast_spiking == @fast_spike')
             if g2.empty:
                 continue
 
@@ -125,12 +115,34 @@ def find_held_units(proj, percent_criterion=95, raw_waves=False):
                 rec_name2 = row2['rec_name']
                 print('Comparing %s %s vs %s %s' % (rec_name1, unit1,
                                                     rec_name2, unit2))
-                J3 = get_inter_J3(rec1, unit1, rec2, unit2, raw_waves=raw_waves)
+                J3 = get_inter_J3(rec1, unit1, rec2, unit2, raw_waves=False)
                 held_df = held_df.append({'rec1': rec1, 'unit1': unit1,
                                           'rec2': rec2, 'unit2': unit2,
                                           'inter_J3': J3, 'exp_group': row['exp_group'],
                                           'exp_name': anim},
                                          ignore_index=True)
+    return held_df
+
+def find_held_units(proj, percent_criterion=95, raw_waves=False):
+    all_units = get_all_units(proj)
+    sing_units = all_units[all_units['single_unit']==True]
+
+    intra_J3 = Parallel(n_jobs=-1)(delayed(get_unit_J3)(rec, unit, raw_waves=raw_waves) for rec, unit in zip(sing_units['rec_dir'], sing_units['unit_name']))
+    sing_units['intra_J3'] = intra_J3
+    # sing_units['intra_J3'] = sing_units.apply(lambda x: get_unit_J3(x['rec_dir'],
+    #                                                                 x['unit_name'],
+    #                                                                 raw_waves=raw_waves),
+    #                                           axis=1)
+
+    all_units.loc[sing_units.index, 'intra_J3'] = sing_units['intra_J3']
+    threshold = np.percentile(sing_units['intra_J3'], percent_criterion)
+    rec_dirs = sing_units['rec_dir'].unique().tolist()
+
+    # Loop through animal, electrode, rec pairs
+    # Store rec1, el1, unit1, rec2, el2, unit2, interJ3, held, held_unit_name
+    grouped_units = sing_units.groupby(['exp_name'])
+    held_df = Parallel(n_jobs=-1)(delayed(get_held_dfs)(group_name, group) for group_name, group in grouped_units)
+    held_df = pd.concat(held_df, ignore_index=True)
 
     new_held_df = None
     for group_name, group in held_df.groupby('exp_group'):
@@ -176,7 +188,10 @@ def get_inter_J3(rec1, unit1, rec2, unit2, raw_waves=False):
     else:
         wf1, descrip1, fs1 = h5io.get_unit_waveforms(rec1, unit1)
         wf2, descrip2, fs2 = h5io.get_unit_waveforms(rec2, unit2)
-    
+
+    wf1 = wf1 / np.std(wf1)
+    wf2 = wf2 / np.std(wf2)
+
     if wf1.shape[1] != wf2.shape[1]:
         print('warning: different length spike snapshots, trimming to match. Consider re-clustering & sorting with equal snapshot lengths')
         diff = wf1.shape[1]-wf2.shape[1]
@@ -191,29 +206,7 @@ def get_inter_J3(rec1, unit1, rec2, unit2, raw_waves=False):
     elif fs1 < fs2:
         wf2 = sas.interpolate_waves(wf2, fs2, fs1)
 
-    pca = PCA(n_components=3)
-    pca.fit(np.concatenate((wf1, wf2), axis=0))
-    pca_wf1 = pca.transform(wf1)
-    pca_wf2 = pca.transform(wf2)
-
-    J3 = hua.calc_J3(pca_wf1, pca_wf2)
-    return J3
-
-def _get_inter_J3(rec1, unit1, rec2, unit2, raw_waves=False):
-    if raw_waves:
-        wf1, descrip1, fs1 = h5io.get_raw_unit_waveforms(rec1, unit1)
-        wf2, descrip2, fs2 = h5io.get_raw_unit_waveforms(rec2, unit2)
-    else:
-        wf1, descrip1, fs1 = h5io.get_unit_waveforms(rec1, unit1)
-        wf2, descrip2, fs2 = h5io.get_unit_waveforms(rec2, unit2)
-        
-
-    if fs1 > fs2:
-        wf1 = sas.interpolate_waves(wf1, fs1, fs2)
-    elif fs1 < fs2:
-        wf2 = sas.interpolate_waves(wf2, fs2, fs1)
-
-    pca = PCA(n_components=3)
+    pca = PCA(n_components=4)
     pca.fit(np.concatenate((wf1, wf2), axis=0))
     pca_wf1 = pca.transform(wf1)
     pca_wf2 = pca.transform(wf2)
@@ -229,7 +222,10 @@ def get_unit_J3(rec_dir, unit, raw_waves=False):
     else:
         waves, descrip, fs = h5io.get_unit_waveforms(rec_dir, unit)
 
-    pca = PCA(n_components=3)
+    #variance_normalize waves
+    waves = waves / np.std(waves)
+
+    pca = PCA(n_components=4)
     pca.fit(waves)
     pca_waves = pca.transform(waves)
     idx1 = int(waves.shape[0] * (1.0 / 3.0))

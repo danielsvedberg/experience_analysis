@@ -39,7 +39,7 @@ def make_consensus_matrix(mat_list):
     consensus matrix
     :param
         mat_list: a list of trial matrices, wherein each, each row is a trial and each column is a variable (i.e. neuron)
-    :return: 
+    :return:
         consensus_matrix: a consensus matrix
         cluster_label_arrays: a list of cluster labels for each data matrix
         thresholds: a list of optimized distance thresholds for each matrix

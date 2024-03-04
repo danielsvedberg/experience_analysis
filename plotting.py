@@ -52,7 +52,7 @@ def plot_unit_waveforms(rec_dir, unit, ax=None, save_file=None):
     ax.plot(time, mean_wave, color='k', linewidth=3)
     ax.plot(time, mean_wave - std_wave, color='k', linewidth=1, linestyle='--')
     ax.plot(time, mean_wave + std_wave, color='k', linewidth=1, linestyle='--')
-    ax.set_title('%s -- %s' % (dat.data_name, unit_str))
+    ax.set_title('%s\n%s' % (dat.data_name, unit_str))
 
     if save_file is not None:
         fig.savefig(save_file)
@@ -64,7 +64,7 @@ def plot_unit_waveforms(rec_dir, unit, ax=None, save_file=None):
 
 def plot_held_units(all_units, save_dir):
     held_units = all_units[all_units['held_unit_name'].notnull()]
-    rec_order = ['preCTA', 'ctaTrain', 'ctaTest', 'postCTA']
+    rec_order = ['naive_1','naive_2','naive_3','suc_preexp_1','suc_preexp_2','suc_preexp_3',]
 
     for unit_name, group in held_units.groupby('held_unit_name'):
         # Sort to put in proper rec order
@@ -75,20 +75,21 @@ def plot_held_units(all_units, save_dir):
 
         # Make plot and plot each unit
         width = 9*len(tmp)
-        fig = plt.figure(figsize=(width, 10))
-        ax = fig.add_subplot('111')
+        fig, axs = plt.subplots(1, len(tmp), figsize=(width, 11), sharey=True, sharex=True)
         for i, row in tmp.iterrows():
-            tmp_ax = fig.add_subplot(1, len(tmp), i+1)
-            plot_unit_waveforms(row['rec_dir'], row['unit_name'], ax=tmp_ax)
-
-        ax.spines['top'].set_color('none')
-        ax.spines['bottom'].set_color('none')
-        ax.spines['left'].set_color('none')
-        ax.spines['right'].set_color('none')
-        ax.tick_params(labelcolor='w', top=False, bottom=False, left=False, right=False)
-        ax.set_xlabel('Time (ms)')
-        ax.set_ylabel('Voltage (mV)')
+            ax = axs[i]
+            plot_unit_waveforms(row['rec_dir'], row['unit_name'], ax=ax)
+            # ax.spines['top'].set_color('none')
+            # ax.spines['bottom'].set_color('none')
+            # ax.spines['left'].set_color('none')
+            # ax.spines['right'].set_color('none')
+            #ax.tick_params(labelcolor='w', top=False, bottom=False, left=False, right=False)
+            ax.set_xlabel('Time (ms)')
+            if i == 0:
+                ax.set_ylabel('Voltage (mV)')
         fig.suptitle('Held Unit %s' % unit_name)
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.85)
         save_file = os.path.join(save_dir, 'held_unit_%s-waves.png' % unit_name)
         fig.savefig(save_file)
         plt.close(fig)

@@ -127,6 +127,26 @@ class ProjectAnalysis(object):
 
         return all_units, held_df
 
+    def plot_held_units(self):
+        save_dir = self.save_dir
+        all_units_file = self.files['all_units']
+        held_units_file = self.files['held_units']
+        if not os.path.isdir(save_dir):
+            raise ValueError('Please run get_held_units first')
+
+        if os.path.isfile(all_units_file) and os.path.isfile(held_units_file):
+            all_units = feather.read_dataframe(all_units_file)
+            held_df = feather.read_dataframe(held_units_file)
+            # Plot waveforms and J3 distribution
+            plot_dir = os.path.join(save_dir, 'held_unit_waveforms')
+            if not os.path.isdir(plot_dir):
+                os.makedirs(plot_dir)
+
+            plt.plot_held_units(all_units, plot_dir)
+        else:
+            raise ValueError('Please run get_held_units first')
+        return all_units, held_df
+
     def get_unit_info(self, overwrite=False):
         save_dir = self.save_dir
         all_units_file = self.files['all_units']
