@@ -269,4 +269,151 @@ for name, group in target_df.groupby('held_unit_name'):
     plt.savefig(save_dir + '/' + 'unit_' + str(name) + '.svg')
     plt.close()
 
-#%%
+
+#%% Spearman palatability analysis
+palatatability_ranks = {'Suc': 1, 'NaCl': 2, 'CA': 3, 'QHCl': 4}
+
+import scipy.stats as stats
+#now, for every unit in max_response, calculate the taste discrimination index for each unit
+# Parameters
+window_length = 250  # ms
+step_size = 25
+num_time_bins = 7000
+num_windows = (num_time_bins - window_length) // step_size + 1
+tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
+time_idx = np.arange(-2000, 4775, 25)
+
+# Function to calculate firing rates with rolling window
+def calculate_firing_rates(spike_counts, window_length, step_size):
+    num_trials = spike_counts.shape[0]
+    num_windows = (num_time_bins - window_length) // step_size + 1
+    firing_rates = np.zeros((num_trials, num_windows))
+    for i in range(num_windows):
+        start_idx = i * step_size
+        end_idx = start_idx + window_length
+        firing_rates[:, i] = spike_counts[:, start_idx:end_idx].sum(axis=1) / (window_length / 1000.0)  # Convert to Hz
+    return firing_rates
+
+target_df = max_response
+#isolate the columns  'rec_dir', 'exp_name', 'exp_group', 'session', 'unit_num', 'held_unit_name'
+target_df = target_df[['rec_dir', 'exp_name', 'exp_group', 'session', 'unit_num', 'held_unit_name']]
+#get unique rows
+target_df = target_df.drop_duplicates().reset_index(drop=True)
+dins = ["dig_in_0", "dig_in_1", "dig_in_2", "dig_in_3"]#, "dig_in_4"]
+tastes = ['Suc', 'NaCl', 'CA', 'QHCl']#, 'Spont']
+palatability_ranks = {'Suc': 1, 'NaCl': 2, 'CA': 3, 'QHCl': 4}
+din_palatability_map = {'dig_in_0': 1, 'dig_in_1': 2, 'dig_in_2': 3, 'dig_in_3': 4}
+
+def calc_pal_corr(row):
+    rec_dir = row['rec_dir']
+    unit_num = row['unit_num']
+    #get the spike data
+    time_array, responses = h5io.get_psths(rec_dir, units=[unit_num])
+    rates_mats = []
+    pal_mats = []
+    for din in dins:
+        rates = responses[din]
+        # make an array the same shape as rates, but repeating the palatability rank for each bin
+        pal_mat = np.zeros_like(rates)
+        pal = din_palatability_map[din]
+        pal_mat[:] = pal
+        rates_mats.append(rates)
+        pal_mats.append(pal_mat)
+
+    # stack the rates and palatability matrices
+    rates = np.vstack(rates_mats)
+    pal = np.vstack(pal_mats)
+
+    # Calculate Spearman's rank correlation for each window
+    correlation_coefficients = []
+    p_values = []
+    for j in range(rates.shape[1]):
+        rho, p_val = stats.spearmanr(rates[:, j], pal[:, j])
+        correlation_coefficients.append(abs(rho))
+        p_values.append(p_val)
+
+    significant_windows = []
+    significant_times = []
+    for j in range(1, len(p_values) - 1):
+        if p_values[j - 1] < 0.05 and p_values[j] < 0.05 and p_values[j + 1] < 0.05:
+            significant_windows.append(j)
+            significant_times.append(time_array[j])
+
+    return p_values, significant_windows, significant_times, correlation_coefficients, time_array
+
+def calc_pal_group(group):
+
+    p_val_list = []
+    significant_windows_list = []
+    significant_times_list = []
+    correlation_coefficients_list = []
+    time_array_list = []
+    for i, row in group.iterrows():
+        p_values, significant_windows, significant_times, correlation_coefficients, time_array = calc_pal_corr(row)
+        p_val_list.append(p_values)
+        significant_windows_list.append(significant_windows)
+        significant_times_list.append(significant_times)
+        correlation_coefficients_list.append(correlation_coefficients)
+        time_array_list.append(time_array)
+    group['p_values'] = p_val_list
+    group['significant_windows'] = significant_windows_list
+    group['significant_times'] = significant_times_list
+    group['correlation_coefficients'] = correlation_coefficients_list
+    group['time_array'] = time_array_list
+    return group
+
+group_vars = ['rec_dir']
+reslist = Parallel(n_jobs=-1)(delayed(calc_pal_group)(group) for name, group in target_df.groupby(group_vars))
+target_df = pd.concat(reslist)
+target_df = target_df.reset_index(drop=True)
+
+#make a new directory called "held_unit_disrim_plots"
+save_dir = PA.save_dir + '/held_unit_palatability_plots'
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+
+sessions = [1, 2, 3]
+#need to fix minimum of sifnificant windows since it gets pushed forward
+for name, group in target_df.groupby('held_unit_name'):
+    #order group by session
+    group = group.sort_values(by='session')
+    group = group.reset_index(drop=True)
+    fig, ax = plt.subplots(1, 3, figsize=(10, 5), sharey=True, sharex=True)
+    for session in sessions:
+        row = group[group['session'] == session]
+        axs = ax[session - 1]
+        if len(row) == 0:
+            continue
+        else:
+            time_array = np.array(row['time_array'].iloc[0])
+            coeffs = np.array(row['correlation_coefficients'].iloc[0])
+            pvals = np.array(row['p_values'].iloc[0])
+            significant_windows = np.array(row['significant_windows'].iloc[0])
+            sig_array = np.zeros_like(time_array)
+            if len(significant_windows) > 0:
+                sig_array[significant_windows] = 1
+
+            trim_time = np.where((time_array >= -500) & (time_array < 2500))[0]
+            time = time_array[trim_time]
+            coeffs = coeffs[trim_time]
+            pvals = pvals[trim_time]
+            sig_array = sig_array[trim_time]
+
+            axs.fill_between(time, sig_array, alpha=0.7, color='lightgrey')
+            # #plot pvals on the right axis
+            # axs2 = axs.twinx()
+            # axs2.plot(time, pvals, color='black', line)
+            axs.plot(time, coeffs)
+
+        axs.set_title('Session ' + str(session))
+        axs.set_xlabel('Time (s)')
+        if session == 1:
+            axs.set_ylabel('correlation coefficient')
+    plt.suptitle('Spearman correlation coefficient for ' + str(name))
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.825, right=0.95)
+
+    plt.savefig(save_dir + '/' + 'unit_' + str(name) + '.png')
+    plt.savefig(save_dir + '/' + 'unit_' + str(name) + '.svg')
+    plt.close()
+

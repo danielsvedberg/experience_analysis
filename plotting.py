@@ -445,7 +445,7 @@ def plot_PSTHs(rec, unit, params, save_file=None, ax=None):
     if isinstance(unit, int):
         unit_name = 'unit%03d' % unit
     else:
-        unit_name = unit_name
+        unit_name = None
 
     ax.set_title('%s %s' % (os.path.basename(rec), unit_name))
     ax.legend()
