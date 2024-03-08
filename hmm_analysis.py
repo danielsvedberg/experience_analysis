@@ -2101,6 +2101,56 @@ def getModeHmm(hmm):
 
     return mode_seqs, pr_mode, best_seqs
 
+def getSplitModeHMMs(best_hmms, split_trial=5, shuffle=False):
+    #shuffle argument shuffles trials
+    #split trial is trial number to split gamma mode by, and this creates a pre and post split mode agains which the trials in the group are compared
+    def process_row(row):
+        rec_dir = row['rec_dir']
+        h5_file = get_hmm_h5(rec_dir)
+        hmm_id = row['hmm_id']
+        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
+        out = getSplitMode(hmm, split_trial, shuffle)
+        out['time'] = time
+        return out
+
+    res_list = Parallel(n_jobs=7)(delayed(process_row)(row) for i, row in best_hmms.iterrows())
+    #make dataframe
+    df = pd.DataFrame.from_records(res_list)
+    best_hmms = pd.concat([best_hmms, df], axis=1)
+    return best_hmms
+def getSplitMode(hmm, split_trial=5, shuffle=False):
+    def process_section(section):
+        seqs = np.argmax(section, axis=1)
+        mode_seqs, _ = scistats.mode(seqs)
+        mode_seqs = mode_seqs.flatten().astype(int)
+        mode_seqs = np.ravel(mode_seqs)
+        pr_mode = section[:, mode_seqs, np.arange(section.shape[2])]
+        return mode_seqs, pr_mode, seqs
+
+    gamma_probs = hmm.stat_arrays['gamma_probabilities']
+    n_trials = gamma_probs.shape[0]
+    #if shuffle==True, then shuffle the 0th dimension of gamma_probs
+    if shuffle:
+        trials = np.arange(n_trials)
+        np.random.shuffle(trials)
+        gamma_probs = gamma_probs[trials, :, :]
+
+    if split_trial+1 >= gamma_probs.shape[0]:
+        pre_mode, pre_pr_mode, pre_seqs = process_section(gamma_probs)
+        post_mode = None
+        post_pr_mode = None
+        post_seqs = None
+    else:
+        pre_split = gamma_probs[:split_trial, :, :]
+        post_split = gamma_probs[split_trial:, :, :]
+        pre_mode, pre_pr_mode, pre_seqs = process_section(pre_split)
+        post_mode, post_pr_mode, post_seqs = process_section(post_split)
+
+    out = {'split': split_trial, 'shuffle': shuffle, 'pre_mode': pre_mode, 'pre_pr_mode': pre_pr_mode, 'pre_seqs': pre_seqs,
+           'post_mode': post_mode, 'post_pr_mode': post_pr_mode, 'post_seqs': post_seqs}
+    return out
+
+
 def binstate(best_hmms, statefunc=getModeHmm):
     def getbinstateprob(row):
         h5_file = get_hmm_h5(row['rec_dir']) #get hmm file name
@@ -2134,24 +2184,6 @@ def get_avg_gamma_mode(best_hmms):
 def add_trial_group(df, trial_group = 5):
     df['trial_group'] = (df.trial.astype(int)/trial_group).astype(int)
     return df
-
-def binwrong(best_hmms, trial_group = 5):
-    def getwrongbin(row, trial_group):
-        h5_file = get_hmm_h5(row['rec_dir'])
-        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row["hmm_id"])
-        mode_seqs, mode_gamma = getModeHmm(hmm) #get mode state # and gamma prob
-
-        rowids = hmm.stat_arrays['row_id']
-        time = hmm.stat_arrays['time']
-        colnames  =['hmm_id','dig_in','taste','trial']
-        outdf = pd.DataFrame(rowids,columns = colnames)
-        outdf['trial_group'] = (outdf.trial.astype(int)/trial_group).astype(int)
-        nmcols = ['exp_name','exp_group','rec_group','time_group']
-        outdf[nmcols] = row[nmcols]
-        colnames = outdf.columns
-        gammadf = pd.DataFrame(mode_gamma, columns=time)
-        outdf = pd.concat([outdf, gammadf], axis=1)
-        outdf = pd.melt(outdf, id_vars=colnames, value_vars=list(time), var_name='time', value_name='gamma_mode')
 
 def analyze_classified_hmm_state_timing(best_hmms, decodes, min_dur=1):
     '''create output array with columns: exp_name, exp_group, rec_dir,
