@@ -2113,41 +2113,54 @@ def getSplitModeHMMs(best_hmms, split_trial=5, shuffle=False):
         out['time'] = time
         return out
 
-    res_list = Parallel(n_jobs=7)(delayed(process_row)(row) for i, row in best_hmms.iterrows())
+    res_list = Parallel(n_jobs=1)(delayed(process_row)(row) for i, row in best_hmms.iterrows())
     #make dataframe
     df = pd.DataFrame.from_records(res_list)
     best_hmms = pd.concat([best_hmms, df], axis=1)
+    del df
     return best_hmms
 def getSplitMode(hmm, split_trial=5, shuffle=False):
-    def process_section(section):
-        seqs = np.argmax(section, axis=1)
+    def get_seqs(gamma_probs):
+        seqs = np.argmax(gamma_probs, axis=1)
+        return seqs
+
+    def get_mode_seqs(seqs):
         mode_seqs, _ = scistats.mode(seqs)
         mode_seqs = mode_seqs.flatten().astype(int)
         mode_seqs = np.ravel(mode_seqs)
-        pr_mode = section[:, mode_seqs, np.arange(section.shape[2])]
-        return mode_seqs, pr_mode, seqs
+        return mode_seqs
 
-    gamma_probs = hmm.stat_arrays['gamma_probabilities']
-    n_trials = gamma_probs.shape[0]
-    #if shuffle==True, then shuffle the 0th dimension of gamma_probs
+    def get_pr_mode(gamma_probs, mode_seqs):
+        pr_mode = gamma_probs[:, mode_seqs, np.arange(gamma_probs.shape[2])]
+        pr_mode = pr_mode[:,100:]
+        pr_mode = np.mean(pr_mode, axis=1)
+        return pr_mode
+
+    gamma = hmm.stat_arrays['gamma_probabilities']
+    n_trials = gamma.shape[0]
+    #if shuffle==True, then shuffle the 0th dimension of gamma
     if shuffle:
         trials = np.arange(n_trials)
         np.random.shuffle(trials)
-        gamma_probs = gamma_probs[trials, :, :]
+        gamma = gamma[trials, :, :]
 
-    if split_trial+1 >= gamma_probs.shape[0]:
-        pre_mode, pre_pr_mode, pre_seqs = process_section(gamma_probs)
-        post_mode = None
-        post_pr_mode = None
-        post_seqs = None
+    if split_trial >= gamma.shape[0]:
+        seq = get_seqs(gamma)
+        pre_mode = get_mode_seqs(seq)
+        pr_pre = get_pr_mode(gamma, pre_mode)
+        pr_post = None
+
     else:
-        pre_split = gamma_probs[:split_trial, :, :]
-        post_split = gamma_probs[split_trial:, :, :]
-        pre_mode, pre_pr_mode, pre_seqs = process_section(pre_split)
-        post_mode, post_pr_mode, post_seqs = process_section(post_split)
+        seq = get_seqs(gamma)
+        pre_mode = get_mode_seqs(seq[:split_trial])
+        post_mode = get_mode_seqs(seq[split_trial:])
 
-    out = {'split': split_trial, 'shuffle': shuffle, 'pre_mode': pre_mode, 'pre_pr_mode': pre_pr_mode, 'pre_seqs': pre_seqs,
-           'post_mode': post_mode, 'post_pr_mode': post_pr_mode, 'post_seqs': post_seqs}
+        pr_pre = get_pr_mode(gamma, pre_mode)
+        pr_post = get_pr_mode(gamma, post_mode)
+        del post_mode
+
+    out = {'split': split_trial, 'shuffle': shuffle, 'pr_pre': pr_pre, 'pr_post': pr_post}
+    del seq, pre_mode, pr_pre, pr_post, gamma
     return out
 
 
