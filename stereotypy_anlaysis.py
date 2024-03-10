@@ -105,7 +105,7 @@ final_df['session'] = final_df['rec_num']
 
 subject_col = 'exp_name'
 group_cols = ['exp_group', 'session', 'taste']
-trial_col = 'session_trial'
+trial_col = 'taste_trial'
 value_col = 'euclidean_distance'
 preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, subject_col, group_cols, trial_col, value_col,
                                                        nIter=10000, save_dir=PA.save_dir, overwrite=False)

@@ -2119,7 +2119,7 @@ def getSplitModeHMMs(best_hmms, split_trial=5, shuffle=False):
     best_hmms = pd.concat([best_hmms, df], axis=1)
     del df
     return best_hmms
-def getSplitMode(hmm, split_trial=5, shuffle=False):
+def getSplitMode(hmm, split_trial=5, shuffle=False, output='dict'):
     def get_seqs(gamma_probs):
         seqs = np.argmax(gamma_probs, axis=1)
         return seqs
@@ -2157,11 +2157,14 @@ def getSplitMode(hmm, split_trial=5, shuffle=False):
 
         pr_pre = get_pr_mode(gamma, pre_mode)
         pr_post = get_pr_mode(gamma, post_mode)
-        del post_mode
+        #del post_mode
 
-    out = {'split': split_trial, 'shuffle': shuffle, 'pr_pre': pr_pre, 'pr_post': pr_post}
-    del seq, pre_mode, pr_pre, pr_post, gamma
-    return out
+    if output == 'dict':
+        out = {'split': split_trial, 'shuffle': shuffle, 'pr_pre': pr_pre, 'pr_post': pr_post}
+        del seq, pre_mode, pr_pre, pr_post, gamma
+        return out
+    elif output == 'classic':
+        return pre_mode, pr_pre, post_mode, pr_post, seq
 
 
 def binstate(best_hmms, statefunc=getModeHmm):
