@@ -17,26 +17,26 @@ HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 #%%NAIVE BAYES CLASSIFICATION
 ###############################################################################
 NB_decode = HA.get_NB_decode()  # get the decode dataframe with some post-processing
-
-### plot NB accuracy over time #
-trial_cols = ['taste_trial', 'session_trial']
-trial_groups = [3, 4, 5, 6]
-for i in trial_groups:
-    for j in trial_cols:
-        nplt.plot_trialwise_rel2(NB_decode, y_facs=['p_correct'], save_dir=HA.save_dir,
-                                 save_prefix='NB_accuracy', trial_col=j, n_trial_groups=i)
-
-### Naive bayes trial-group ANVOA ###
-test = NB_decode.groupby(['exp_name','time_group', 'epoch']).mean()
-aov_groups = ['time_group', 'exp_group', 'epoch']
-within = ['taste']
-subject = 'exp_name'
-dvcols = ['p_correct']
-NB_aov, NB_ph = ana.iter_trial_group_anova(NB_decode, aov_groups, dvcols, within, subject,
-                                           trial_cols=['taste_trial', 'session_trial'], save_dir=HA.save_dir,
-                                           save_suffix='NB_decode')
-
-NB_plot_aov = NB_aov.loc[(NB_aov.Source == 'trial_group')].reset_index(drop=True)
+#
+# ### plot NB accuracy over time #
+# trial_cols = ['taste_trial', 'session_trial']
+# trial_groups = [3, 4, 5, 6]
+# for i in trial_groups:
+#     for j in trial_cols:
+#         nplt.plot_trialwise_rel2(NB_decode, y_facs=['p_correct'], save_dir=HA.save_dir,
+#                                  save_prefix='NB_accuracy', trial_col=j, n_trial_groups=i)
+#
+# ### Naive bayes trial-group ANVOA ###
+# test = NB_decode.groupby(['exp_name','time_group', 'epoch']).mean()
+# aov_groups = ['time_group', 'exp_group', 'epoch']
+# within = ['taste']
+# subject = 'exp_name'
+# dvcols = ['p_correct']
+# NB_aov, NB_ph = ana.iter_trial_group_anova(NB_decode, aov_groups, dvcols, within, subject,
+#                                            trial_cols=['taste_trial', 'session_trial'], save_dir=HA.save_dir,
+#                                            save_suffix='NB_decode')
+#
+# NB_plot_aov = NB_aov.loc[(NB_aov.Source == 'trial_group')].reset_index(drop=True)
 
 #%% NB accuracy ANOVA, split trials by single point###
 aov_groups = ['time_group', 'exp_group', 'epoch']
@@ -44,7 +44,7 @@ within = ['taste']
 subject = 'exp_name'
 dvcols = ['p_correct']
 NB_split_aov, NB_split_ph = ana.iter_trial_split_anova(NB_decode, aov_groups, dvcols, within, subject,
-                                                           trial_cols=['taste_trial', 'session_trial'],
+                                                           trial_cols=['taste_trial'],#, 'session_trial'],
                                                            n_splits=30, save_dir=HA.save_dir, save_suffix='NB_decode')
 
 #%%

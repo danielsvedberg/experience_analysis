@@ -29,9 +29,6 @@ rec_dirs = rec_info['rec_dir']
 PA = ana.ProjectAnalysis(proj)
 
 all_units, held_df = PA.get_unit_info(overwrite=False)
-anID = 'DS46'
-test = held_df.query('exp_name == @anID')
-test = test.loc[any([test['unit1'].isin(['unit025', 'unit026', 'unit031', 'unit032']), test['unit2'].isin(['unit025', 'unit026', 'unit031', 'unit032'])])]
 def get_trial_info(dat):
     dintrials = dat.dig_in_trials
     dintrials['taste_trial'] = 1

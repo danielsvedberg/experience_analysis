@@ -2924,19 +2924,22 @@ def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='tri
     aovs = []
     pws = []
     for name, group in df.groupby(groups):
-        aov = pg.rm_anova(dv=dv, within=within, subject=subject, data=group)
-        #pw = pg.pairwise_ttests(dv=dv, within=['trial_group'], subject=['taste_sub'], padjust='holm', data=group)
-        pw = pg.pairwise_ttests(dv=dv, within=within, subject=subject, padjust='holm', data=group)
+        if len(group) < 2:
+            continue
+        else:
+            aov = pg.rm_anova(dv=dv, within=within, subject=subject, data=group)
+            #pw = pg.pairwise_ttests(dv=dv, within=['trial_group'], subject=['taste_sub'], padjust='holm', data=group)
+            pw = pg.pairwise_ttests(dv=dv, within=within, subject=subject, padjust='holm', data=group)
 
-        aov[groups] = name
-        pw[groups] = name
-        extra_cols = ['trial_type', 'n_trial_groups', 'dependent_var', 'trial_split']
-        extra_col_data = [trial_col, str(n_trial_groups), dv, trial_split]
-        aov[extra_cols] = extra_col_data
-        pw[extra_cols] = extra_col_data
+            aov[groups] = name
+            pw[groups] = name
+            extra_cols = ['trial_type', 'n_trial_groups', 'dependent_var', 'trial_split']
+            extra_col_data = [trial_col, str(n_trial_groups), dv, trial_split]
+            aov[extra_cols] = extra_col_data
+            pw[extra_cols] = extra_col_data
 
-        aovs.append(aov)
-        pws.append(pw)
+            aovs.append(aov)
+            pws.append(pw)
 
     aovs = pd.concat(aovs)
     pws = pd.concat(pws)

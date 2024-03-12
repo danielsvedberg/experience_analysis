@@ -13,7 +13,7 @@ proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # direc
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
-NB_df = HA.analyze_NB_ID2(overwrite=False)
+NB_df = HA.analyze_NB_ID2(overwrite=True)
 NB_df['duration'] = NB_df['t_end'] - NB_df['t_start']
 NB_df['t_med'] = (NB_df['t_end'] + NB_df['t_start']) / 2
 

@@ -260,5 +260,6 @@ plt.show()
 plt.savefig(os.path.join(save_dir, 'split_trial_accuracy_bars.svg'))
 plt.savefig(os.path.join(save_dir, 'split_trial_accuracy_bars.png'))
 
+
 best_split_d1 = best_splits_df.loc[best_splits_df['session'] == 1]
 
