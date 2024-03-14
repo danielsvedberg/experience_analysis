@@ -24,90 +24,58 @@ HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 seq_df = hmma.get_seq_df(HA)
 seq_df = seq_df[seq_df['exp_group'] == 'naive']
 
-dom_states = []
-t_starts = []
-for i, row in seq_df.iterrows():
+rows = []
+#for i, row in seq_df.iterrows():
+for name, group in seq_df.groupby(['rec_dir','taste']):
+    group = group.reset_index(drop=True)
+    seqs = np.vstack(group['sequences'])
     #get the portions of seq that line up with time = 1000:1500
-    seq = np.array(row['sequences'])
-    time = np.array(row['time'])
-    tidxs = np.where((time > 1000) & (time < 1500))[0]
-    lateseq = seq[tidxs]
-    #get the mode of seq
-    mode = int(stats.mode(lateseq)[0])
-    mode_loc = seq == mode
-    on_edges = np.where(np.diff(mode_loc) == 1)[0]
-    if len(on_edges) > 1:
-        off_edges = np.where(np.diff(mode_loc) == -1)[0]
-        if len(off_edges) < len(on_edges):
-            off_edges = np.append(off_edges, len(mode_loc) - 1)
-        epoch_lengths = off_edges - on_edges
-        longest_epoch = np.argmax(epoch_lengths)
-        t_start = int(time[on_edges[longest_epoch]])
-    elif len(on_edges) == 0:
-        t_start = np.nan
-    else:
-        t_start = int(time[on_edges])
-    t_starts.append(t_start)
-    dom_states.append(mode)
-seq_df['late_state'] = dom_states
-seq_df['t_start'] = t_starts
+    time = np.array(group['time'].iloc[0])
+    tidxs = np.where((time >= 800))[0]
+
+    stds = np.std(seqs, axis=1)
+    multi_state_tr = np.where(stds > 0)[0]
+    filt_seqs = seqs[multi_state_tr, :]
+    lf_seqs = filt_seqs[:, tidxs]
+    lf_seqs = lf_seqs.flatten()
+    mode = int(stats.mode(lf_seqs)[0])
+
+    for i, row in group.iterrows():
+        seq = np.array(row['sequences'])
+        #get indices of seq that are equal to mode
+        mode_loc = (seq == mode)
+        mode_loc = np.array(mode_loc, dtype=int)
+
+        if sum(mode_loc) == 0 or sum(mode_loc) == 2000 or mode_loc[0] == 1:
+            t_start = np.nan
+        else:
+            diff = np.diff(mode_loc)
+            on_edges = np.where(diff == 1)[0] + 1
+            off_edges = np.where(diff == -1)[0]
+            if len(on_edges) > 1:
+                t_start = time[on_edges[0]]
+                # if len(off_edges) < len(on_edges):
+                #     off_edges = np.append(off_edges, len(mode_loc) - 1)
+                # valid_edges = (on_edges != 0)
+                # on_edges = on_edges[valid_edges]
+                # off_edges = off_edges[valid_edges]
+                # epoch_lengths = off_edges - on_edges
+                # longest_on_edge_idx = int(on_edges[np.argmax(epoch_lengths)])
+                # t_start = time[longest_on_edge_idx]
+            else:
+                t_start = int(time[on_edges])
+
+        if t_start > 0:
+            row['t_start'] = t_start
+        else:
+            row['t_start'] = np.nan
+        row['late_state'] = mode
+        rows.append(row)
+
+seq_df = pd.concat(rows, axis=1).T
 #eliminate all rows from seq_df where t_start is nan
 seq_df = seq_df.dropna(subset=['t_start'])
 
-# best_hmms = HA.get_best_hmms(overwrite=False)
-# best_hmms = best_hmms[best_hmms['exp_group'] == 'naive']
-# best_hmms = hmma.binstate(best_hmms)
-
-# NB_df = HA.analyze_NB_ID2(overwrite=False)
-# NB_df['duration'] = NB_df['t_end'] - NB_df['t_start']
-# NB_df['t_med'] = (NB_df['t_end'] + NB_df['t_start']) / 2
-#
-# # for each rec_dir, subtract the min of off_time from all off_times
-# NB_df['off_time'] = NB_df.groupby('rec_dir')['off_time'].apply(lambda x: x - x.min())
-#
-# # for each grouping of taste and rec_dir, make a new column called 'length_rank' ranking the states' length
-# NB_df['avg_t_start'] = NB_df.groupby(['taste', 'rec_dir', 'state'])['t_start'].transform('mean')
-# NB_df['avg_t_end'] = NB_df.groupby(['taste', 'rec_dir', 'state'])['t_end'].transform('mean')
-# NB_df['avg_duration'] = NB_df.groupby(['taste', 'rec_dir', 'state'])['duration'].transform('mean')
-# NB_df = NB_df.loc[:, 't_start':]
-#
-# NB_df['pr(correct state)'] = NB_df['p_correct']
-# NB_df['session time'] = NB_df['off_time']
-# NB_df['t(median)'] = NB_df['t_med']
-# NB_df['t(start)'] = NB_df['t_start']
-# # get rid of all columns before t_start
-#
-# NB_df_accuracy = NB_df.reset_index(drop=True)
-# # get rid of all rows where avg_t_start is 0
-# # get rid of all rows where avg_t_start is less than 1500
-# #NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['avg_t_start'] < 1500]
-# #NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['avg_t_start'] > 50]
-#
-# #get the state that dominates between 1000 and 1500ms
-# for name, group in NB_df_accuracy.groupby(['taste', 'rec_dir', 'taste_trial']):
-#     group = group.loc[group['avg_t_start'] > 1000]
-#     group = group.loc[group['avg_t_start'] < 1500]
-#     group = group.loc[group['pr(correct state)'] == group['pr(correct state)'].max()]
-#     NB_df_accuracy.loc[group.index, 'dominant'] = True
-#
-#
-# NB_df_accuracy['trial_duration_rank'] = NB_df_accuracy.groupby(['taste', 'rec_dir', 'taste_trial'])['duration'].rank(
-#     ascending=False)
-# NB_df_accuracy['trial_accuracy_rank'] = NB_df_accuracy.groupby(['taste', 'rec_dir', 'taste_trial'])[
-#     'pr(correct state)'].rank(ascending=False)
-# NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['trial_accuracy_rank'] <= 2]
-# NB_df_accuracy['trial_order_rank'] = NB_df_accuracy.groupby(['taste', 'rec_dir', 'taste_trial'])['t_start'].rank(
-#     ascending=True, method='first')
-#
-# order_map = {1: 'early', 2: 'late'}
-# NB_df_accuracy['epoch'] = NB_df_accuracy['trial_order_rank'].map(order_map)
-#
-# NB_df_naive = NB_df_accuracy.loc[NB_df_accuracy['exp_group'] == 'naive'].reset_index(drop=True)
-# NB_df_naive = NB_df_naive[
-#     ['rec_dir', 'exp_name', 'session', 'taste', 'taste_trial', 'epoch', 't_start', 'pr(correct state)']]
-#
-# # get rid of all rows with early epoch
-# NB_df_naive = NB_df_naive.loc[NB_df_naive['epoch'] == 'late']
 avg_t_start = seq_df['t_start'].mean()
 
 palatatability_ranks = {'Suc': 1, 'NaCl': 2, 'CA': 3, 'QHCl': 4}
@@ -127,15 +95,19 @@ peak_coeffs_re = []
 all_pvals_re = []
 all_significant_windows_re = []
 sig_pals_re = []
-for i, row in all_units.iterrows():
 
+realign_window_start = -1850
+realign_window_end = 2850
+realign_window = np.arange(realign_window_start, realign_window_end, 25)
+n_realign_bins = len(realign_window)
+
+for i, row in all_units.iterrows():
     rec_dir = row['rec_dir']
     unit_name = row['unit_name']
     time_array, psth = h5io.get_psths(rec_dir, units=[unit_name])
     time_arrays.append(time_array)
     #get indices of time_array greater than 100 and less than 2500
     ROI = np.where((time_array > 100) & (time_array < 2500))[0]
-
     rates_mats = []
     realigned_rates_mats = []
     pal_mats = []
@@ -153,30 +125,33 @@ for i, row in all_units.iterrows():
         group_hmm = seq_df[seq_df['rec_dir'] == rec_dir]
         group_hmm = group_hmm[group_hmm['taste'] == taste]
         if group_hmm.empty:
-            continue
+            print(f'No HMM data for {unit_name} in {rec_dir} for {taste}')
         else:
             group_hmm = group_hmm.reset_index(drop=True)
             group_hmm = group_hmm.sort_values(by='taste_trial')
-            pal_realigned_mat = np.zeros((len(group_hmm), 96))
+            pal_realigned_mat = np.zeros((len(group_hmm), n_realign_bins))
             pal_realigned_mat[:] = pal
             pal_realigned_mats.append(pal_realigned_mat)
             taste_trials = group_hmm['taste_trial'].to_numpy()
             t_starts = group_hmm['t_start'].to_numpy()
 
             realigned_responses = []
-            for i, (taste_trial, t_start) in enumerate(zip(taste_trials, t_starts)):
-                t0 = int(t_start - 1200)
-                ti = int(t_start + 1200)
+            for _, (taste_trial, t_start) in enumerate(zip(taste_trials, t_starts)):
+                t0 = int(t_start - 1850)
+                ti = int(t_start + 2850)
                 # for idx0, get the closest value in time_array to t0
-                diff0 = np.abs(time_array - t0)
-                idx0 = np.argmin(diff0)
-                diffi = np.abs(time_array - ti)
-                idxi = np.argmin(diffi)
+                diffstart = np.abs(time_array - t_start)
+                idxstart = np.argmin(diffstart)
+                idx0 = int(idxstart-(1850/25))
+                idxi = int(idxstart+(2850/25))
                 realigned = rates[taste_trial, idx0:idxi]
                 realigned_responses.append(realigned)
+                if len(realigned) != 188:
+                    raise ValueError(f'Unit {unit_name} in {rec_dir} for {taste} has {len(realigned)} bins')
+                else:
+                    print('succ')
             realigned_responses = np.array(realigned_responses)
             realigned_rates_mats.append(realigned_responses)
-
 
     # stack the rates and palatability matrices
     rates = np.vstack(rates_mats)
@@ -193,7 +168,7 @@ for i, row in all_units.iterrows():
         pvals.append(pvalue)
     all_pvals.append(pvals)
     all_coeffs.append(np.abs(coeffs))
-    peak_coeff = np.max(np.abs(coeffs))
+    peak_coeff = np.nanmax(np.abs(coeffs))
     peak_coeffs.append(peak_coeff)
 
     re_coeffs = []
@@ -209,12 +184,12 @@ for i, row in all_units.iterrows():
     all_coeffs_re.append(np.abs(re_coeffs))
     #throw an exception if any of all_coeffs_re are empty or nan)
 
-    peak_coeff_re = np.max(np.abs(re_coeffs))
+    peak_coeff_re = np.nanmax(np.abs(re_coeffs))
     peak_coeffs_re.append(peak_coeff_re)
 
     significant_windows = []
     for j in range(1, len(pvals) - 1):
-        if pvals[j - 1] < 0.01 and pvals[j] < 0.01 and pvals[j + 1] < 0.01:
+        if pvals[j - 1] < 0.05 and pvals[j] < 0.05 and pvals[j + 1] < 0.05:
             significant_windows.append(j)
     all_significant_windows.append(significant_windows)
     #remove all windows significant windows that are not in ROI
@@ -222,7 +197,7 @@ for i, row in all_units.iterrows():
 
     significant_windows_re = []
     for j in range(1, len(re_pvals) - 1):
-        if re_pvals[j - 1] < 0.01 and re_pvals[j] < 0.01 and re_pvals[j + 1] < 0.01:
+        if re_pvals[j - 1] < 0.05 and re_pvals[j] < 0.05 and re_pvals[j + 1] < 0.05:
             significant_windows_re.append(j)
     all_significant_windows_re.append(significant_windows_re)
 
@@ -257,8 +232,8 @@ for name, group in naive_sig.groupby('session'):
     group_pvals_re = group['pvals_realigned'].tolist()
     group_pvals_re = np.array(group_pvals_re)
 
-    group_sig = np.mean(group_pvals < 0.05, axis=0)
-    group_sig_re = np.mean(group_pvals_re < 0.05, axis=0)
+    group_sig = np.nanmean(group_pvals < 0.05, axis=0)
+    group_sig_re = np.nanmean(group_pvals_re < 0.05, axis=0)
     n_rows = len(group)
     row_indices = np.arange(n_rows)
     boot = []
@@ -269,10 +244,11 @@ for name, group in naive_sig.groupby('session'):
         sample_pvals = group_pvals[sample]
         sample_pvals_re = group_pvals_re[sample]
         #calculate the mean of the sample
-        sample_sig = np.mean(sample_pvals < 0.05, axis=0)
-        sample_sig_re = np.mean(sample_pvals_re < 0.05, axis=0)
+        sample_sig = np.nanmean(sample_pvals < 0.05, axis=0)
+        sample_sig_re = np.nanmean(sample_pvals_re < 0.05, axis=0)
         boot.append(sample_sig)
         boot_re.append(sample_sig_re)
+
     boot = np.array(boot).flatten()
     boot_re = np.array(boot_re).flatten()
     #
@@ -290,21 +266,21 @@ for name, group in naive_sig.groupby('session'):
     group_pvals_re = group['pvals_realigned'].tolist()
     group_pvals = np.array(group_pvals)
     group_pvals_re = np.array(group_pvals_re)
-    avg_pvals = np.mean(group_pvals, axis=0)
-    avg_pvals_re = np.mean(group_pvals_re, axis=0)
+    avg_pvals = np.nanmean(group_pvals, axis=0)
+    avg_pvals_re = np.nanmean(group_pvals_re, axis=0)
     #for each index in axis 1, calculate the p value of the mean using boots
 
-    prop_sig = np.mean(group_pvals < 0.05, axis=0)
-    prop_sig_re = np.mean(group_pvals_re < 0.05, axis=0)
+    prop_sig = np.nanmean(group_pvals < 0.05, axis=0)
+    prop_sig_re = np.nanmean(group_pvals_re < 0.05, axis=0)
 
     agg_pvals = []
     for i in prop_sig:
-        agg_pval = np.mean(boot > i)
+        agg_pval = np.nanmean(boot > i)
         agg_pvals.append(agg_pval)
 
     agg_pvals_re = []
     for i in prop_sig_re:
-        agg_pval = np.mean(boot_re > i)
+        agg_pval = np.nanmean(boot_re > i)
         agg_pvals_re.append(agg_pval)
 
     significant_windows = []
@@ -348,28 +324,38 @@ for name, group in naive_sig.groupby('session'):
     naive_sig_summary.append(df)
 naive_sig_summary = pd.concat(naive_sig_summary)
 
+time = time_arrays[0]
+diff = np.abs(time - avg_t_start)
+idx = np.argmin(diff)
+midpoint = time[idx]
+idx0 = np.where(time == 0)[0][0]
+idx1500 = np.where(time == 1500)[0][0]
+idxmidpoint = np.where(time == midpoint)[0][0]
+prebins = idxmidpoint - idx0
+postbins = idx1500 - idxmidpoint
+idxmidpoint = 1850/25
+
 sessions = [1,2,3]
-fig, axs = plt.subplots(2, 3, figsize=(10,5), sharey=False, sharex=True)
+fig, axs = plt.subplots(2, 3, figsize=(10,7), sharey=False, sharex=True)
 for i in sessions:
     session_sum = naive_sig_summary[naive_sig_summary['session'] == int(i)]
 
     time = session_sum['time'][0]
     # get indices of time greater than -500 and less than 2500
-    tidxs = np.where((time > -500) & (time < 2500))[0]
+    tidxs = np.where((time >= 0) & (time < 1500))[0]
     time = time[tidxs]
 
-    # corr = session_sum['pal_coeffs'][0]
     corr = session_sum['med_coeffs'][0]
     corr = corr[tidxs]
     corr_re = session_sum['med_coeffs_realigned'][0]
-    len_re = len(corr_re)
-    half_re = int(len_re / 2)
-    # get closest index to avg_t_start in time
-    diff = np.abs(time - avg_t_start)
-    idx = np.argmin(diff)
-    idx0 = idx - half_re
-    idxi = idx + half_re
-    re_time = time[idx0:idxi]
+    idx0 = int(idxmidpoint - prebins)
+    idxi = int(idxmidpoint + postbins)
+    corr_re = corr_re[idx0:idxi]
+    t0 = 0
+    re_time = session_sum['time'][0]
+    tidx0 = np.where(re_time == t0)[0][0]
+    tidxi = tidx0 + len(corr_re)
+    re_time = re_time[tidx0:tidxi]
 
     # pvals = session_sum['pvals'][0]
     pvals = session_sum['prop_sig'][0]
@@ -378,35 +364,33 @@ for i in sessions:
     sig_array = sig_array[tidxs]
 
     pvals_re = session_sum['prop_sig_realigned'][0]
+    pvals_re = pvals_re[idx0:idxi]
     sig_array_re = session_sum['signfiicant_array_realigned'][0]
+    sig_array_re = sig_array_re[idx0:idxi]
 
     for j in range(2):
         ax = axs[j, i-1]
         ax2 = ax.twinx()
+        ax.set_ylim(0, 0.175)
+        ax2.set_ylim(0, 1)
         if j == 0:
             ax2.plot(time, pvals, color='black', linestyle='--')
-
             ax.fill_between(time, sig_array, color='lightgrey', alpha=0.9)
             ax.plot(time, corr, 'tab:blue')
-
             ax.set_title(f'Session {i}')
-            ax.set_ylim(0, 0.25)
             yax_flag = 'stimulus-aligned'
-
         if j == 1:
             ax2.plot(re_time, pvals_re, color='black', linestyle='--')
 
             ax.fill_between(re_time, sig_array_re, color='lightgrey', alpha=0.9)
             ax.plot(re_time, corr_re, 'tab:blue')
             yax_flag = 'state-aligned'
-
         if i == 3:
-            ax2.set_ylabel('% units\nsignificant', fontsize=12)
+            ax2.set_ylabel('% units\nsignificant', fontsize=17)
         else:
             ax2.set_yticks([])
-
         if i == 1:
-            ax.set_ylabel('Mean\nSpearman\nCorrelation\n'+yax_flag, fontsize=12)
+            ax.set_ylabel('Mean\nSpearman\nCorrelation\n'+yax_flag, fontsize=17)
             # set the text color to the same blue as in the line plot
             ax.yaxis.label.set_color('tab:blue')
         else:
