@@ -36,7 +36,7 @@ NB_df_accuracy = NB_df.reset_index(drop=True)
 #NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['avg_t_start'] != 0]
 #get rid of all rows where avg_t_start is less than 1500
 NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['avg_t_start'] < 1500]
-NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['avg_t_start'] > 0]
+NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['avg_t_start'] > 100]
 NB_df_accuracy['trial_duration_rank'] = NB_df_accuracy.groupby(['taste', 'rec_dir','taste_trial'])['duration'].rank(ascending=False)
 NB_df_accuracy['trial_accuracy_rank'] = NB_df_accuracy.groupby(['taste', 'rec_dir','taste_trial'])['pr(correct state)'].rank(ascending=False)
 NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['trial_accuracy_rank'] <= 2]
@@ -185,7 +185,7 @@ def get_pval_stars(pval):
     else:
         return ''
 
-best_split = avg_df.loc[avg_df['p-GG-corr'] == avg_df['p-GG-corr'].min()]['trial_split'].item()
+best_split = 12#avg_df.loc[avg_df['p-GG-corr'] == avg_df['p-GG-corr'].min()]['trial_split'].item()
 # for each grouping of session, find the value of trial_split where p-GG-corr is the lowest
 avg_df['best_split'] = avg_df.groupby('session').apply(lambda x: x.loc[x['p-GG-corr'] == x['p-GG-corr'].min()]['trial_split'].item())
 merge['trial group'] = merge['taste_trial'] > best_split

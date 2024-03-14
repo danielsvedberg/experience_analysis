@@ -342,7 +342,6 @@ def calc_pal_corr(row):
     return p_values, significant_windows, significant_times, correlation_coefficients, time_array
 
 def calc_pal_group(group):
-
     p_val_list = []
     significant_windows_list = []
     significant_times_list = []

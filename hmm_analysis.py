@@ -2189,6 +2189,49 @@ def binstate(best_hmms, statefunc=getModeHmm):
 
     return out
 
+def get_seq_df(HA, parallel=True):
+    best_hmms = HA.get_best_hmms(overwrite=False)
+    proj = HA.project
+    trial_info = proj.get_dig_in_trial_df(reformat=True)
+    #rename best_hmms time_group to session
+    best_hmms = best_hmms.rename(columns={'time_group': 'session'})
+    bhdf_tar_cols = ['rec_dir', 'exp_group', 'exp_name', 'session', 'taste', 'channel', 'hmm_id']
+    best_hmms = best_hmms[bhdf_tar_cols]
+    def process_row(row):
+        hmm_id = row['hmm_id']
+        h5_file = get_hmm_h5(row['rec_dir'])
+        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
+        row_tidf = trial_info.query('rec_dir == @row.rec_dir and taste == @row.taste').reset_index(drop=True)
+
+        gamma_probs = hmm.stat_arrays['gamma_probabilities']
+        seqs = np.argmax(gamma_probs, axis=1)
+        #turn axis 0 of seqs into list
+        seqs = seqs.tolist()
+
+        row_tidf['hmm_id'] = hmm_id
+        row_tidf['sequences'] = seqs
+        #repeat time so it has the same shape as seqs
+        time = np.repeat(time[np.newaxis, :], len(seqs), axis=0)
+        time = time.tolist()
+        row_tidf['time'] = time
+
+        return row_tidf
+
+    if parallel:
+        res = Parallel(n_jobs=-1)(delayed(process_row)(row) for i, row in best_hmms.iterrows())
+    else:
+        res = [process_row(row) for i, row in best_hmms.iterrows()]
+
+    res = pd.concat(res).reset_index(drop=True)
+    return res
+
+
+
+
+
+
+
+
 def get_avg_gamma_mode(best_hmms):
     gmdf = binstate(best_hmms)
     avg_gamma_mode_df = gmdf.groupby(
