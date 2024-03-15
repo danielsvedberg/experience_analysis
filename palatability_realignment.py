@@ -329,10 +329,10 @@ diff = np.abs(time - avg_t_start)
 idx = np.argmin(diff)
 midpoint = time[idx]
 idx0 = np.where(time == 0)[0][0]
-idx1500 = np.where(time == 1500)[0][0]
+idx2000 = np.where(time == 2000)[0][0]
 idxmidpoint = np.where(time == midpoint)[0][0]
 prebins = idxmidpoint - idx0
-postbins = idx1500 - idxmidpoint
+postbins = idx2000 - idxmidpoint
 idxmidpoint = 1850/25
 
 sessions = [1,2,3]
@@ -342,7 +342,7 @@ for i in sessions:
 
     time = session_sum['time'][0]
     # get indices of time greater than -500 and less than 2500
-    tidxs = np.where((time >= 0) & (time < 1500))[0]
+    tidxs = np.where((time >= 0) & (time < 2000))[0]
     time = time[tidxs]
 
     corr = session_sum['med_coeffs'][0]
@@ -371,8 +371,8 @@ for i in sessions:
     for j in range(2):
         ax = axs[j, i-1]
         ax2 = ax.twinx()
-        ax.set_ylim(0, 0.175)
-        ax2.set_ylim(0, 1)
+        ax.set_ylim(0.07, 0.17)
+        ax2.set_ylim(0, 0.5)
         if j == 0:
             ax2.plot(time, pvals, color='black', linestyle='--')
             ax.fill_between(time, sig_array, color='lightgrey', alpha=0.9)
@@ -386,11 +386,17 @@ for i in sessions:
             ax.plot(re_time, corr_re, 'tab:blue')
             yax_flag = 'state-aligned'
         if i == 3:
-            ax2.set_ylabel('% units\nsignificant', fontsize=17)
+            ax2.set_ylabel('% units\nsignificant', fontsize=18)
+            #multiply the y axis tick labels by 100
+            yticks = ax2.get_yticks()
+            yticks = yticks*100
+            #convert the y ticks to int
+            yticks = yticks.astype(int)
+            ax2.set_yticklabels(yticks, fontsize=14)
         else:
             ax2.set_yticks([])
         if i == 1:
-            ax.set_ylabel('Mean\nSpearman\nCorrelation\n'+yax_flag, fontsize=17)
+            ax.set_ylabel('Mean Spearman\nCorrelation\n'+yax_flag, fontsize=19)
             # set the text color to the same blue as in the line plot
             ax.yaxis.label.set_color('tab:blue')
         else:
