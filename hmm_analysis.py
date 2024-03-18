@@ -2171,7 +2171,7 @@ def binstate(best_hmms, statefunc=getModeHmm):
     def getbinstateprob(row):
         h5_file = get_hmm_h5(row['rec_dir']) #get hmm file name
         hmm, time, params = ph.load_hmm_from_hdf5(h5_file, row["hmm_id"]) #load hmm
-        mode_seqs, mode_gamma = statefunc(hmm) #get mode state # and gamma prob
+        mode_seqs, mode_gamma, best_seqs = statefunc(hmm) #get mode state # and gamma prob
 
         rowids = hmm.stat_arrays['row_id']
         time = hmm.stat_arrays['time']
@@ -2224,12 +2224,6 @@ def get_seq_df(HA, parallel=True):
 
     res = pd.concat(res).reset_index(drop=True)
     return res
-
-
-
-
-
-
 
 
 def get_avg_gamma_mode(best_hmms):

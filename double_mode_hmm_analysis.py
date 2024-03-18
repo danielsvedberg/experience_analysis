@@ -41,7 +41,7 @@ overall_acc_df
 splits = np.arange(1,30)
 
 res_list = []
-for iternum in range(100):
+for iternum in range(2):
     print("iter: ", iternum)
     split_list = Parallel(n_jobs=10)(delayed(process_split)(best_hmms, split, shuffle=True) for split in splits)
     split_df = pd.concat(split_list)
