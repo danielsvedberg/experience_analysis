@@ -41,7 +41,7 @@ overall_acc_df
 splits = np.arange(1,30)
 
 res_list = []
-for iternum in range(2):
+for iternum in range(100):
     print("iter: ", iternum)
     split_list = Parallel(n_jobs=10)(delayed(process_split)(best_hmms, split, shuffle=True) for split in splits)
     split_df = pd.concat(split_list)
@@ -158,8 +158,6 @@ if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 plt.savefig(os.path.join(save_dir, 'split_trial_accuracy_wshuffle.svg'))
 plt.savefig(os.path.join(save_dir, 'split_trial_accuracy_wshuffle.png'))
-
-
 
 #%% make bar graphs of the differences
 #first, for each trial, get the rows with the best split-trial accuracy in overall_acc_df
