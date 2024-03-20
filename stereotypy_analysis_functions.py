@@ -1,16 +1,8 @@
 import blechpy
-import numpy as np
 import blechpy.dio.h5io as h5io
 import pandas as pd
-from joblib import Parallel, delayed
-from matplotlib import gridspec
-
-import analysis as ana
 import matplotlib.pyplot as plt
-import feather
-import seaborn as sns
 import numpy as np
-import scipy.stats as stats
 from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from sklearn.metrics import silhouette_score
