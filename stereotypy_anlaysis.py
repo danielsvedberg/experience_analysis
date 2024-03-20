@@ -14,6 +14,9 @@ from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from sklearn.metrics import silhouette_score
 
+
+#new file called sterotypuy functions, witha ll the funcitons, and then push that. 
+
 licks = np.array([10,7,8,9,30,4])
 #make licks a column vector
 licks = licks.reshape(-1, 1)

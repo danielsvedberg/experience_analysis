@@ -14,15 +14,19 @@ def optimize_t(mat, dm):
     '''
     #optimize distance threshold t using silhouette score###
     # first we calculate the min and max possible t values using the distances
-    linkages = linkage(dm, method='ward')
+    
+    linkages = linkage(mat, method='ward')
     distances = linkages[:, 2]
     min_t = distances.min()
     max_t = distances.max()
+    
 
+    
     # then we calculate the silhouette score for a range of t values
     best_score = -1
     best_t = None
     cluster_labels = None
+    
     for t in np.linspace(min_t, max_t, 1000):
         clabs = fcluster(linkages, t=t, criterion='distance')  # get the cluster labels for this t value
         # impose the requirement that there be at least 2 clusters, and fewer clusters than trials
@@ -32,6 +36,9 @@ def optimize_t(mat, dm):
                 best_score = score
                 cluster_labels = clabs
                 best_t = t
+                
+    if cluster_labels is None:
+        raise Exception('cluster_labels is None, something is wrong')
     return cluster_labels, best_t
 def make_consensus_matrix(mat_list):
     """
@@ -48,8 +55,8 @@ def make_consensus_matrix(mat_list):
     #find the matrix with greatest number of trials
     n_trials = 0
     for mat in mat_list:
-        if mat.shape[1] > n_trials:
-            n_trials = mat.shape[1]
+        if mat.shape[0] > n_trials:
+            n_trials = mat.shape[0]
     #find the number of matrices to take the consensus over
     n_mats = len(mat_list)
 
@@ -63,6 +70,9 @@ def make_consensus_matrix(mat_list):
 
     for m, mat in enumerate(mat_list): #iterate over the matrices, index number will be in m, matrix will be in mat
         dm = pdist(mat, metric='euclidean') #get the linearized distance matrix
+        # Check if the maximum distance is zero (all rows in the matrix are identical)
+        if np.max(dm) == 0:
+            continue  # Skip this matrix
 
         cluster_labels, best_t = optimize_t(mat, dm) #get optimized threshold and the cluster labels
         cluster_label_arrays.append(cluster_labels)
@@ -76,12 +86,13 @@ def make_consensus_matrix(mat_list):
                         consensus_matrix[i, j, m] = 1
                     else: #if the pair of trials are in the same cluster, set the value 0
                         consensus_matrix[i, j, m] = 0
-
+                        
+    #calculate the final consensus matrix by taking the mean of the consensus matrices for each data matrix
+    consensus_matrix = np.nanmean(consensus_matrix, axis=2)
+    
     # replace all nan with 0
     consensus_matrix = np.nan_to_num(consensus_matrix)
     # fold the consensus matrix to make it symmetrical
     consensus_matrix = (consensus_matrix + consensus_matrix.T) / 2
-    #calculate the final consensus matrix by taking the mean of the consensus matrices for each data matrix
-    consensus_matrix = np.nanmean(consensus_matrix, axis=2)
 
     return consensus_matrix, cluster_label_arrays, thresholds
