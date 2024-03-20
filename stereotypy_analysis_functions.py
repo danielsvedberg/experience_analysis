@@ -5,7 +5,6 @@ import pandas as pd
 from joblib import Parallel, delayed
 from matplotlib import gridspec
 
-import trialwise_analysis as ta
 import analysis as ana
 import matplotlib.pyplot as plt
 import feather
