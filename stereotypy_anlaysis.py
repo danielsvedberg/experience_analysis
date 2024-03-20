@@ -13,13 +13,7 @@ import scipy.stats as stats
 from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from sklearn.metrics import silhouette_score
-
-licks = np.array([10,7,8,9,30,4])
-#make licks a column vector
-licks = licks.reshape(-1, 1)
-test = pdist(licks)
-test = squareform(test)
-
+import os
 
 proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
 proj = blechpy.load_project(proj_dir)  # load the project
@@ -40,104 +34,6 @@ def get_trial_info(dat):
     dintrials = dintrials[['taste_trial', 'taste', 'session_trial', 'channel', 'on_time']]
     return dintrials
 
-
-# %% calculate and plot euclidean and cosine distances for each taste trial
-def process_rec_dir(rec_dir):
-    df_list = []
-    dat = blechpy.load_dataset(rec_dir)
-    dintrials = get_trial_info(dat)
-    time_array, rate_array = h5io.get_rate_data(rec_dir)
-    for din, rate in rate_array.items():
-        avg_firing_rate = np.mean(rate, axis=1)  # Neurons x Bins
-        cos_sim_mat = np.zeros((rate.shape[1], rate.shape[2]))  # Trials x Bins
-        euc_dist_mat = np.zeros((rate.shape[1], rate.shape[2]))  # Trials x Bins
-
-        for i in range(rate.shape[1]):  # Loop over trials
-            for j in range(rate.shape[2]):  # Loop over bins
-                trial_rate_bin = rate[:, i, j]
-                avg_firing_rate_bin = avg_firing_rate[:, j]
-
-                # Cosine similarity
-                cos_sim = np.dot(trial_rate_bin, avg_firing_rate_bin) / (
-                        np.linalg.norm(trial_rate_bin) * np.linalg.norm(avg_firing_rate_bin))
-                cos_sim_mat[i, j] = cos_sim
-
-                # Euclidean distance
-                euc_dist = np.linalg.norm(trial_rate_bin - avg_firing_rate_bin)
-                euc_dist_mat[i, j] = euc_dist
-        # zscore every entry of euc_dist_mat
-        euc_dist_mat = (euc_dist_mat - np.mean(euc_dist_mat)) / np.std(euc_dist_mat)
-
-        avg_cos_sim = np.mean(cos_sim_mat[:, 2000:5000], axis=1)
-        avg_euc_dist = np.mean(euc_dist_mat[:, 2000:5000], axis=1)
-
-        df = pd.DataFrame({
-            'cosine_similarity': avg_cos_sim,
-            'euclidean_distance': avg_euc_dist,
-            'rec_dir': rec_dir,
-            'channel': int(din[-1]),  # get the din number from string din
-            'taste_trial': np.arange(rate.shape[1])
-        })
-        df_list.append(df)
-    df = pd.concat(df_list, ignore_index=True)
-    # add index info to df from dintrials using merge on taste_trial and channel
-    df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
-    # remove all rows where taste == 'Spont'
-    df = df.loc[df['taste'] != 'Spont']
-    # subtract the min of 'session_trial' from 'session_trial' to get the session_trial relative to the start of the recording
-    df['session_trial'] = df['session_trial'] - df['session_trial'].min()
-    return df
-
-
-# Parallelize processing of each rec_dir
-num_cores = -1  # Use all available cores
-final_dfs = Parallel(n_jobs=num_cores)(delayed(process_rec_dir)(rec_dir) for rec_dir in rec_dirs)
-
-# Concatenate all resulting data frames into one
-final_df = pd.concat(final_dfs, ignore_index=True)
-
-# merge in rec_info into final_df
-final_df = pd.merge(final_df, rec_info, on='rec_dir')
-final_df['session'] = final_df['rec_num']
-
-subject_col = 'exp_name'
-group_cols = ['exp_group', 'session', 'taste']
-trial_col = 'taste_trial'
-value_col = 'euclidean_distance'
-preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, subject_col, group_cols, trial_col, value_col,
-                                                       nIter=10000, save_dir=PA.save_dir, overwrite=False)
-
-flag = 'test'
-nIter = 10000
-textsize = 20
-parallel = True
-yMin = preprodf[value_col].min()
-yMax = preprodf[value_col].max()
-ta.plot_fits_summary_avg(preprodf, shuff_df=shuffle, dat_col=value_col, trial_col=trial_col, save_dir=PA.save_dir,
-                         use_alpha_pos=False, textsize=textsize, dotalpha=0.15, flag=flag, nIter=nIter,
-                         parallel=parallel, yMin=yMin, yMax=yMax)
-for exp_group, group in preprodf.groupby(['exp_group']):
-    group_shuff = shuffle.groupby('exp_group').get_group(exp_group)
-    if flag is not None:
-        save_flag = exp_group + '_' + flag
-    else:
-        save_flag = exp_group
-    ta.plot_fits_summary_avg(group, shuff_df=group_shuff, dat_col=value_col, trial_col=trial_col,
-                             save_dir=PA.save_dir, use_alpha_pos=False, textsize=textsize, dotalpha=0.15,
-                             flag=save_flag, nIter=nIter, parallel=parallel, yMin=yMin, yMax=yMax)
-
-ta.plot_fits_summary(preprodf, dat_col=value_col, trial_col=trial_col, save_dir=PA.save_dir, time_col='session',
-                     use_alpha_pos=False, dotalpha=0.15, flag=flag)
-
-ta.plot_nonlinear_regression_stats(preprodf, shuffle, subject_col=subject_col, group_cols=group_cols,
-                                   trial_col=trial_col, value_col=value_col, save_dir=PA.save_dir, flag=flag,
-                                   textsize=textsize, nIter=nIter)
-
-pred_change_df, pred_change_shuff = ta.get_pred_change(preprodf, shuffle, subject_col=subject_col,
-                                                       group_cols=group_cols, trial_col=trial_col)
-ta.plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, value_col=value_col, trial_col=trial_col,
-                         save_dir=PA.save_dir, flag=flag, textsize=textsize, nIter=nIter)
-
 # %% plotting functions
 import matplotlib.gridspec as gridspec
 
@@ -145,12 +41,21 @@ exp_group_order = {'naive': 0, 'suc_preexp': 1}
 session_order = {1: 0, 2: 1, 3: 2}
 exp_group_names = ['Naive', 'Suc. Pre-exposed']
 exp_group_colors = ['Blues', 'Oranges']
-
+exp_group_color_map = {'naive':'Blues', 'suc_preexp': 'Oranges'}
 def plot_correlation_matrices(matrices, names, save=False):
     # get the maximum and minimum for every 3 entries of matrices
     max_vals = []
     min_vals = []
-    for i in range(0, len(matrices), 3):
+
+    #turn list of tuples "names" into separate lists for each entry in the tuple
+    names_list = list(map(list, zip(*names)))
+    exp_groups = set(names_list[0])
+    sessions = set(names_list[1])
+    n_exp_groups = len(exp_groups)
+    n_sessions = len(sessions)
+
+    for i in range(0, len(matrices), n_sessions):
+        print(i)
         max_val = max([np.max(m) for m in matrices[i:i + 3]])
         min_val = min([np.min(m) for m in matrices[i:i + 3]])
         max_vals.append(max_val)
@@ -209,8 +114,75 @@ def plot_correlation_matrices(matrices, names, save=False):
         fig.savefig(PA.save_dir + '/consensus_matrix.png')
         fig.savefig(PA.save_dir + '/consensus_matrix.svg')
 
+def plot_correlation_matrices_single(matrices, names, save=False, save_dir=PA.save_dir):
+    # get the maximum and minimum for every 3 entries of matrices
+    exp_group_name = names[0][0]
+    max_vals = []
+    min_vals = []
 
-def plot_heirarchical_clustering(matrices, names, threshold=None, save=False):
+    for i in range(0, len(matrices)):
+        print(i)
+        max_val = max([np.max(m) for m in matrices[i:i + 3]])
+        min_val = min([np.min(m) for m in matrices[i:i + 3]])
+        max_vals.append(max_val)
+        min_vals.append(min_val)
+
+    max_val = max(max_vals)
+    min_val = min(min_vals)
+
+    # Adjust the figure layout
+    fig = plt.figure(figsize=(10.5, 6))
+    gs = gridspec.GridSpec(1, 4, width_ratios=[0.1, 1, 1, 1],
+                           hspace=0.05)  # Extra column for the color bars on the left
+
+    # Create axes for the plots, adjusting for the extra column for the color bars
+    axs = [fig.add_subplot(gs[j + 1]) for j in range(3)]
+
+    # Create separate color bars for each row in the first column
+    cbar_axes = fig.add_subplot(gs[0])
+
+    for i, mat in enumerate(matrices):
+        name = names[i]
+        exp_group = name[0]
+        session = name[1]
+        k = session_order[session]
+        ax = axs[k]  # Adjust for the shifted indexing due to color bar column
+        cmap = plt.get_cmap(exp_group_color_map[exp_group_name])
+        cax = ax.matshow(mat, vmin=min_val, vmax=max_val, origin='lower', cmap=cmap)
+        if k != 0:
+            ax.set_yticks([])
+        else:
+            # ax.set_ylabel('Trial', fontsize=20)
+            ax.set_yticks([0, 9, 19, 29])
+            ax.set_yticklabels(ax.get_yticks(), fontsize=14)
+
+
+        ax.set_xlabel('Trial', fontsize=20)
+        ax.set_xticks([0, 9, 19, 29])
+        ax.set_xticklabels(ax.get_xticks(), fontsize=14)
+        ax.xaxis.set_ticks_position('bottom')
+
+        ax.set_title('Session ' + str(session), pad=-6, fontsize=20)
+        # Set the ylabel on the right side of the last column of the data plots
+        if k == 2:  # Corrected condition to match the last column of the data plots
+            ax.yaxis.set_label_position("right")
+            ax.set_ylabel(exp_group_name, rotation=270, labelpad=20, fontsize=20)
+
+        # Add one color bar per row in the first column
+        if k == 1:  # This ensures color bars are added once per row
+            cb = fig.colorbar(cax, cax=cbar_axes, orientation='vertical')
+            cbar_axes.yaxis.set_ticks_position('left')
+            cbar_axes.set_ylabel('distance index', fontsize=20, rotation=90, labelpad=-80)
+
+    plt.tight_layout()
+    plt.show()
+    plot_name = save_dir + os.sep + exp_group_name + '_consensus_matrix'
+    if save:
+        fig.savefig(plot_name + '.png')
+        fig.savefig(plot_name + '.svg')
+
+
+def plot_heirarchical_clustering(matrices, names, threshold=None, save=False, save_dir=PA.save_dir):
     linkages = []
     max_vals = []
     for i, m in enumerate(matrices):
@@ -269,13 +241,15 @@ def plot_heirarchical_clustering(matrices, names, threshold=None, save=False):
     plt.show()
     # save the figure
     if save:
-        fig.savefig(PA.save_dir + '/dendograms.png')
-        fig.savefig(PA.save_dir + '/dendograms.svg')
+        fig.savefig(save_dir + '/dendograms.png')
+        fig.savefig(save_dir + '/dendograms.svg')
     return(fig, leaves)
 
 # %% consensus clustering (second attempt) with averaging distances for each trial and then performing consensus clustering
 ##THIS THAT GOOD SHIT RIGHT HERE 02/22/24
 
+#make save_dir a subdirectory of PA.save_dir
+save_dir = PA.save_dir + os.sep + 'clustering_analysis'
 def average_difference(u, v):
     return np.mean(np.abs(u - v))
 def make_consensus_matrix2(rec_info):
@@ -363,6 +337,10 @@ matrices, names, df = make_consensus_matrix2(rec_info)
 
 plot_correlation_matrices(matrices, names, save=True)
 plot_heirarchical_clustering(matrices, names)
+
+naive_mats = matrices[:3]
+naive_names = names[:3]
+plot_correlation_matrices
 
 # sweep over different values of t to get the best silhouette score
 dfs = []
@@ -656,3 +634,100 @@ g.map_dataframe(sns.stripplot, x='session', y='all_trial_distance', dodge=True, 
 #show the legend
 
 plt.show()
+
+#%% calculate and plot euclidean and cosine distances for each taste trial
+def process_rec_dir(rec_dir):
+    df_list = []
+    dat = blechpy.load_dataset(rec_dir)
+    dintrials = get_trial_info(dat)
+    time_array, rate_array = h5io.get_rate_data(rec_dir)
+    for din, rate in rate_array.items():
+        avg_firing_rate = np.mean(rate, axis=1)  # Neurons x Bins
+        cos_sim_mat = np.zeros((rate.shape[1], rate.shape[2]))  # Trials x Bins
+        euc_dist_mat = np.zeros((rate.shape[1], rate.shape[2]))  # Trials x Bins
+
+        for i in range(rate.shape[1]):  # Loop over trials
+            for j in range(rate.shape[2]):  # Loop over bins
+                trial_rate_bin = rate[:, i, j]
+                avg_firing_rate_bin = avg_firing_rate[:, j]
+
+                # Cosine similarity
+                cos_sim = np.dot(trial_rate_bin, avg_firing_rate_bin) / (
+                        np.linalg.norm(trial_rate_bin) * np.linalg.norm(avg_firing_rate_bin))
+                cos_sim_mat[i, j] = cos_sim
+
+                # Euclidean distance
+                euc_dist = np.linalg.norm(trial_rate_bin - avg_firing_rate_bin)
+                euc_dist_mat[i, j] = euc_dist
+        # zscore every entry of euc_dist_mat
+        euc_dist_mat = (euc_dist_mat - np.mean(euc_dist_mat)) / np.std(euc_dist_mat)
+
+        avg_cos_sim = np.mean(cos_sim_mat[:, 2000:5000], axis=1)
+        avg_euc_dist = np.mean(euc_dist_mat[:, 2000:5000], axis=1)
+
+        df = pd.DataFrame({
+            'cosine_similarity': avg_cos_sim,
+            'euclidean_distance': avg_euc_dist,
+            'rec_dir': rec_dir,
+            'channel': int(din[-1]),  # get the din number from string din
+            'taste_trial': np.arange(rate.shape[1])
+        })
+        df_list.append(df)
+    df = pd.concat(df_list, ignore_index=True)
+    # add index info to df from dintrials using merge on taste_trial and channel
+    df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
+    # remove all rows where taste == 'Spont'
+    df = df.loc[df['taste'] != 'Spont']
+    # subtract the min of 'session_trial' from 'session_trial' to get the session_trial relative to the start of the recording
+    df['session_trial'] = df['session_trial'] - df['session_trial'].min()
+    return df
+
+
+# Parallelize processing of each rec_dir
+num_cores = -1  # Use all available cores
+final_dfs = Parallel(n_jobs=num_cores)(delayed(process_rec_dir)(rec_dir) for rec_dir in rec_dirs)
+
+# Concatenate all resulting data frames into one
+final_df = pd.concat(final_dfs, ignore_index=True)
+
+# merge in rec_info into final_df
+final_df = pd.merge(final_df, rec_info, on='rec_dir')
+final_df['session'] = final_df['rec_num']
+
+subject_col = 'exp_name'
+group_cols = ['exp_group', 'session', 'taste']
+trial_col = 'taste_trial'
+value_col = 'euclidean_distance'
+preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, subject_col, group_cols, trial_col, value_col,
+                                                       nIter=10000, save_dir=PA.save_dir, overwrite=False)
+
+flag = 'test'
+nIter = 10000
+textsize = 20
+parallel = True
+yMin = preprodf[value_col].min()
+yMax = preprodf[value_col].max()
+ta.plot_fits_summary_avg(preprodf, shuff_df=shuffle, dat_col=value_col, trial_col=trial_col, save_dir=PA.save_dir,
+                         use_alpha_pos=False, textsize=textsize, dotalpha=0.15, flag=flag, nIter=nIter,
+                         parallel=parallel, yMin=yMin, yMax=yMax)
+for exp_group, group in preprodf.groupby(['exp_group']):
+    group_shuff = shuffle.groupby('exp_group').get_group(exp_group)
+    if flag is not None:
+        save_flag = exp_group + '_' + flag
+    else:
+        save_flag = exp_group
+    ta.plot_fits_summary_avg(group, shuff_df=group_shuff, dat_col=value_col, trial_col=trial_col,
+                             save_dir=PA.save_dir, use_alpha_pos=False, textsize=textsize, dotalpha=0.15,
+                             flag=save_flag, nIter=nIter, parallel=parallel, yMin=yMin, yMax=yMax)
+
+ta.plot_fits_summary(preprodf, dat_col=value_col, trial_col=trial_col, save_dir=PA.save_dir, time_col='session',
+                     use_alpha_pos=False, dotalpha=0.15, flag=flag)
+
+ta.plot_nonlinear_regression_stats(preprodf, shuffle, subject_col=subject_col, group_cols=group_cols,
+                                   trial_col=trial_col, value_col=value_col, save_dir=PA.save_dir, flag=flag,
+                                   textsize=textsize, nIter=nIter)
+
+pred_change_df, pred_change_shuff = ta.get_pred_change(preprodf, shuffle, subject_col=subject_col,
+                                                       group_cols=group_cols, trial_col=trial_col)
+ta.plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, value_col=value_col, trial_col=trial_col,
+                         save_dir=PA.save_dir, flag=flag, textsize=textsize, nIter=nIter)
