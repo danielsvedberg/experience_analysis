@@ -3,6 +3,8 @@ import numpy as np
 import blechpy.dio.h5io as h5io
 import pandas as pd
 from joblib import Parallel, delayed
+from matplotlib import gridspec
+
 import trialwise_analysis as ta
 import analysis as ana
 import matplotlib.pyplot as plt
@@ -12,10 +14,13 @@ import numpy as np
 import scipy.stats as stats
 from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
-from sklearn.metrics imimport matplotlib.gridspec as gridspec
-import silhouette_score
+from sklearn.metrics import silhouette_score
+import matplotlib.gridspec as gridspec
 
-
+exp_group_order = {'naive': 0, 'suc_preexp': 1, 'True': 0, 'False': 1}
+session_order = {1: 0, 2: 1, 3: 2}
+exp_group_names = ['Naive', 'Suc. Pre-exposed']
+exp_group_colors = ['Blues', 'Oranges']
 def get_trial_info(dat):
     dintrials = dat.dig_in_trials
     dintrials['taste_trial'] = 1
@@ -74,7 +79,7 @@ def process_rec_dir(rec_dir):
     return df
 
 
-def plot_correlation_matrices(matrices, names, save=False):
+def plot_correlation_matrices(matrices, names, save_dir=None, save=False):
     # get the maximum and minimum for every 3 entries of matrices
     max_vals = []
     min_vals = []
@@ -134,12 +139,12 @@ def plot_correlation_matrices(matrices, names, save=False):
     plt.show()
 
     if save:
-        fig.savefig(PA.save_dir + '/consensus_matrix.png')
-        fig.savefig(PA.save_dir + '/consensus_matrix.svg')
+        fig.savefig(save_dir + '/consensus_matrix.png')
+        fig.savefig(save_dir + '/consensus_matrix.svg')
 
 
 
-def plot_heirarchical_clustering(matrices, names, threshold=None, save=False):
+def plot_heirarchical_clustering(matrices, names, save_dir= None, threshold=None, save=False):
     linkages = []
     max_vals = []
     for i, m in enumerate(matrices):
@@ -198,8 +203,8 @@ def plot_heirarchical_clustering(matrices, names, threshold=None, save=False):
     plt.show()
     # save the figure
     if save:
-        fig.savefig(PA.save_dir + '/dendograms.png')
-        fig.savefig(PA.save_dir + '/dendograms.svg')
+        fig.savefig(save_dir + '/dendograms.png')
+        fig.savefig(save_dir + '/dendograms.svg')
     return(fig, leaves)
 
 
