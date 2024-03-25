@@ -261,3 +261,33 @@ plt.savefig(os.path.join(save_dir, 'split_trial_accuracy_bars.png'))
 
 best_split_d1 = best_splits_df.loc[best_splits_df['session'] == 1]
 
+#%% single-mode hmm analysis with trialwise regression
+import trialwise_analysis as ta
+proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
+proj = blechpy.load_project(proj_dir)  # load the project
+HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
+save_dir = HA.save_dir
+folder_name = 'HMM_stereotypy_nonlinear_regression'
+save_dir = os.path.join(save_dir, folder_name)
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+
+#################### analysis of gamma mode ####################
+subject_col = 'exp_name'
+group_cols = ['exp_group','session','taste']
+
+avg_gamma_mode_df = HA.get_avg_gamma_mode(overwrite=False)
+#refactor exp_group column in avg_gamma_mode_df from ['naive','suc_preexp'] to ['naive','sucrose preexposed']
+avg_gamma_mode_df['exp_group'] = avg_gamma_mode_df['exp_group'].replace({'suc_preexp':'sucrose preexposed'})
+avg_gamma_mode_df['session trial'] = avg_gamma_mode_df['session_trial']
+avg_gamma_mode_df['session'] = avg_gamma_mode_df['time_group'].astype(int)
+avg_gamma_mode_df['taste trial'] = avg_gamma_mode_df['taste_trial'].astype(int)
+avg_gamma_mode_df['pr(mode trial)'] = avg_gamma_mode_df['pr(mode state)']
+
+for trial_col in ['taste_trial']:
+    df3, shuff = ta.preprocess_nonlinear_regression(avg_gamma_mode_df, subject_col=subject_col, group_cols=group_cols,
+                                                         trial_col=trial_col, value_col='pr(mode state)', overwrite=False,
+                                                         nIter=10000, ymin=0, ymax=1, save_dir=save_dir)
+    df3['stereotypy'] = df3['pr(mode state)']
+    #shuff['pr(mode trial)'] = shuff['pr(mode state)']
+    ta.plotting_pipeline(df3, shuff, trial_col=trial_col, value_col='stereotypy', ymin=0, ymax=1, nIter=10000, save_dir=save_dir, flag='hmm_stereotypy')

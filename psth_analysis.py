@@ -113,7 +113,7 @@ def plot_held_psth(group):
         spike_array = rate_array
         time_array = time_array[::50]
         #get the indices of time array that are greater than -500 and less than 3000
-        tidxs = np.where((time_array >= -500) & (time_array < 3000))[0]
+        tidxs = np.where((time_array >= -500) & (time_array < 2500))[0]
         time_array = time_array[tidxs]
         dflist = []
         #loop throug the dictionary spike_array
@@ -145,13 +145,15 @@ def plot_held_psth(group):
         if len(df) == 0:
             raise ValueError('DataFrame is empty')
         sns.lineplot(data=df, x='timebin', y='spikes', hue='taste', ax=ax, legend=legend)
-        ax.set_title('Session ' + str(session))
-        ax.set_xlabel('Time (ms)')
-        ax.set_ylabel('Firing rate')
+        ax.set_title('Session ' + str(session), fontsize=20)
+        ax.set_xlabel('Time (ms)', fontsize=20)
+        ax.set_ylabel('Firing rate', fontsize=20)
+        #set the x and y font size
+        ax.tick_params(axis='both', which='major', labelsize=17)
     plt.suptitle("held unit#: " + str(group['held_unit_name'].iloc[0]))
     #pad the subplots so the title doesn't overlap with the plots
     plt.tight_layout()
-    plt.subplots_adjust(top=0.825, right=0.95)
+    plt.subplots_adjust(top=0.825)#, right=0.95)
     en = str(group['exp_name'].iloc[0])
     hua = str(group['held_unit_name'].iloc[0])
     save_name = en + '_' + hua
@@ -233,7 +235,7 @@ if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
 #get indexes of scaled_time_array greater than -500 and less than 3000
-tidxs = np.where((time_idx >= -500) & (time_idx < 3000))[0]
+tidxs = np.where((time_idx >= -500) & (time_idx < 2500))[0]
 #determine how many indices were cut off the beginning
 cut_off = np.where(time_idx >= -500)[0][0]
 
@@ -257,13 +259,15 @@ for name, group in target_df.groupby('held_unit_name'):
         #shade the significant windows
         axs.fill_between(trim_time, 0, 1, where=[i in significant_windows for i in range(len(p_values))], color='lightgrey')
         axs.plot(trim_time, p_values)
-        axs.set_title('Session ' + str(row['session']))
-        axs.set_xlabel('Time (s)')
+        axs.set_title('Session ' + str(row['session']), fontsize=20)
+        axs.set_xlabel('Time (s)', fontsize=20)
         if i == 0:
-            axs.set_ylabel('p-value')
+            axs.set_ylabel('p-value', fontsize=20)
+        #set tick label size
+        axs.tick_params(axis='both', which='major', labelsize=17)
     plt.suptitle('Taste Discrimination Index for ' + str(name))
     plt.tight_layout()
-    plt.subplots_adjust(top=0.825, right=0.95)
+    plt.subplots_adjust(top=0.825)#, right=0.95)
 
     plt.savefig(save_dir + '/' + 'unit_' + str(name) + '.png')
     plt.savefig(save_dir + '/' + 'unit_' + str(name) + '.svg')
@@ -404,13 +408,15 @@ for name, group in target_df.groupby('held_unit_name'):
             # axs2.plot(time, pvals, color='black', line)
             axs.plot(time, coeffs)
 
-        axs.set_title('Session ' + str(session))
-        axs.set_xlabel('Time (s)')
+        axs.set_title('Session ' + str(session), fontsize=20)
+        axs.set_xlabel('Time (s)', fontsize=20)
         if session == 1:
-            axs.set_ylabel('correlation coefficient')
+            axs.set_ylabel('correlation coefficient', fontsize=20)
+        #set tick label size
+        axs.tick_params(axis='both', which='major', labelsize=17)
     plt.suptitle('Spearman correlation coefficient for ' + str(name))
     plt.tight_layout()
-    plt.subplots_adjust(top=0.825, right=0.95)
+    plt.subplots_adjust(top=0.825)
 
     plt.savefig(save_dir + '/' + 'unit_' + str(name) + '.png')
     plt.savefig(save_dir + '/' + 'unit_' + str(name) + '.svg')

@@ -247,20 +247,26 @@ def get_AB_clustering(df):
     df['clust_B_avg_trial'] = clust_B_avg_trial
     return(df)
 
-def longform_AB_clustering(df):
+def longform_AB_clustering(df, shuffle=False):
     # longform df by melting clust_A_size and clust_B_size as well as clust_A_avg_trial and clust_B_avg_trial
-    df_clust_size = pd.melt(df, id_vars=['exp_group', 'session', 'channel', 'exp_name'],
+    if shuffle:
+        target_cols = ['exp_group', 'session', 'channel', 'exp_name', 'iter']
+    else:
+        target_cols = ['exp_group', 'session', 'channel', 'exp_name']
+
+    df_clust_size = pd.melt(df, id_vars=target_cols,
                             value_vars=['clust_A_size', 'clust_B_size'], var_name='cluster', value_name='size')
     # refactor values in cluster column so instead of 'clust_A_size' and 'clust_B_size' it is 'A' and 'B'
     df_clust_size['cluster'] = df_clust_size['cluster'].str.replace('_size', '')
 
-    df_clust_trial = pd.melt(df, id_vars=['exp_group', 'session', 'channel', 'exp_name'],
+    df_clust_trial = pd.melt(df, id_vars=target_cols,
                              value_vars=['clust_A_avg_trial', 'clust_B_avg_trial'], var_name='cluster',
                              value_name='avg_trial')
     # refactor values in cluster column so instead of 'clust_A_avg_trial' and 'clust_B_avg_trial' it is 'A' and 'B'
     df_clust_trial['cluster'] = df_clust_trial['cluster'].str.replace('_avg_trial', '')
     # merge
-    df_clust = pd.merge(df_clust_size, df_clust_trial, on=['exp_group', 'session', 'channel', 'exp_name', 'cluster'])
+    target_cols = target_cols + ['cluster']
+    df_clust = pd.merge(df_clust_size, df_clust_trial, on=target_cols)
     # replace 'clust_A' and 'clust_B' with 'A' and 'B'
     df_clust['cluster'] = df_clust['cluster'].str.replace('clust_', '')
     # relabel A in to 'early' and B into 'late'
@@ -291,7 +297,7 @@ def get_AB_cluster_labels(df, shuffle=False):
 
     if shuffle:
         #refactor cluster column so early becomes 'early shuffle' and late becomes 'late shuffle'
-        newdf['cluster'] = newdf['cluster'] + 'shuffle'
+        newdf['cluster'] = newdf['cluster'] + ' shuffle'
 
     return newdf
 
@@ -690,7 +696,98 @@ def plot_cluster_sizes(df_AB_long, save_dir=None):
     g.savefig(save_dir + '/cluster_size_barplot.png')
     g.savefig(save_dir + '/cluster_size_barplot.svg')
 
-def get_pval_stars(pval):
+def plot_cluster_sizes_w_shuff(df_AB_long, shuff_AB_long, save_dir=None):
+    # make a bar plot of the size of the two largest clusters for each channel
+    g = sns.catplot(data=df_AB_long, kind='bar', x='cluster', y='size', row='exp_group', col='session',
+                    margin_titles=True,
+                    linewidth=2, edgecolor='black', facecolor=(0, 0, 0, 0))
+    # map a catplot with stripplot to the same axes
+    g.map_dataframe(sns.stripplot, x='cluster', y='size', dodge=True, color='black')
+    # relabel the y axis to "cluster size (trials)"
+    g.set_ylabels('cluster size (trials)')
+    # remove 'exp group' from the row labels
+    g.set_titles(row_template='{row_name}', col_template='{col_var} {col_name}')
+
+    plt.show()
+    # save the plot
+    g.savefig(save_dir + '/cluster_size_barplot.png')
+    g.savefig(save_dir + '/cluster_size_barplot.svg')
+
+def plot_cluster_sizes_w_shuff_single(df_AB_long, shuff_AB_long, save_dir=None):
+    # make a bar plot of the size of the two largest clusters for each channel
+    cluster_x_map = {'early': 0, 'late': 1, 'total': 2}
+    bonf_corr = 6 # 2 comparisons across 3 days 6 total comparisons
+    conf = 0.05 / bonf_corr
+    ntiles = [conf, 1 - conf]
+
+    fig, axs = plt.subplots(1, 3, figsize=(10, 4), sharey=True)
+    for session in [1,2,3]:
+        ax = axs[session - 1]
+        session_df = df_AB_long[df_AB_long['session'] == session]
+        session_shuff = shuff_AB_long[shuff_AB_long['session'] == session]
+        session_df['size'] = session_df['size']/30 * 100
+        session_shuff['size'] = session_shuff['size']/30 * 100
+
+
+        #make a 'total' cluster that is the sum of the early and late clusters
+        total_df = session_df.groupby(['exp_group', 'session', 'channel','exp_name']).sum().reset_index()
+        total_df['cluster'] = 'total'
+        session_df = pd.concat([session_df, total_df], ignore_index=True)
+
+        total_shuff = session_shuff.groupby(['exp_group', 'session', 'channel','exp_name', 'iter']).sum().reset_index()
+        total_shuff['cluster'] = 'total'
+        session_shuff = pd.concat([session_shuff, total_shuff], ignore_index=True)
+
+        session_shuff = session_shuff.groupby(['exp_group', 'session', 'channel', 'cluster', 'iter'])['size'].mean().reset_index()
+
+        shuff_quantiles = session_shuff.groupby('cluster')['size'].quantile(ntiles).unstack().reset_index()
+        # rename the columns of shuff_quantiles to 'lower' and 'upper'
+        shuff_quantiles.columns = ['cluster', 'lower', 'upper']
+        shuff_quantiles['height'] = shuff_quantiles['upper'] - shuff_quantiles['lower']
+
+        # make a floating barplot with cluster on the x-axis, 0.025 the bottom of each bar, and 0.975 the top of each bar
+        ax.bar(x=shuff_quantiles['cluster'], height=shuff_quantiles['height'], bottom=shuff_quantiles['lower'],
+               color='gray', alpha=0.5)
+        sns.barplot(data=session_df, x='cluster', y='size', ax=ax, capsize=0.1, errwidth=2, edgecolor='black',
+                    order=['early', 'late', 'total'], facecolor=(0, 0, 0, 0))
+
+        for cluster, group in session_df.groupby('cluster'):
+            shuff_group = session_shuff[session_shuff['cluster'] == cluster]
+            mean_shuff = shuff_group['size'].mean()
+            mean = group['size'].mean()
+            if mean > mean_shuff:
+                pval = 1-(np.mean(mean > shuff_group['size']))
+            else:
+                pval = 1-(np.mean(mean < shuff_group['size']))
+            pval = pval * bonf_corr
+            stars = get_pval_stars(pval)
+
+            if pval < 0.05:
+                xpos = cluster_x_map[cluster]
+                #plot a text from stars above the bar in bold
+                ax.text(xpos, 75, stars, fontsize=20, ha='center', fontweight='bold')
+        #set y lim
+        ax.set_ylim(0, 100)
+        if session == 1:
+            ax.set_ylabel('% of trials', fontsize=20)
+            yticks = [0,20,40,60,80,100]
+            ax.set_yticks(yticks)
+            ax.set_yticklabels(ax.get_yticks(), fontsize=17)
+        else:
+            ax.set_ylabel('')
+        ax.set_title('Session ' + str(session))
+        ax.set_xticklabels(ax.get_xticklabels(), fontsize=17)
+
+    plt.tight_layout()
+    plt.show()
+    # save the plot
+    plt.savefig(save_dir + '/cluster_size_barplot_naive.png')
+    plt.savefig(save_dir + '/cluster_size_barplot_naive.svg')
+
+
+def get_pval_stars(pval, bonf_corr=None):
+    if bonf_corr is not None:
+        pval = pval * bonf_corr
     if pval < 0.001:
         return '***'
     elif pval < 0.01:
@@ -737,7 +834,6 @@ def plot_cluster_avg_trial_naive(newdf, save_dir=None, flag=None):
         ax.set_xticklabels(ax.get_xticklabels(), fontsize=17)
         ax.set_xlabel('Cluster', fontsize=20)
     plt.tight_layout()
-    plt.subplots_adjust(wspace=0.05)
     plt.show()
     # save the plot
     savename = save_dir + '/cluster_avg_trial_naive'
@@ -746,36 +842,74 @@ def plot_cluster_avg_trial_naive(newdf, save_dir=None, flag=None):
     plt.savefig(savename + '.png')
     plt.savefig(savename + '.svg')
 
-def plot_cluster_avg_trial_naive_w_shuff(newdf, save_dir=None, flag=None):
+def plot_cluster_avg_trial_naive_w_shuff(newdf, shuff_df, save_dir=None, flag=None):
     #relabel cluster column so 'early shuffle' is 'early\nshuffle' and 'late shuffle' is 'late\nshuffle'
-    newdf['cluster'] = newdf['cluster'].str.replace('early shuffle', 'early\nshuffle')
-    newdf['cluster'] = newdf['cluster'].str.replace('late shuffle', 'late\nshuffle')
+    #make a new column called 'half which is the 'cluster' column with ' shuffle' removed
+    newdf = newdf.copy()
+    cluster_x_map = {'early': 0, 'late': 1}
+    shuff_df['cluster'] = shuff_df['cluster'].str.replace('early shuffle', 'early')
+    shuff_df['cluster'] = shuff_df['cluster'].str.replace('late shuffle', 'late')
+    #group shuff_df by cluster, channel, exp_name, and iter, get the mean of clust_idx
+    shuff_df = shuff_df.groupby(['session','channel', 'cluster', 'iter']).agg({'clust_idx': 'mean'}).reset_index()
 
-    aovs = []
-    for name, group in newdf.groupby(['session']):
-        aov = pg.rm_anova(data=group, dv='clust_idx', within=['channel', 'cluster'], subject='exp_name')
-        aov['session'] = name
-        aovs.append(aov)
-    aovs = pd.concat(aovs, ignore_index=True)
-    aovs['p-GG-corr'] = aovs['p-GG-corr'] * 3 #bonfferoni correcting for 3 sessions
-    aovs = aovs.loc[aovs['Source'] == 'cluster']
+    bonf_corr = 6 # 2 comparisons across 3 days 6 total comparisons
+    conf = 0.05 / bonf_corr
+    ntiles = [conf, 1 - conf]
 
+    fig, axs = plt.subplots(1, 3, figsize=(10, 4), sharey=True)
+    for session in [1, 2, 3]:
+        ax = axs[session - 1]
+        session_df = newdf[newdf['session'] == session]
+        session_shuff = shuff_df[shuff_df['session'] == session]
+        #for each grouping of cluster in session_shuff, get the 97.5% and 2.5% quantiles of clust_idx
 
+        shuff_quantiles = session_shuff.groupby('cluster')['clust_idx'].quantile(ntiles).unstack().reset_index()
+        #rename the columns of shuff_quantiles to 'lower' and 'upper'
+        shuff_quantiles.columns = ['cluster', 'lower', 'upper']
+        shuff_quantiles['height'] = shuff_quantiles['upper'] - shuff_quantiles['lower']
+        #make a floating barplot with cluster on the x-axis, 0.025 the bottom of each bar, and 0.975 the top of each bar
+        ax.bar(x=shuff_quantiles['cluster'], height=shuff_quantiles['height'], bottom=shuff_quantiles['lower'], color='gray', alpha=0.5)
+        sns.barplot(data=session_df, x='cluster', y='clust_idx', ax=ax, capsize=0.1, errwidth=2, edgecolor='black',
+                    order=['early','late'], facecolor=(0, 0, 0, 0))
+        sns.swarmplot(data=session_df, x='cluster', y='clust_idx', ax=ax, color='tab:blue', alpha=0.5, size=2,
+                      order=['early', 'late'])
 
-    sns.set(font_scale=2, style='ticks')
-    g = sns.catplot(data=newdf, kind='bar', x='cluster', y='clust_idx', col='session', margin_titles=True,
-                    color='white', linewidth=2, edgecolor='black', saturation=1, aspect=1)#, order=['early', 'late', 'early\nshuffle', 'late\nshuffle'])
-    g.map_dataframe(sns.stripplot, x='cluster', y='clust_idx', dodge=True, color='black', alpha=0.1, size=5, jitter=0.4)
-    g.set_ylabels('trial number')
-    g.set_titles(row_template='{row_name}', col_template='{col_var} {col_name}')
-    g.set(ylim=(-1, 30))
+        for cluster, group in session_df.groupby('cluster'):
+            shuff_group = session_shuff[session_shuff['cluster'] == cluster]
+            mean_shuff = shuff_group['clust_idx'].mean()
+            mean = group['clust_idx'].mean()
+            if mean > mean_shuff:
+                pval = 1-(np.mean(mean > shuff_group['clust_idx']))
+            else:
+                pval = 1-(np.mean(mean < shuff_group['clust_idx']))
+            pval = pval * bonf_corr
+            stars = get_pval_stars(pval)
+
+            if pval < 0.05:
+                xpos = cluster_x_map[cluster]
+                #plot a text from stars above the bar in bold
+                ax.text(xpos, 20, stars, fontsize=20, ha='center', fontweight='bold')
+
+        ax.set_title('Session ' + str(session))
+        if session == 1:
+            ax.set_ylabel('Trial')
+        else:
+            ax.set_ylabel('')
+        ax.set_xlabel('Cluster')
+        ax.set_ylim(-1, 30)
+        ax.set_yticks([0, 10, 20, 30])
+        ax.set_yticklabels(ax.get_yticks(), fontsize=17)
+        ax.set_xticklabels(ax.get_xticklabels(), fontsize=17)
+        ax.set_xlabel('Cluster', fontsize=20)
+    plt.tight_layout()
     plt.show()
+
     # save the plot
-    savename = save_dir + '/cluster_avg_trial_naive'
+    savename = save_dir + '/cluster_avg_trial_naive_w_shuff'
     if flag is not None:
         savename = savename + '_' + flag
-    g.savefig(savename + '.png')
-    g.savefig(savename + '.svg')
+    plt.savefig(savename + '.png')
+    plt.savefig(savename + '.svg')
 
 def plot_cluster_distances(intra_inter_df, save_dir=None):
     # plot a bar plot of the distances

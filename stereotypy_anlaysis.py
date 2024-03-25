@@ -50,7 +50,7 @@ scf.plot_heirarchical_clustering_single(shuff_matrices_naive, shuff_names_naive,
 # sweep over different values of t to get the best silhouette score
 thresholds = scf.get_consensus_thresholds(matrices, names)
 # plot the dendograms
-fig, leaves = scf.plot_heirarchical_clustering(matrices, names, threshold=thresholds, save=True)
+fig, leaves = scf.plot_heirarchical_clustering(matrices, names, threshold=thresholds, save=True, save_dir=save_dir)
 naive_thresh = thresholds[:3]
 fig, leaves = scf.plot_heirarchical_clustering_single(naive_mats, naive_names, threshold=thresholds, save=True, save_dir=save_dir)
 
@@ -66,22 +66,22 @@ shuff_df = scf.get_AB_clustering(shuff_df)
 
 #%% plot the cluster sizes
 df_AB_long = scf.longform_AB_clustering(df)
-scf.plot_cluster_sizes(df_AB_long, save_dir=save_dir)
+#scf.plot_cluster_sizes(df_AB_long, save_dir=save_dir)
+shuff_AB_long = scf.longform_AB_clustering(shuff_df, shuffle=True)
+
+scf.plot_cluster_sizes_w_shuff(df_AB_long, shuff_AB_long, save_dir=save_dir)
 
 #%% plot the average trial of the two largest clusters
 import pingouin as pg
 
 df_AB_labels = scf.get_AB_cluster_labels(df)
-shuff_df_AB_labels = scf.get_AB_cluster_labels(shuff_df, shuffle=True)
-
 newdf_naive = df_AB_labels[df_AB_labels['exp_group'] == 'naive']
-#perform repeated measures anova on newdf_naive
-
 scf.plot_cluster_avg_trial_naive(newdf_naive, save_dir=save_dir)
 
+shuff_df_AB_labels = scf.get_AB_cluster_labels(shuff_df, shuffle=True)
 shuff_df_AB_labs_naive = shuff_df_AB_labels[shuff_df_AB_labels['exp_group'] == 'naive']
-shuff_df_AB_labs_naive = shuff_df_AB_labs_naive.loc[shuff_df_AB_labs_naive['iter'] < 10]
-scf.plot_cluster_avg_trial_naive_w_shuff(shuff_df_AB_labs_naive, save_dir=save_dir, flag='with_shuffle')
+
+aov = scf.plot_cluster_avg_trial_naive_w_shuff(newdf_naive, shuff_df_AB_labs_naive, save_dir=save_dir, flag='with_shuffle')
 
 #%% plot the intra inter and null cluster distances
 #compute intra and inter-cluster distances

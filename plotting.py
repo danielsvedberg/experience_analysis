@@ -52,7 +52,9 @@ def plot_unit_waveforms(rec_dir, unit, ax=None, save_file=None):
     ax.plot(time, mean_wave, color='k', linewidth=3)
     ax.plot(time, mean_wave - std_wave, color='k', linewidth=1, linestyle='--')
     ax.plot(time, mean_wave + std_wave, color='k', linewidth=1, linestyle='--')
-    ax.set_title('%s\n%s' % (dat.data_name, unit_str))
+    #split dat.data_name by underscores, grab the 0th and -2 index
+    data_name = dat.data_name.split('_')[0] + ' ' + dat.data_name.split('_')[-2]
+    ax.set_title('%s\n%s' % (data_name, unit_str), fontsize=12)
 
     if save_file is not None:
         fig.savefig(save_file)
@@ -74,8 +76,8 @@ def plot_held_units(all_units, save_dir):
         tmp = tmp.sort_values('rec_group').reset_index(drop=True)
 
         # Make plot and plot each unit
-        width = 9*len(tmp)
-        fig, axs = plt.subplots(1, len(tmp), figsize=(width, 11), sharey=True, sharex=True)
+        width = 3.33*len(tmp)
+        fig, axs = plt.subplots(1, len(tmp), figsize=(width, 4), sharey=True, sharex=True)
         for i, row in tmp.iterrows():
             ax = axs[i]
             plot_unit_waveforms(row['rec_dir'], row['unit_name'], ax=ax)
@@ -84,13 +86,16 @@ def plot_held_units(all_units, save_dir):
             # ax.spines['left'].set_color('none')
             # ax.spines['right'].set_color('none')
             #ax.tick_params(labelcolor='w', top=False, bottom=False, left=False, right=False)
-            ax.set_xlabel('Time (ms)')
+            ax.set_xlabel('Time (ms)', fontsize=20)
+            ax.tick_params(axis='x', labelsize=17)
             if i == 0:
-                ax.set_ylabel('Voltage (mV)')
-        fig.suptitle('Held Unit %s' % unit_name)
+                ax.set_ylabel('Voltage (mV)', fontsize=20)
+                #set tick label font size to 17
+                ax.tick_params(axis='y', labelsize=17)
+        fig.suptitle('Held Unit %s' % unit_name, fontsize=20)
+        #plt.subplots_adjust(top=0.7, bottom=0.2)
         plt.tight_layout()
-        plt.subplots_adjust(top=0.85)
-        save_file = os.path.join(save_dir, 'held_unit_%s-waves.png' % unit_name)
+        save_file = os.path.join(save_dir, 'held_unit_%s-waves.svg' % unit_name)
         fig.savefig(save_file)
         plt.close(fig)
 
