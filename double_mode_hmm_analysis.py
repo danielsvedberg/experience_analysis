@@ -10,6 +10,7 @@ import numpy as np
 import trialwise_analysis as ta
 import scipy.stats as stats
 import time
+from joblib import Parallel, delayed
 #
 proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
 proj = blechpy.load_project(proj_dir)  # load the project
@@ -19,45 +20,49 @@ best_hmms = HA.get_best_hmms(sorting = 'best_AIC')  # get the best hmms
 best_hmms['session'] = best_hmms['time_group']  # rename time_group to session
 #just get naive hmms
 best_hmms = best_hmms.loc[best_hmms['exp_group'] == 'naive'].reset_index(drop=True)
+best_hmms = best_hmms[['rec_dir', 'exp_name', 'exp_group','session', 'taste', 'channel', 'hmm_id']]
 
-def process_split(best_hmms, split, shuffle=False):
+def process_split(best_hmms_df, split, shuffle=False):
     id_cols = ['exp_name', 'exp_group', 'session', 'taste', 'hmm_id']
     data_cols = ['split', 'pr_pre', 'pr_post']
-    split_mode_hmms = hmma.getSplitModeHMMs(best_hmms, split_trial=split, shuffle=shuffle)  # get the split mode hmms
+    split_mode_hmms = hmma.getSplitModeHMMs(best_hmms_df, split_trial=split, shuffle=shuffle)  # get the split mode hmms
     df = split_mode_hmms[id_cols]
     df[data_cols] = split_mode_hmms[data_cols]
+    df = df.reset_index(drop=True)
     return df
 
-from joblib import Parallel, delayed
-splits = np.arange(1,30)
-res_list = Parallel(n_jobs=11)(delayed(process_split)(best_hmms, split) for split in splits)
-# res_list = []
-# for split in splits:
-#     res_list.append(process_split(best_hmms, split))
-overall_acc_df = pd.concat(res_list)
-overall_acc_df
-
-#make a null distribution version of this
-splits = np.arange(1,30)
-
-res_list = []
-for iternum in range(100):
-    print("iter: ", iternum)
-    split_list = Parallel(n_jobs=10)(delayed(process_split)(best_hmms, split, shuffle=True) for split in splits)
-    split_df = pd.concat(split_list)
+def iter_splits(best_hmms_df, splits, iternum):
+    print(f'Iteration {iternum}')
+    split_df = [process_split(best_hmms_df, split, shuffle=True) for split in splits]
+    split_df = pd.concat(split_df)
+    split_df = split_df.reset_index(drop=True)
     split_df['iter'] = iternum
-    res_list.append(split_df)
-overall_acc_df_shuffle = pd.concat(res_list)
+    return split_df
 
-#save to .json
-save_dir = HA.save_dir
-folder_name = 'split_trial_hmm_analysis'
-save_dir = os.path.join(save_dir, folder_name)
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir)
-#overall_acc_df_shuffle.to_json(os.path.join(save_dir, 'overall_acc_df_shuffle.json'))
-#save to pickle
-overall_acc_df_shuffle.to_pickle(os.path.join(save_dir, 'overall_acc_df_shuffle.pkl'))
+def get_null_dist(best_hmms, overwrite=False):
+    save_dir = HA.save_dir
+    folder_name = 'split_trial_hmm_analysis'
+    save_dir = os.path.join(save_dir, folder_name)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    if overwrite:
+        splits = np.arange(1,30)
+        niter = 100
+        best_hmms = best_hmms.reset_index(drop=True)
+        shuffle_df = Parallel(n_jobs=8)(delayed(iter_splits)(best_hmms, splits, i) for i in range(niter))
+        shuffle_df = pd.concat(shuffle_df)
+        shuffle_df.to_pickle(os.path.join(save_dir, 'overall_acc_df_shuffle.pkl'))
+    else:
+        shuffle_df = pd.read_pickle(os.path.join(save_dir, 'overall_acc_df_shuffle.pkl'))
+    return shuffle_df
+
+overall_acc_df_shuffle = get_null_dist(best_hmms, overwrite=False)
+
+splits = np.arange(1,30)
+res_list = Parallel(n_jobs=10)(delayed(process_split)(best_hmms, split) for split in splits)
+overall_acc_df = pd.concat(res_list)
+
 
 def get_accuracy(df):
     pr_templates = []
@@ -105,6 +110,12 @@ tabBrown = sns.color_palette('tab10')[5]
 # Assuming overall_acc_df and overall_acc_df_shuffle are already defined and preprocessed as needed
 overall_acc_df['session'] = overall_acc_df['session'].astype(int)
 
+ticklab_size = 17
+axlab_size = 20
+subplots_margins = {'wspace': 0.05, 'hspace': 0.1, 'left': 0.1, 'right': 0.9}
+
+
+
 import seaborn as sns
 plt.rcParams.update({'font.size': 20})
 #get the color code for the first color in seaborn's tab10 palette
@@ -146,7 +157,7 @@ for session in [1, 2, 3]:
         ax.set_ylabel('pr(template)')
 
 plt.tight_layout()
-plt.subplots_adjust(bottom=0.25)  # Adjust the bottom
+plt.subplots_adjust(bottom=0.25, **subplots_margins)  # Adjust the bottom
 axs[1].legend(['trial shuffle', 'opposite template', 'matching template'],
           bbox_to_anchor=(0.5, -0.2), loc='upper center', ncol=3, fontsize=20, fancybox=False, shadow=False)
 plt.show()
@@ -252,7 +263,7 @@ for i, session in enumerate([1, 2, 3]):
         ax.set_ylabel('')
 
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.2)
+    plt.subplots_adjust(bottom=0.2, **subplots_margins)
 plt.show()
 #save
 plt.savefig(os.path.join(save_dir, 'split_trial_accuracy_bars.svg'))

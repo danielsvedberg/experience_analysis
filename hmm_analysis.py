@@ -1323,8 +1323,8 @@ def nb_lm_group(group, all_units):
 
                 tasteacc = sum(Y_taste == Y_pred_taste) / len(Y_taste)
 
-                for i in el_tastes:
-                    n_dec = np.count_nonzero(res.Y == i)
+                for j in el_tastes:
+                    n_dec = np.count_nonzero(res.Y == j)
                     n_trials_decoded.append(n_dec)
 
                 n_trials_missed = sum(group.n_trials * 2) - sum(n_trials_decoded)
@@ -2108,17 +2108,62 @@ def getSplitModeHMMs(best_hmms, split_trial=5, shuffle=False):
         rec_dir = row['rec_dir']
         h5_file = get_hmm_h5(rec_dir)
         hmm_id = row['hmm_id']
-        hmm, time, params = ph.load_hmm_from_hdf5(h5_file, hmm_id)
-        out = getSplitMode(hmm, split_trial, shuffle)
+        hmm, time, _ = ph.load_hmm_from_hdf5(h5_file, hmm_id)
+        out = getSplitModeLite(hmm, split_trial, shuffle)
         out['time'] = time
         return out
 
-    res_list = Parallel(n_jobs=1)(delayed(process_row)(row) for i, row in best_hmms.iterrows())
+    #res_list = Parallel(n_jobs=1)(delayed(process_row)(row) for i, row in best_hmms.iterrows())
+    res_list = [process_row(row) for i, row in best_hmms.iterrows()]
     #make dataframe
     df = pd.DataFrame.from_records(res_list)
-    best_hmms = pd.concat([best_hmms, df], axis=1)
-    del df
-    return best_hmms
+    newdf = pd.concat([best_hmms, df], axis=1)
+    return newdf
+
+def get_mode_seqs(seqs):
+    mode_seqs, _ = scistats.mode(seqs)
+    mode_seqs = mode_seqs.flatten().astype(int)
+    mode_seqs = np.ravel(mode_seqs)
+    return mode_seqs
+
+def getSplitModeLite(hmm, split_trial=5, shuffle=False):
+    def get_pr_mode(gamma_probs, mode_seqs):
+        avg_pr_mode = gamma_probs[:, mode_seqs, :]
+        avg_pr_mode = avg_pr_mode[:,100:]
+        avg_pr_mode = np.mean(avg_pr_mode, axis=1)
+        return avg_pr_mode
+
+    gamma = hmm.stat_arrays['gamma_probabilities']
+    n_trials = gamma.shape[0]
+    #if shuffle==True, then shuffle the 0th dimension of gamma
+    if shuffle:
+        trials = np.arange(n_trials)
+        np.random.shuffle(trials)
+        gamma = gamma[trials, :, :]
+
+    if split_trial >= gamma.shape[0]:
+        pre_seq = np.argmax(gamma, axis=1)
+        pre_seq = get_mode_seqs(pre_seq)
+        pr_pre = get_pr_mode(gamma, pre_seq)
+        del pre_seq
+        del gamma
+        pr_post = None
+    else:
+        seq = np.argmax(gamma, axis=1)
+        pre_seq = get_mode_seqs(seq[:split_trial,:])
+        pr_pre = get_pr_mode(gamma[:, :, :], pre_seq)
+        del pre_seq
+        post_seq = get_mode_seqs(seq[split_trial:,:])
+        del seq
+        pr_post = get_pr_mode(gamma[:, :, :], post_seq)
+        del gamma
+        del post_seq
+
+    out = {'split': split_trial, 'shuffle': shuffle, 'pr_pre': pr_pre, 'pr_post': pr_post}
+    return out
+
+
+
 def getSplitMode(hmm, split_trial=5, shuffle=False, output='dict'):
     def get_seqs(gamma_probs):
         seqs = np.argmax(gamma_probs, axis=1)
@@ -2131,10 +2176,11 @@ def getSplitMode(hmm, split_trial=5, shuffle=False, output='dict'):
         return mode_seqs
 
     def get_pr_mode(gamma_probs, mode_seqs):
-        pr_mode = gamma_probs[:, mode_seqs, np.arange(gamma_probs.shape[2])]
-        pr_mode = pr_mode[:,100:]
-        pr_mode = np.mean(pr_mode, axis=1)
-        return pr_mode
+        pr_mode = gamma_probs[:, mode_seqs, :]
+        avg_pr_mode = pr_mode[:,100:]
+        avg_pr_mode = np.mean(avg_pr_mode, axis=1)
+        avg_trial = np.mean(pr_mode, axis=0)
+        return avg_pr_mode, avg_trial
 
     gamma = hmm.stat_arrays['gamma_probabilities']
     n_trials = gamma.shape[0]
@@ -2146,25 +2192,26 @@ def getSplitMode(hmm, split_trial=5, shuffle=False, output='dict'):
 
     if split_trial >= gamma.shape[0]:
         seq = get_seqs(gamma)
-        pre_mode = get_mode_seqs(seq)
-        pr_pre = get_pr_mode(gamma, pre_mode)
+        pre_seq = get_mode_seqs(seq)
+        del seq
+        pr_pre, pre_gamma = get_pr_mode(gamma, pre_seq)
         pr_post = None
-
+        post_gamma = None
     else:
         seq = get_seqs(gamma)
-        pre_mode = get_mode_seqs(seq[:split_trial])
-        post_mode = get_mode_seqs(seq[split_trial:])
+        pre_seq = get_mode_seqs(seq[:split_trial,:])
+        post_seq = get_mode_seqs(seq[split_trial:,:])
+        del seq
 
-        pr_pre = get_pr_mode(gamma, pre_mode)
-        pr_post = get_pr_mode(gamma, post_mode)
-        #del post_mode
+        pr_pre, pre_gamma = get_pr_mode(gamma[:split_trial,:,:], pre_seq)
+        pr_post, post_gamma = get_pr_mode(gamma[split_trial:,:,:], post_seq)
 
     if output == 'dict':
         out = {'split': split_trial, 'shuffle': shuffle, 'pr_pre': pr_pre, 'pr_post': pr_post}
-        del seq, pre_mode, pr_pre, pr_post, gamma
+        #del seq, pre_seq, pr_pre, pr_post, gamma, pre_gamma, post_gamma
         return out
     elif output == 'classic':
-        return pre_mode, pr_pre, post_mode, pr_post, seq
+        return pre_seq, pr_pre, pre_gamma, post_seq, pr_post, post_gamma
 
 
 def binstate(best_hmms, statefunc=getModeHmm):
