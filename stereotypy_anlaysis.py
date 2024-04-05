@@ -91,6 +91,17 @@ scf.plot_cluster_distances(intra_inter_df, save_dir=save_dir)
 scf.plot_cluster_distances_naive(intra_inter_df, save_dir=save_dir)
 
 #%% calculate and plot Euclidean and cosine distances for each taste trial
+import blechpy
+import stereotypy_clustering_functions as scf
+import blechpy.dio.h5io as h5io
+import pandas as pd
+from joblib import Parallel, delayed
+import trialwise_analysis as ta
+import analysis as ana
+import numpy as np
+import os
+
+
 def get_trial_info(dat):
     dintrials = dat.dig_in_trials
     dintrials['taste_trial'] = 1
@@ -126,7 +137,7 @@ def process_rec_dir(rec_dir):
                 euc_dist = np.linalg.norm(trial_rate_bin - avg_firing_rate_bin)
                 euc_dist_mat[i, j] = euc_dist
         # zscore every entry of euc_dist_mat
-        euc_dist_mat = (euc_dist_mat - np.mean(euc_dist_mat)) / np.std(euc_dist_mat)
+        #euc_dist_mat = (euc_dist_mat - np.mean(euc_dist_mat)) / np.std(euc_dist_mat)
 
         avg_cos_sim = np.mean(cos_sim_mat[:, 2000:5000], axis=1)
         avg_euc_dist = np.mean(euc_dist_mat[:, 2000:5000], axis=1)
@@ -144,10 +155,19 @@ def process_rec_dir(rec_dir):
     df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
     # remove all rows where taste == 'Spont'
     df = df.loc[df['taste'] != 'Spont']
+    df['euclidean_distance'] = df['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
     # subtract the min of 'session_trial' from 'session_trial' to get the session_trial relative to the start of the recording
     df['session_trial'] = df['session_trial'] - df['session_trial'].min()
     return df
 
+
+
+proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
+proj = blechpy.load_project(proj_dir)  # load the project
+rec_info = proj.rec_info.copy()  # get the rec_info table
+rec_dirs = rec_info['rec_dir']
+PA = ana.ProjectAnalysis(proj)
+all_units, held_df = PA.get_unit_info(overwrite=False)
 
 # Parallelize processing of each rec_dir
 num_cores = -1  # Use all available cores

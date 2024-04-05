@@ -14,71 +14,72 @@ proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # direc
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
-NB_states = hmma.get_NB_states_and_probs(HA)
+NB_states = hmma.get_NB_states_and_probs(HA, get_best=True)
 
 #%%
 naive_dat = NB_states[NB_states['exp_group'] == 'naive']
-
+naive_dat['anTaste'] = naive_dat['taste'] + '_' + naive_dat['epoch']
 aov_groups = ['session', 'epoch']
-within = ['taste']
+within = ['trial_group', 'taste']
 subject = 'exp_name'
 dvcols = ['pr(correct state)']
-NB_split_aov, NB_split_ph = ana.iter_trial_split_anova(naive_dat, aov_groups, dvcols, within, subject,
+NB_split_aov, NB_split_ph, NB_split_diff = ana.iter_trial_split_anova(naive_dat, aov_groups, dvcols, within, subject,
                                                            trial_cols=['taste_trial'],#, 'session_trial'],
                                                            n_splits=30, save_dir=HA.save_dir, save_suffix='NB_decode_new')
 NB_split_aov = NB_split_aov.loc[NB_split_aov['Source'] == 'trial_group']
-NB_split_aov['significant'] = NB_split_aov['p-GG-corr'] < 0.05
+NB_split_aov['significant'] = NB_split_aov['p-unc'] < (0.05/24)
 
 #%% Now with average
-avg_df = []
-for name, group in NB_split_aov.groupby(['trial_split', 'session']):
-    #take the mean of all columns except p-GG-corr and significant
-    avg = group.mean()
-    combined_pval = stats.combine_pvalues(group['p-GG-corr'].values, method='fisher')
-    avg['p-GG-corr'] = combined_pval[1]
-    avg['significant'] = combined_pval[1] < 0.05
-    avg_df.append(avg)
 
-avg_df = pd.concat(avg_df, axis=1).T
-avg_df['epoch'] = 'average'
-epochs = ['early', 'late']#, 'average']
-full_df = pd.concat([NB_split_aov, avg_df], ignore_index=True)
+epochs = ['early', 'late', 'best_acc']#, 'average']
+full_df = NB_split_aov #pd.concat([NB_split_aov, avg_df], ignore_index=True)
+
+NB_split_diff = NB_split_diff.loc[(NB_split_diff['trial_split'] > 2) & (NB_split_diff['trial_split'] < 27)]
+full_df = full_df.loc[(full_df['trial_split'] > 2) & (full_df['trial_split'] < 27)]
 import matplotlib
 tabblue = matplotlib.colors.to_rgba('tab:blue')
-fig, axs = plt.subplots(2,3, figsize=(10, 7), sharex=True, sharey=True)
+fig, axs = plt.subplots(3,3, figsize=(10, 10), sharex=True, sharey=True)
 for i, epoch in enumerate(epochs):#(epoch, group) in enumerate(full_df.groupby('epoch')):
     group = full_df.loc[full_df['epoch'] == epoch]
     for j in [1,2,3]:
+        diff_group = NB_split_diff.loc[(NB_split_diff['session'] == j) & (NB_split_diff['epoch'] == epoch)]
         ax = axs[i, j-1]
+        sns.lineplot(x='trial_split', y='pr(correct state)', data=diff_group, ax=ax, color='black')
+        ax.axhline(0, color='black', linestyle='--')
+        ax2 = ax.twinx()
         for k, (sig, grp) in enumerate(group.groupby('significant')):
             dat = grp.loc[group['session'] == j]
             if sig:
-                color = tabblue
+                sig_splits = dat['trial_split'].values
+                sig_vals = diff_group.loc[diff_group['trial_split'].isin(sig_splits)]
+                mean_val = sig_vals.groupby('trial_split')['pr(correct state)'].mean().reset_index()
+                ax.scatter(mean_val['trial_split'], mean_val['pr(correct state)'], color=tabblue, s=50)
+                #color = tabblue
+                #ax2.scatter(dat['trial_split'], dat['p-GG-corr'], color=color, s=50)
             else:
-                color = 'gray'
-            #plot with enlarged points
-            ax.scatter(dat['trial_split'], dat['p-GG-corr'], color=color, s=50)
-            #put a blue line at p = 0.05
-            ax.axhline(0.05, color='b', linestyle='--')
+                continue
+
         if i == 0:
             ax.set_title('session ' + str(j))
+        ax.set_xticks([3, 14, 26])
         if i == 1:
             ax.set_xlabel('trial split')
+            ax.set_xticklabels(ax.get_xticks()+1, fontsize=17)
             ax.tick_params(axis='x', labelsize=17)
         if j == 1:
-            ax.set_ylabel('p-value')
+            ax.set_ylabel('late - early trials\npr(correct state)', fontsize=20)
             ax.tick_params(axis='y', labelsize=17)
+
         if j == 3:
-            ax2 = ax.twinx()
-            if epoch =='average':
-                label = 'combined'
-            else:
-                label = epoch + '\nepoch'
-            ax2.set_ylabel(label, rotation=270, labelpad=50)
-            ax2.set_yticks([])
-            ax2.set_yticklabels([])
+            label = epoch + ' epoch'
+            ax2.set_ylabel(label, fontsize=20)#, rotation=270)#, labelpad=50)
+        else:
+            ax2.set_ylabel('')
+        ax2.set_yticklabels([])
+        ax2.set_yticks([])
+
 plt.tight_layout()
-plt.subplots_adjust(wspace=0.05, hspace=0.05, top=0.9, bottom=0.125, left=0.1, right=0.9)
+plt.subplots_adjust(wspace=0.05, hspace=0.05, top=0.9, bottom=0.125, left=0.15, right=0.95)
 plt.show()
 save_dir = HA.save_dir
 folder = 'NB_accuracy_split_trial_ANOVA'
@@ -183,6 +184,13 @@ fig.savefig(save_file)
 
 #%%
 import trialwise_analysis as ta
+import blechpy
+import hmm_analysis as hmma
+import analysis as ana
+import os
+
+proj = blechpy.load_project('/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy')
+HA = ana.HmmAnalysis(proj)
 save_dir = HA.save_dir
 #make a new folder called nonlinear_regression in save_dir
 folder = 'nonlinear_regression'
@@ -193,7 +201,6 @@ if not os.path.exists(save_dir):
 NB_df_accuracy = NB_states
 
 late = NB_df_accuracy.loc[NB_df_accuracy['epoch'] == 'late']
-early = NB_df_accuracy.loc[NB_df_accuracy['epoch'] == 'early']
 group_cols = ['exp_group', 'session', 'taste']
 value_col = 'pr(correct state)'
 trial_col = 'taste_trial'
@@ -209,3 +216,10 @@ df3, shuff = ta.preprocess_nonlinear_regression(early, subject_col='exp_name', g
                                                 trial_col=trial_col, value_col=value_col, overwrite=False,
                                                 nIter=nIter, save_dir=save_dir, flag='early_epoch')
 ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag='early_epoch')
+
+
+best = NB_df_accuracy.loc[NB_df_accuracy['epoch'] == 'best_acc']
+df3, shuff = ta.preprocess_nonlinear_regression(best, subject_col='exp_name', group_cols=group_cols,
+                                                trial_col=trial_col, value_col=value_col, overwrite=False,
+                                                nIter=nIter, save_dir=save_dir, flag='best_acc_epoch')
+ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag='best_acc_epoch')

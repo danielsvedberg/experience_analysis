@@ -73,8 +73,16 @@ for name, group in seq_df.groupby(['rec_dir','taste']):
         rows.append(row)
 
 seq_df = pd.concat(rows, axis=1).T
+
+#%% attempt 040224: trying something different to get late state
+seq_df = hmma.get_NB_states_and_probs(HA)
+seq_df = seq_df[seq_df['exp_group'] == 'naive']
+seq_df = seq_df[seq_df['taste'] != 'Spont']
+seq_df = seq_df[seq_df['epoch'] == 'late']
+seq_df['t_start'] = seq_df['t(start)']
+
 #eliminate all rows from seq_df where t_start is nan
-seq_df = seq_df.dropna(subset=['t_start'])
+#seq_df = seq_df.dropna(subset=['t_start'])
 
 avg_t_start = seq_df['t_start'].mean()
 

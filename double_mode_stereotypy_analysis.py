@@ -18,7 +18,6 @@ proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # direc
 proj = blechpy.load_project(proj_dir)  # load the project
 rec_info = proj.rec_info.copy()  # get the rec_info table
 rec_dirs = rec_info['rec_dir']
-
 PA = ana.ProjectAnalysis(proj)
 all_units, held_df = PA.get_unit_info(overwrite=False)
 
@@ -47,12 +46,16 @@ def euc_dist_trials(rates):
             euc_dist_mat[i, j] = euc_dist
     return euc_dist_mat
 
-def process_split(rec_dir, split=10):
+def process_split(rec_dir, split=10, shuffle=False):
     df_list = []
     time_array, rate_array = h5io.get_rate_data(rec_dir)
     for din, rate in rate_array.items():
         if din != 'dig_in_4':
             rate = rate[:,:,2000:5000]
+            if shuffle:
+                #if shuffle, shuffle the rate array along axis 1
+                rate = rate[:, np.random.permutation(rate.shape[1]), :]
+
             #downsample rate in axis 2 by 10, by taking the average of every 10 bins
             rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
 
@@ -101,9 +104,9 @@ def process_split(rec_dir, split=10):
     df = df.reset_index(drop=True)
     return df
 
-def process_rec_dir(rec_dir):
+def process_rec_dir(rec_dir, shuffle=False):
     splits = np.arange(30)
-    dfs = [process_split(rec_dir, split) for split in splits]
+    dfs = [process_split(rec_dir, split, shuffle) for split in splits]
     dfs = pd.concat(dfs, ignore_index=True).reset_index(drop=True)
     return dfs
 
@@ -120,8 +123,26 @@ if not os.path.exists(save_dir):
 #save to pickle
 final_df.to_pickle(save_dir + '/double_mode_stereotypy_analysis.pkl')
 
+#make the shuffle
+def iter_shuffle(rec_dirs, niter=100):
+    def sing_iter(iternum):
+        for rec_dir in rec_dirs:
+            res = process_rec_dir(rec_dir, shuffle=True)
+            res['iternum'] = iternum
+        return res
+
+    dfs = Parallel(n_jobs=-1)(delayed(sing_iter)(iternum) for iternum in range(niter))
+    dfs = pd.concat(dfs, ignore_index=True).reset_index(drop=True)
+    return dfs
+
+shuff_dfs = iter_shuffle(rec_dirs, niter=100)
+shuff_dfs.to_pickle(save_dir + '/double_mode_euc_dist_stereotypy_shuffle.pkl')
+
 #get final df from pickle
 final_df = pd.read_pickle(save_dir + '/double_mode_stereotypy_analysis.pkl')
+
+
+
 
 rec_info = proj.rec_info.copy()
 rec_info = rec_info[['exp_name', 'exp_group', 'rec_num', 'rec_dir']]
@@ -129,7 +150,7 @@ rec_info = rec_info[['exp_name', 'exp_group', 'rec_num', 'rec_dir']]
 rec_info = rec_info.rename(columns={'rec_num': 'session'})
 final_df = pd.merge(final_df, rec_info, on='rec_dir')
 final_df = final_df.loc[(final_df['split'] != 1) & (final_df['split'] != 29)]
-final_df['euclidean_distance'] = final_df.groupby('exp_name')['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
+final_df['euclidean_distance'] = final_df.groupby('rec_dir')['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
 
 unsplit_df = final_df.loc[final_df['splitside'] == 'both']
 split_df = final_df.loc[final_df['splitside'] != 'both']
@@ -170,12 +191,24 @@ final_df['splitside'] = final_df['splitside'].replace('post', 'post\nsplit')
 final_df['splitside'] = final_df['splitside'].replace('pre', 'pre\nsplit')
 final_df['splitside'] = final_df['splitside'].replace('both', 'two\ntemplate')
 
+def get_sig_stars(pval):
+    if pval < 0.001:
+        return '***'
+    elif pval < 0.01:
+        return '**'
+    elif pval < 0.05:
+        return '*'
+    else:
+        return ''
+
 splitavos = []
 templavos = []
 import pingouin as pg
-fig, axs = plt.subplots(1, 3, figsize=(10,5), sharey=True, sharex=True)
+fig1, axs1 = plt.subplots(1, 3, figsize=(10,5), sharey=True)
+fig2, axs2 = plt.subplots(1, 3, figsize=(10,5), sharey=True)
 for session in [1,2,3]:
-    ax = axs[session - 1]
+    axtop = axs1[session - 1]
+    axbot = axs2[session - 1]
     for exp_group in ['naive']:
         best_split = best_splits.loc[(best_splits['exp_group'] == exp_group) & (best_splits['session'] == session)]['split'].item()
         df = final_df.loc[(final_df['exp_group'] == exp_group) & (final_df['session'] == session) & (final_df['split'] == best_split)]
@@ -190,21 +223,50 @@ for session in [1,2,3]:
 
 
         #perform a repeated measures anova
-        splitavo = pg.rm_anova(data=splitavodf, dv='euclidean_distance', within='splitside', subject='AnTaste', detailed=True)
+        splitavo = pg.rm_anova(data=splitavodf, dv='euclidean_distance', within=['splitside','channel'], subject='exp_name', detailed=True)
+        split_pval = splitavo['p-unc'].values[0]
         splitavos.append(splitavo)
-        templavo = pg.rm_anova(data=templdf, dv='euclidean_distance', within='splitside', subject='AnTaste', detailed=True)
+        templavo = pg.rm_anova(data=templdf, dv='euclidean_distance', within=['splitside','channel'], subject='exp_name', detailed=True)
+        templ_pval = templavo['p-unc'].values[0]
         templavos.append(templavo)
 
         #append dfzero to df
+        sns.barplot(x='splitside', y='euclidean_distance', data=splitavodf, ax=axtop, order=['pre\nsplit', 'post\nsplit'], fill=False, edgecolor='black')
+        sns.barplot(x='splitside', y='euclidean_distance', data=templdf, ax=axbot, order=['two\ntemplate', 'single\ntemplate'], fill=False, edgecolor='black')
+        #set the y axis top limit for both plots to 1
+        axtop.set_ylim(top=1)
+        axbot.set_ylim(top=1)
+        if split_pval < 0.05: #then draw a line between 0 and 1, and put a star above the line
+            axtop.plot([0, 1], [0.8, 0.8], lw=2, color='black')
+            stars = get_sig_stars(split_pval)
+            axtop.text(0.5, 0.8, stars, fontsize=fontsize, ha='center')
+        if templ_pval < 0.05:
+            axbot.plot([0,1], [0.9, 0.9], lw=2, color='black')
+            stars = get_sig_stars(templ_pval)
+            axbot.text(0.5, 0.9, stars, fontsize=fontsize, ha='center')
 
-        sns.barplot(x='splitside', y='euclidean_distance', data=df, ax=ax, order=['pre\nsplit', 'post\nsplit', 'two\ntemplate', 'single\ntemplate'])
-        #rotate the x axis tick labels 45 degrees
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, fontsize=axticksize)
         #take away the y axis label
         if session == 1:
-            ax.set_ylabel('Z(Euclidean Distance)', fontsize=fontsize)
+            axtop.set_ylabel('Z(Euc. Dist.)', fontsize=fontsize)
+            #make the y axis labels larger
+            axbot.set_ylabel('Z(Euc. Dist.)', fontsize=fontsize)
+
         else:
-            ax.set_ylabel('')
-        ax.set_xlabel("Split trial:" + str(int(best_split+1)), fontsize=fontsize)
-plt.tight_layout()
+            axtop.set_ylabel('')
+            axbot.set_ylabel('')
+        axtop.tick_params(axis='both', which='major', labelsize=axticksize)
+        axbot.tick_params(axis='both', which='major', labelsize=axticksize)
+
+        axbot.set_xlabel("split trial: " + str(int(best_split+1)), fontsize=fontsize)
+        axtop.set_xlabel("split trial: " + str(int(best_split+1)), fontsize=fontsize)
+        axtop.set_title('Session ' + str(session), fontsize=fontsize)
+        axbot.set_title('Session ' + str(session), fontsize=fontsize)
+
+fig1.tight_layout()
+fig2.tight_layout()
 plt.show()
+#save the figures
+fig1.savefig(save_dir + '/double_mode_split_prevspost.png')
+fig1.savefig(save_dir + '/double_mode_split_prevspost.svg')
+fig2.savefig(save_dir + '/double_mode_split_latevssing.svg')
+fig2.savefig(save_dir + '/double_mode_split_latevssing.png')

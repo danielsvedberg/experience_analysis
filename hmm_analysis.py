@@ -2123,12 +2123,12 @@ def getSplitModeHMMs(best_hmms, split_trial=5, shuffle=False):
 def get_mode_seqs(seqs):
     mode_seqs, _ = scistats.mode(seqs)
     mode_seqs = mode_seqs.flatten().astype(int)
-    mode_seqs = np.ravel(mode_seqs)
+    #mode_seqs = np.ravel(mode_seqs)
     return mode_seqs
 
 def getSplitModeLite(hmm, split_trial=5, shuffle=False):
     def get_pr_mode(gamma_probs, mode_seqs):
-        avg_pr_mode = gamma_probs[:, mode_seqs, :]
+        avg_pr_mode = gamma_probs[:, mode_seqs, np.arange(gamma_probs.shape[2])]
         avg_pr_mode = avg_pr_mode[:,100:]
         avg_pr_mode = np.mean(avg_pr_mode, axis=1)
         return avg_pr_mode
@@ -2137,32 +2137,25 @@ def getSplitModeLite(hmm, split_trial=5, shuffle=False):
     n_trials = gamma.shape[0]
     #if shuffle==True, then shuffle the 0th dimension of gamma
     if shuffle:
-        trials = np.arange(n_trials)
-        np.random.shuffle(trials)
-        gamma = gamma[trials, :, :]
+        np.random.shuffle(gamma)
 
-    if split_trial >= gamma.shape[0]:
-        pre_seq = np.argmax(gamma, axis=1)
-        pre_seq = get_mode_seqs(pre_seq)
-        pr_pre = get_pr_mode(gamma, pre_seq)
-        del pre_seq
-        del gamma
+    seq = np.argmax(gamma, axis=1)
+    if split_trial == 0:# >= n_trials:
+        seq = get_mode_seqs(seq)
+        pr_post = get_pr_mode(gamma, seq)
+        pr_pre = None
+    elif split_trial >= n_trials:
+        seq = get_mode_seqs(seq)
+        pr_pre = get_pr_mode(gamma, seq)
         pr_post = None
     else:
-        seq = np.argmax(gamma, axis=1)
-        pre_seq = get_mode_seqs(seq[:split_trial,:])
-        pr_pre = get_pr_mode(gamma[:, :, :], pre_seq)
-        del pre_seq
-        post_seq = get_mode_seqs(seq[split_trial:,:])
-        del seq
-        pr_post = get_pr_mode(gamma[:, :, :], post_seq)
-        del gamma
-        del post_seq
+        pre_seq = get_mode_seqs(seq[:split_trial])
+        pr_pre = get_pr_mode(gamma, pre_seq)
+        post_seq = get_mode_seqs(seq[split_trial:])
+        pr_post = get_pr_mode(gamma, post_seq)
 
     out = {'split': split_trial, 'shuffle': shuffle, 'pr_pre': pr_pre, 'pr_post': pr_post}
     return out
-
-
 
 def getSplitMode(hmm, split_trial=5, shuffle=False, output='dict'):
     def get_seqs(gamma_probs):
@@ -2766,8 +2759,16 @@ def saccharin_confusion_analysis(best_hmms, all_units, area='GC',
 
     return pd.DataFrame(out)
 
-def get_NB_states_and_probs(HA):
+def get_NB_states_and_probs(HA, get_best=False):
+    val_map = {'Suc': 'attr', 'NaCl': 'attr', 'CA': 'aver', 'QHCl': 'aver'}
+
     NB_df = HA.analyze_NB_ID2(overwrite=False)
+    NB_df['p_attr'] = NB_df['Suc'] + NB_df['NaCl']
+    NB_df['p_aver'] = NB_df['CA'] + NB_df['QHCl']
+    NB_df['valence'] = NB_df['taste'].map(val_map)
+    #make the column p_val_correct, where for each row, get the valence, and if the valence is 'attr', get the value of p_attr, else get the value of p_aver
+    NB_df['p_val_correct'] = NB_df.apply(lambda x: x['p_attr'] if x['valence'] == 'attr' else x['p_aver'], axis=1)
+
     NB_df['duration'] = NB_df['t_end'] - NB_df['t_start']
     NB_df['t_med'] = (NB_df['t_end'] + NB_df['t_start']) / 2
 
@@ -2811,33 +2812,43 @@ def get_NB_states_and_probs(HA):
         'count')
     NB_df_accuracy['epoch'] = NB_df_accuracy['trial_order_rank']
     # for each row where len_group == 1, replace the value of epoch with avg_trial_order_rank
-    # get indexes of rows where len_group == 1
+    # get indexes of rowss where len_group == 1
     idx = NB_df_accuracy.loc[NB_df_accuracy['len_group'] == 1].index
     # replace the value of epoch with avg_trial_order_rank for each row in idx
     NB_df_accuracy.loc[idx, 'epoch'] = NB_df_accuracy.loc[idx, 'avg_trial_order_rank']
 
     order_map = {1: 'early', 2: 'late'}
     NB_df_accuracy['epoch'] = NB_df_accuracy['epoch'].map(order_map)
+    NB_df_accuracy = NB_df_accuracy.dropna(subset=['epoch'])
 
-    NB_df = NB_df_accuracy[
-        ['exp_group', 'exp_name', 'session', 'taste', 'taste_trial', 'epoch', 'pr(correct state)', 't(start)',
-         't(median)', 't(end)', 'duration']]
+    if get_best:
+        #for each epoch for each grouping of rec_dir, taste, and taste-trial, get the row with the highest pr(correct state)
+        best_acc = NB_df_accuracy.loc[NB_df_accuracy.groupby(['rec_dir', 'taste', 'taste_trial'])['pr(correct state)'].idxmax()]
+        best_acc['epoch'] = 'best_acc'
+        NB_df_accuracy = pd.concat([NB_df_accuracy, best_acc], ignore_index=True)
+
+    NB_df = NB_df_accuracy[['rec_dir', 'exp_group', 'exp_name', 'session', 'taste', 'taste_trial', 'epoch',
+                            'pr(correct state)', 't(start)', 't(median)', 't(end)', 'duration']]
 
     proj = HA.project
     trial_info = proj.get_dig_in_trial_df(reformat=True)
     trial_info = trial_info.loc[trial_info['taste'] != 'Spont'].reset_index(drop=True)
     # make a copy of trial_info with an epoch column filled with 'early'
-    trial_info['epoch'] = 'early'
-    # make a copy of trial_info with an epoch column filled with 'late'
-    trial_info_late = trial_info.copy()
-    trial_info_late['epoch'] = 'late'
-    # join the two
-    trial_info = pd.concat([trial_info, trial_info_late], ignore_index=True).reset_index(drop=True)
-    trial_info = trial_info[['exp_group', 'exp_name', 'session', 'taste', 'taste_trial', 'epoch']]
+    # trial_info['epoch'] = 'early'
+    # # make a copy of trial_info with an epoch column filled with 'late'
+    # trial_info_late = trial_info.copy()
+    # trial_info_late['epoch'] = 'late'
+    # trial_info_best = trial_info.copy()
+    # trial_info_best['epoch'] = 'best_acc'
+    # # join the two
+    # trial_info = pd.concat([trial_info, trial_info_late], ignore_index=True).reset_index(drop=True)
+    trial_info = trial_info[['exp_group', 'exp_name', 'session', 'taste', 'taste_trial']]
 
     # merge to fill in the missing trials from taste_trial and session_trial using trial_info
-    merge = trial_info.merge(NB_df, on=['exp_group', 'exp_name', 'session', 'taste', 'taste_trial', 'epoch'],
+    merge = trial_info.merge(NB_df, on=['exp_group', 'exp_name', 'session', 'taste', 'taste_trial'],
                              how='left')
     # fill na in pr(correct state) with 0
     merge['pr(correct state)'] = merge['pr(correct state)'].fillna(0)
+    #remove all rows where epoch == nan
+    merge = merge.dropna(subset=['epoch'])
     return merge

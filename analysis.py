@@ -2923,26 +2923,36 @@ def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='tri
 
     aovs = []
     pws = []
+    diffs = []
     for name, group in df.groupby(groups):
         if len(group) < 2:
             continue
         else:
+            group = group.reset_index(drop=True)
             aov = pg.rm_anova(dv=dv, within=within, subject=subject, data=group)
             #pw = pg.pairwise_ttests(dv=dv, within=['trial_group'], subject=['taste_sub'], padjust='holm', data=group)
             pw = pg.pairwise_ttests(dv=dv, within=within, subject=subject, padjust='holm', data=group)
 
+            diff = group.groupby([subject] + within)[dv].mean()
+            diff = diff.groupby([subject] + ['taste']).diff().reset_index().dropna()
+
             aov[groups] = name
             pw[groups] = name
+            diff[groups] = name
             extra_cols = ['trial_type', 'n_trial_groups', 'dependent_var', 'trial_split']
             extra_col_data = [trial_col, str(n_trial_groups), dv, trial_split]
             aov[extra_cols] = extra_col_data
             pw[extra_cols] = extra_col_data
+            diff[extra_cols] = extra_col_data
+
 
             aovs.append(aov)
             pws.append(pw)
+            diffs.append(diff)
 
     aovs = pd.concat(aovs)
     pws = pd.concat(pws)
+    diffs = pd.concat(diffs)
 
     if save_dir is not None:
         if trial_split:
@@ -2954,8 +2964,8 @@ def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='tri
         aovpath = os.path.join(save_dir, aovname)
         posthocpath = os.path.join(save_dir, posthocname)
 
-        aov_cols = ['Source', 'F', 'p-GG-corr', 'trial_type', 'n_trial_groups']
-        pw_cols = ['Contrast', 'A', 'B', 'T', 'p-unc', 'p-corr', 'trial_type', 'n_trial_groups']
+        aov_cols = ['Source', 'F', 'p-unc', 'trial_type', 'n_trial_groups']
+        pw_cols = ['Contrast', 'A', 'B', 'T', 'p-unc', 'trial_type', 'n_trial_groups']
 
         if len(groups) > 1:
             aov_cols = aov_cols + groups
@@ -2971,7 +2981,7 @@ def trial_group_anova(df, groups, dv, within, subject='exp_name', trial_col='tri
         special_aov.to_csv(aovpath)
         special_ph.to_csv(posthocpath)
 
-    return aovs, pws
+    return aovs, pws, diffs
 
 
 def iter_trial_group_anova(df, groups, dep_vars, within, subject='exp_name', trial_cols=None,
@@ -2986,18 +2996,19 @@ def iter_trial_group_anova(df, groups, dep_vars, within, subject='exp_name', tri
 
     aov_df = []
     ph_df = []
+    diff_df = []
     for k in dep_vars:
         for i in trial_cols:
             for j in n_trial_groups:
-                aov, ph = trial_group_anova(df, groups, k, within, subject=subject, trial_col=i, n_trial_groups=j,
+                aov, ph, diff = trial_group_anova(df, groups, k, within, subject=subject, trial_col=i, n_trial_groups=j,
                                             save_dir=save_dir)
                 aov_df.append(aov)
                 ph_df.append(ph)
-    aov_df = pd.concat(aov_df)
-    ph_df = pd.concat(ph_df)
+                diff_df.append(diff)
+    aov_df = pd.concat(aov_df, ignore_index=True)
+    ph_df = pd.concat(ph_df, ignore_index=True)
+    diff_df = pd.concat(diff_df, ignore_index=True)
 
-    aov_df = aov_df.reset_index(drop=True)
-    ph_df = ph_df.reset_index(drop=True)
     if save_suffix is None:
         if len(dep_vars) > 1:
             save_suffix = '_'.join(dep_vars)
@@ -3010,7 +3021,7 @@ def iter_trial_group_anova(df, groups, dep_vars, within, subject='exp_name', tri
         aov_df.to_csv(os.path.join(save_dir, aov_filename))
         ph_df.to_csv(os.path.join(save_dir, ph_filename))
 
-    return aov_df, ph_df
+    return aov_df, ph_df, diff_df
 
 def iter_trial_split_anova(df, groups, dep_vars, within, subject='exp_name', trial_cols=None,
                            n_splits=None, save_dir=None, save_suffix=None):
@@ -3024,6 +3035,7 @@ def iter_trial_split_anova(df, groups, dep_vars, within, subject='exp_name', tri
 
     aov_df = []
     ph_df = []
+    diff_df = []
     for i in trial_cols:
         min_trial = df[i].min()
         max_trial = df[i].max()
@@ -3035,13 +3047,15 @@ def iter_trial_split_anova(df, groups, dep_vars, within, subject='exp_name', tri
         print(splits)
         for j in dep_vars:
             for k in splits:
-                aov, ph = trial_group_anova(df, groups, j, within, subject=subject, trial_col=i, trial_split=k,
+                aov, ph, diff = trial_group_anova(df, groups, j, within, subject=subject, trial_col=i, trial_split=k,
                                             save_dir=save_dir)
                 aov_df.append(aov)
                 ph_df.append(ph)
+                diff_df.append(diff)
 
-    aov_df = pd.concat(aov_df).reset_index(drop=True)
-    ph_df = pd.concat(ph_df).reset_index(drop=True)
+    aov_df = pd.concat(aov_df, ignore_index=True)
+    ph_df = pd.concat(ph_df, ignore_index=True)
+    diff_df = pd.concat(diff_df, ignore_index=True)
 
     if save_suffix is None:
         if len(dep_vars) > 1:
@@ -3052,10 +3066,12 @@ def iter_trial_split_anova(df, groups, dep_vars, within, subject='exp_name', tri
     if save_dir is not None:
         aov_filename = '%s_all_trial_split_ANOVA.csv' % save_suffix
         ph_filename = '%s_all_trial_split_posthoc.csv' % save_suffix
+        diff_filename = '%s_all_trial_split_diff.csv' % save_suffix
         aov_df.to_csv(os.path.join(save_dir, aov_filename))
         ph_df.to_csv(os.path.join(save_dir, ph_filename))
+        diff_df.to_csv(os.path.join(save_dir, diff_filename))
 
-    return aov_df, ph_df
+    return aov_df, ph_df, diff_df
 
 def get_local_path(path):
     if ELF_DIR in path and not os.path.isdir(path) and os.path.isdir(MONO_DIR):

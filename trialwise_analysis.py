@@ -12,6 +12,9 @@ import random
 import scipy.stats as stats
 from sklearn.utils import resample
 
+#for all matplotlib plots, set the default font to Arial
+plt.rcParams['font.family'] = 'Open Sans'
+default_margins = {'left': 0.15, 'right': 0.95, 'top': 0.875, 'bottom': 0.175, 'wspace': 0.05, 'hspace': 0.05}
 
 # def model(x, a, b, c):
 #   return b/(1+np.exp(-a*(x-c)))
@@ -482,7 +485,7 @@ def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode sta
         # set x-axis labels for the bottommost x-axis
         for ax in axes[-1, :]:
             ax.set_xlabel(trial_col, size='large')
-        plt.subplots_adjust(right=0.8)
+        plt.subplots_adjust(**default_margins)
         # plt.suptitle("HMM stereotypy: " + exp_group)
 
 
@@ -616,7 +619,7 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
             # set x-axis labels for the bottommost x-axis
             for ax in axes[-1, :]:
                 ax.set_xlabel(trial_col, size='large')
-            plt.subplots_adjust(right=0.85)
+            plt.subplots_adjust(**default_margins)
 
         return fig, axes
 
@@ -699,17 +702,30 @@ def plot_scatter(ax, group, color, dat_col, trial_col='session_trial', dotalpha=
 def plot_shuff(ax, group, trials, color, linestyle):
     # for each model in group, model data using column params:
     models = []
+    trs = []
     for i, row in group.iterrows():
         params = row['params']
         models.append(model(trials, *params))
+        trs.append(trials)
     models = np.vstack(models)
-    model_mean = np.nanmean(models, axis=0)
-    ax.plot(trials, model_mean, alpha=1, color=color, linestyle=linestyle, linewidth=1.5)
+    trs = np.vstack(trs)
+    #make models and trials 1d
+    models = models.flatten()
+    trials = trs.flatten()
+    #model_mean = np.nanmean(models, axis=0)
+    sns.lineplot(trials, models, alpha=0.5, color=color, linestyle=linestyle, ax=ax)
+    #ax.plot(trials, model_mean, alpha=1, color=color, linestyle=linestyle, linewidth=1.5)
 
 #plots the line graph of the average model for each session, with the data points overlaid, and the 95% confidence interval for the model
 def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(mode state)', time_col='session',
-                          save_dir=None, use_alpha_pos=False, dotalpha=0.1, textsize=12, flag=None, nIter=100,
+                          save_dir=None, use_alpha_pos=False, dotalpha=0.1, textsize=20, flag=None, nIter=100,
                           parallel=True, r2df=None, ymin=None, ymax=None):
+
+    # get the 97.5 and 2.5 percentile of df[dat_col], assign them to ymax and ymin
+    ntiles = df[dat_col].quantile([0.01, 0.99])
+    ymin = ntiles[0.01]
+    ymax = ntiles[0.99]
+
     unique_trials = np.sort(df[trial_col].unique())
     unique_exp_groups = df['exp_group'].unique()
     unique_exp_names = df['exp_name'].unique()
@@ -740,7 +756,7 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
         plot_df = add_indices(plot_df)
         shuff_plot_df = add_indices(shuff_plot_df)
 
-        fig, axes = plt.subplots(1, n_time_groups, sharex=True, sharey=True, figsize=(10, 5))
+        fig, axes = plt.subplots(1, n_time_groups, sharex=True, sharey=True, figsize=(10, 4))
         legend_handles = []
         # plot shuffled data:
         for nm, group in shuff_df.groupby([time_col, 'session_index', 'exp_group', 'exp_group_index']):
@@ -773,14 +789,14 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
             label = 'session ' + str(col)
             ax.set_title(label, rotation=0, size=textsize)
             ax.set_xlabel(trial_col, size=textsize, labelpad=0.1)
-            ax.xaxis.set_tick_params(labelsize=textsize * 0.9)
+            ax.xaxis.set_tick_params(labelsize=textsize * 0.85)
             ax.set_ylim(ymin, ymax)
         # make y label "avg" + dat_col
         ax = axes[0]
         ylab = "avg " + dat_col
         ax.set_ylabel(ylab, rotation=90, size=textsize, labelpad=0)
-        ax.yaxis.set_tick_params(labelsize=textsize * 0.9)
-        plt.subplots_adjust(wspace=0.01, top=0.875, bottom=0.15, right=0.98, left=0.1)
+        ax.yaxis.set_tick_params(labelsize=textsize * 0.85)
+        plt.subplots_adjust(**default_margins)
 
         ax = axes[-1]
         ax.legend(handles=legend_handles, loc='best', ncol=1, fontsize=textsize * 0.8)
@@ -933,7 +949,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
     bar_width = 0.75
     for k, exp_group in enumerate(exp_groups):
         # Set up the subplots
-        fig, axes = plt.subplots(1, n_sessions, figsize=(10, 5), sharey=True)
+        fig, axes = plt.subplots(1, n_sessions, figsize=(10, 4), sharey=True)
         for i, session in enumerate(sessions):
             ax = axes[i]
             # Plot bars for each taste
@@ -973,7 +989,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
             # Set the x-ticks
             ax.set_xticks(np.arange(len(tastes) + 1))
             ax.set_xticklabels(tastes + ['Combined'], rotation=60, size=textsize)
-            ax.xaxis.set_tick_params(labelsize=textsize * 0.9)
+            ax.xaxis.set_tick_params(labelsize=textsize * 0.85)
             ax.set_title('session ' + str(session), rotation=0, size=textsize)
 
         handles = [mlines.Line2D([], [], color='gray', marker='s', linestyle='None', label='trial-shuffle 95% CI')]
@@ -981,7 +997,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
 
         # Add the legend to the figure
         axes[-1].legend(handles=handles, loc='best', fontsize=textsize * 0.8)
-        plt.subplots_adjust(wspace=0.01, top=0.93, bottom=0.3, right=0.98, left=0.14)
+        plt.subplots_adjust(**default_margins)
 
         savename = exp_group + '_' + stat_col + '_summary_bar_plot'
         exts = ['.png', '.svg']
@@ -1035,7 +1051,7 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
     # Width of each bar
     bar_width = 0.75
     for k, exp_group in enumerate(exp_groups):
-        fig, axes = plt.subplots(1, n_diffs, figsize=(10, 5), sharey=True)
+        fig, axes = plt.subplots(1, n_diffs, figsize=(10, 4), sharey=True)
         for i, sess_diff in enumerate(sess_diffs):
             ax = axes[i]
         # Plot bars for each taste
@@ -1083,7 +1099,7 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
         axes[-1].legend(handles=handles, loc='best', fontsize=textsize * 0.8)
         lab = '$\Delta $ ' + stat_col
         axes[0].set_ylabel(lab, size=textsize)
-        plt.subplots_adjust(wspace=0.01, top=0.93, bottom=0.27, right=0.98, left=0.12)
+        plt.subplots_adjust(**default_margins)
 
     ####################################################################################################
     # save the figure as png
@@ -1208,7 +1224,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
     n_sessions = len(sessions)
 
     # Set up the subplots
-    fig, axes = plt.subplots(1, n_sessions, figsize=(10, 5), sharey=True)
+    fig, axes = plt.subplots(1, n_sessions, figsize=(10, 4), sharey=True)
     # Iterate over each session and create a subplot
     exp_groups = r2_df['exp_group'].unique()
     # Width of each bar
@@ -1267,7 +1283,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
         # Set the x-ticks
         axes[i].set_xticks(np.arange(len(tastes) + 1) + bar_width / 2)
         axes[i].set_xticklabels(tastes + ['Combined'], rotation=60, size=textsize)
-        axes[i].xaxis.set_tick_params(labelsize=textsize * 0.9)
+        axes[i].xaxis.set_tick_params(labelsize=textsize * 0.85)
 
         for ax in axes:
             ax.set_ylim(ymin, ymax)
@@ -1280,7 +1296,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
 
     # Add the legend to the figure
     axes[-1].legend(handles=handles, loc='best', fontsize=textsize * 0.8)
-    plt.subplots_adjust(wspace=0.01, top=0.95, bottom=0.3, right=0.98, left=0.1)
+    plt.subplots_adjust(**default_margins)
 
     ####################################################################################################
     # save the figure as png
@@ -1366,8 +1382,8 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
     for ax in axes[-1, :]:
         ax.set_xlabel('r2', size='large')
 
-    plt.subplots_adjust(right=0.85)
     plt.tight_layout()
+    plt.subplots_adjust(**default_margins)
     # save the figure as png
     if save_dir is not None:
         if save_flag is None:

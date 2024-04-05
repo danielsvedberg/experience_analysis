@@ -103,7 +103,7 @@ def plot_held_psth(group):
     tastes = ['Suc', 'NaCl', 'CA', 'QHCl', 'Spont']
     sessions = [1, 2, 3]
     #make a subplot with 3 columns and 1 row
-    fig, axs = plt.subplots(1, 3, figsize=(10, 5), sharey=True, sharex=True)
+    fig, axs = plt.subplots(1, 3, figsize=(12, 5), sharex=True)
     for i, session in enumerate(sessions):
         #for j, taste in enumerate(tastes):
         subset = group.query('session == @session')
@@ -157,7 +157,7 @@ def plot_held_psth(group):
     en = str(group['exp_name'].iloc[0])
     hua = str(group['held_unit_name'].iloc[0])
     save_name = en + '_' + hua
-    save_path = save_dir + '/' + save_name
+    save_path = save_dir + '/' + save_name + '_unscaled'
     plt.savefig(save_path + '.png')
     plt.savefig(save_path + '.svg')
     plt.close()
