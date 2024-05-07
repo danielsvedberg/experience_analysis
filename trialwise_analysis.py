@@ -449,7 +449,7 @@ def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode sta
     n_exp_groups = len(unique_exp_groups)
 
     def plot_ind_fit(df):
-        fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=True, figsize=(10, 10))
+        fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=False, figsize=(8, 12))
         for i, taste in enumerate(unique_tastes):
             for j, time_group in enumerate(unique_time_groups):
                 subset = df[(df['taste'] == taste) & (df[time_col] == time_group)]
@@ -873,14 +873,14 @@ def bootstrap_mean_ci(data, n_bootstrap=100, ci=95):
     upper_bound = np.nanpercentile(bootstrap_means, high)
     return np.nanmean(bootstrap_means), lower_bound, upper_bound
 
-def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, n_comp=1, two_tailed=False, boot_data=True):
+def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, n_comp=1, two_tailed=True, boot_data=True):
     #get the lower 0.025 and upper 0.975 percentiles for the shuff_r2
     #these data will form the floating bars representing the null distribution
 
     if two_tailed==True:
         pct_low = 2.5
         pct_high = 97.5
-        low_adj = pct_low/(2*n_comp)
+        low_adj = pct_low/(n_comp)
         high_adj = 100 - low_adj
     else:
         pct_low = 0
@@ -898,6 +898,7 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
     else:
         ci_lower = np.nanpercentile(r2_data, pct_low)
         ci_upper = np.nanpercentile(r2_data, pct_high)
+
     mean_r2 = np.nanmean(r2_data)
     # Calculate the p-value for the r2 data
     p_val = pval_from_null(shuff_r2_data, mean_r2)
@@ -1453,7 +1454,7 @@ def plot_nonlinear_regression_stats(df3, shuff, subject_col, group_cols, trial_c
             save_flag = trial_col + '_' + value_col + '_' + flag
         else:
             save_flag = trial_col + '_' + value_col + '_' + exp_group + '_only'
-        plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)
+        plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2, ymin=ymin, ymax=ymax)
 
 def get_session_differences(df3, shuff, stat_col='r2'):
     diff_col = stat_col + ' difference'
@@ -1500,7 +1501,7 @@ def plot_session_differences(df3, shuff, subject_col, group_cols, trial_col, val
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)
+    plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2, ymin=ymin, ymax=ymax)
 
 def get_pred_change(df3, shuff, subject_col, group_cols, trial_col):
     groups = [subject_col] + group_cols
@@ -1531,7 +1532,7 @@ def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_c
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    plot_r2_pval_summary(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, two_tailed=True, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)
+    plot_r2_pval_summary(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, two_tailed=True, textsize=textsize, nIter=nIter, n_comp=2, ymin=ymin, ymax=ymax)
 
 
 def plot_nonlinear_line_graphs(df3, shuff, subject_col, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, parallel=True, ymin=None, ymax=None, textsize=20):
@@ -1563,7 +1564,7 @@ def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_col, grou
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    plot_r2_pval_diffs_summary(avg_shuff, avg_df3, stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)#re-run and replot with nIter=nIter
+    plot_r2_pval_diffs_summary(avg_shuff, avg_df3, stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2, ymin=ymin, ymax=ymax)#re-run and replot with nIter=nIter
 
 
 def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nIter=10000, save_dir=None, flag=None):
@@ -1575,10 +1576,12 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nI
     plot_nonlinear_line_graphs(df3, shuff, **args)
     #plot the stats quantificaiton of the r2 values
     plot_nonlinear_regression_stats(df3, shuff, **args)
-    # #plot the stats quantificaation of the r2 values with head to head of naive vs sucrose preexposed
+    #plot the stats quantificaation of the r2 values with head to head of naive vs sucrose preexposed
     plot_nonlinear_regression_comparison(df3, shuff, stat_col='r2', **args)
-    # #plot the sessionwise differences in the r2 values
+    #plot the sessionwise differences in the r2 values
     plot_session_differences(df3, shuff, **args)
+
+
     r2_pred_change, shuff_r2_pred_change = get_pred_change(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col)
 
     # plot the within session difference between naive and preexp for pred. change
@@ -1587,10 +1590,11 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nI
     args2 = {'group_cols': group_cols, 'trial_col': trial_col, 'value_col': value_col, 'nIter': nIter, 'save_dir':save_dir,
             'textsize':20, 'flag': flag, 'ymin':ymin, 'ymax':ymax}
     # plot the predicted change in value col over the course of the session, with stats
-    plot_predicted_change(r2_pred_change, shuff_r2_pred_change, **args2)
+    #plot_predicted_change(r2_pred_change, shuff_r2_pred_change, **args2)
 
     # plot the session differences in the predicted change of value col
-    args3 = {'stat_col':'pred. change', 'subject_col':subject_col, 'group_cols':group_cols, 'trial_col':trial_col,
-                             'value_col':value_col,  'nIter':nIter, 'textsize':20, 'flag':flag}
-    plot_session_differences(r2_pred_change, shuff_r2_pred_change, ymin=-ymin, ymax=ymax, **args3)
-    plot_nonlinear_regression_comparison(r2_pred_change, shuff_r2_pred_change, ymin=ymin, ymax=ymax, **args3)
+    args3 = {'subject_col':subject_col, 'group_cols':group_cols, 'trial_col':trial_col, 'value_col':value_col,
+             'nIter':nIter, 'save_dir':save_dir, 'textsize':20, 'flag':flag}
+    plot_session_differences(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', **args3)
+
+    plot_nonlinear_regression_comparison(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', **args3)

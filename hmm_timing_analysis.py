@@ -327,63 +327,58 @@ plt.show()
 
 
 #%%
+import os
+import analysis as ana
+import hmm_analysis as hmma
+import blechpy
 import trialwise_analysis as ta
+group_cols = ['exp_group', 'session', 'taste']
+trial_col = 'taste_trial'
+nIter = 1000
+
+proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
+proj = blechpy.load_project(proj_dir)  # load the project
+HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
+timing = hmma.get_NB_states_and_probs(HA, get_best=True)
+
+save_dir = HA.save_dir
+#make a new folder called nonlinear_regression in save_dir
+folder = 'nonlinear_regression_timing'
+save_dir = save_dir + os.sep + folder
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir + os.sep + folder)
+
 timing_early = timing[timing['epoch'] == 'early']
-group_cols = ['exp_group', 'session', 'taste']
 value_col = 't(end)'
-trial_col = 'taste_trial'
-nIter = 10000
 flag = 'early_epoch'
-
-save_dir = HA.save_dir
-#make a new folder called nonlinear_regression in save_dir
-folder = 'nonlinear_regression_timing'
-save_dir = save_dir + os.sep + folder
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir + os.sep + folder)
-
 df3, shuff = ta.preprocess_nonlinear_regression(timing_early, subject_col='exp_name', group_cols=group_cols,
                                                 trial_col=trial_col, value_col=value_col, overwrite=True,
-                                                nIter=nIter, save_dir=HA.save_dir, flag=flag)
-ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=HA.save_dir, flag=flag)
+                                                nIter=nIter, save_dir=save_dir, flag=flag)
+ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag=flag)
 
-
-timing_late= timing[timing['epoch'] == 'late']
-group_cols = ['exp_group', 'session', 'taste']
 value_col = 't(start)'
-trial_col = 'taste_trial'
-nIter = 10000
-flag = 'late_epoch'
-
-save_dir = HA.save_dir
-#make a new folder called nonlinear_regression in save_dir
-folder = 'nonlinear_regression_timing'
-save_dir = save_dir + os.sep + folder
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir + os.sep + folder)
-
+flag = 'early_epoch'
 df3, shuff = ta.preprocess_nonlinear_regression(timing_early, subject_col='exp_name', group_cols=group_cols,
                                                 trial_col=trial_col, value_col=value_col, overwrite=True,
-                                                nIter=nIter, save_dir=HA.save_dir, flag=flag)
-ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=HA.save_dir, flag=flag)
+                                                nIter=nIter, save_dir=save_dir, flag=flag)
+ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag=flag)
+
+
+
+timing_late = timing[timing['epoch'] == 'late']
+value_col = 't(start)'
+flag = 'late_epoch'
+df3, shuff = ta.preprocess_nonlinear_regression(timing_late, subject_col='exp_name', group_cols=group_cols,
+                                                trial_col=trial_col, value_col=value_col, overwrite=True,
+                                                nIter=nIter, save_dir=save_dir, flag=flag)
+ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag=flag)
 
 
 timing_best_acc = timing[timing['epoch'] == 'best_acc']
-group_cols = ['exp_group', 'session', 'taste']
 value_col = 't(start)'
-trial_col = 'taste_trial'
-nIter = 10000
 flag = 'best_acc_epoch'
-
-save_dir = HA.save_dir
-#make a new folder called nonlinear_regression in save_dir
-folder = 'nonlinear_regression_timing'
-save_dir = save_dir + os.sep + folder
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir + os.sep + folder)
-
-df3, shuff = ta.preprocess_nonlinear_regression(timing_early, subject_col='exp_name', group_cols=group_cols,
+df3, shuff = ta.preprocess_nonlinear_regression(timing_best_acc, subject_col='exp_name', group_cols=group_cols,
                                                 trial_col=trial_col, value_col=value_col, overwrite=True,
-                                                nIter=nIter, save_dir=HA.save_dir, flag=flag)
-ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=HA.save_dir, flag=flag)
+                                                nIter=nIter, save_dir=save_dir, flag=flag)
+ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag=flag)
 

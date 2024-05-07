@@ -2781,6 +2781,7 @@ def get_NB_states_and_probs(HA, get_best=False):
     NB_df = NB_df.loc[:, 't_start':]
 
     NB_df['pr(correct state)'] = NB_df['p_taste_correct']
+    NB_df['pr(correct val)'] = NB_df['p_val_correct']
     NB_df['session time'] = NB_df['off_time']
     NB_df['t(median)'] = NB_df['t_med']
     NB_df['t(start)'] = NB_df['t_start']
@@ -2790,7 +2791,8 @@ def get_NB_states_and_probs(HA, get_best=False):
     NB_df_accuracy = NB_df.reset_index(drop=True)
     NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['avg_t_start'] > 50]
     NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['t_start'] > 0]
-    NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['duration'] > 50]
+    NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['duration'] > 30]
+    #NB_df_accuracy = NB_df_accuracy.loc[NB_df_accuracy['avg_t_start'] < 1500]
 
     # rank states in trials by duration
     NB_df_accuracy['trial_duration_rank'] = NB_df_accuracy.groupby(['taste', 'rec_dir', 'taste_trial'])[
@@ -2828,27 +2830,30 @@ def get_NB_states_and_probs(HA, get_best=False):
         NB_df_accuracy = pd.concat([NB_df_accuracy, best_acc], ignore_index=True)
 
     NB_df = NB_df_accuracy[['rec_dir', 'exp_group', 'exp_name', 'session', 'taste', 'taste_trial', 'epoch',
-                            'pr(correct state)', 't(start)', 't(median)', 't(end)', 'duration']]
+                            'pr(correct state)', 'pr(correct val)', 't(start)', 't(median)', 't(end)', 'duration']]
 
     proj = HA.project
     trial_info = proj.get_dig_in_trial_df(reformat=True)
     trial_info = trial_info.loc[trial_info['taste'] != 'Spont'].reset_index(drop=True)
     # make a copy of trial_info with an epoch column filled with 'early'
-    # trial_info['epoch'] = 'early'
-    # # make a copy of trial_info with an epoch column filled with 'late'
-    # trial_info_late = trial_info.copy()
-    # trial_info_late['epoch'] = 'late'
-    # trial_info_best = trial_info.copy()
-    # trial_info_best['epoch'] = 'best_acc'
-    # # join the two
-    # trial_info = pd.concat([trial_info, trial_info_late], ignore_index=True).reset_index(drop=True)
-    trial_info = trial_info[['exp_group', 'exp_name', 'session', 'taste', 'taste_trial']]
+    trial_info['epoch'] = 'early'
+    # make a copy of trial_info with an epoch column filled with 'late'
+    trial_info_late = trial_info.copy()
+    trial_info_late['epoch'] = 'late'
+    # make a copy of trial_info with an epoch column filled with 'best_acc'
+    trial_info_best = trial_info.copy()
+    trial_info_best['epoch'] = 'best_acc'
+    # join the three
+    trial_info = pd.concat([trial_info, trial_info_late, trial_info_best], ignore_index=True)
+
+    trial_info = trial_info[['exp_group', 'exp_name', 'session', 'taste', 'taste_trial', 'epoch']]
 
     # merge to fill in the missing trials from taste_trial and session_trial using trial_info
-    merge = trial_info.merge(NB_df, on=['exp_group', 'exp_name', 'session', 'taste', 'taste_trial'],
+    merge = trial_info.merge(NB_df, on=['exp_group', 'exp_name', 'session', 'taste', 'taste_trial', 'epoch'],
                              how='left')
     # fill na in pr(correct state) with 0
     merge['pr(correct state)'] = merge['pr(correct state)'].fillna(0)
+    merge['pr(correct val)'] = merge['pr(correct val)'].fillna(0)
     #remove all rows where epoch == nan
     merge = merge.dropna(subset=['epoch'])
     return merge

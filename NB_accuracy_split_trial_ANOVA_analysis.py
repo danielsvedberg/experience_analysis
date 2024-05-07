@@ -198,28 +198,32 @@ save_dir = save_dir + os.sep + folder
 if not os.path.exists(save_dir):
     os.makedirs(save_dir + os.sep + folder)
 
-NB_df_accuracy = NB_states
+NB_df_accuracy = hmma.get_NB_states_and_probs(HA, get_best=True)
+#get rows containing na
+na_rows = NB_df_accuracy.isna().any(axis=1)
 
 late = NB_df_accuracy.loc[NB_df_accuracy['epoch'] == 'late']
 group_cols = ['exp_group', 'session', 'taste']
 value_col = 'pr(correct state)'
 trial_col = 'taste_trial'
-nIter = 10000
+nIter = 1000
 flag = 'late_epoch'
+overwrite=False
+
 df3, shuff = ta.preprocess_nonlinear_regression(late, subject_col='exp_name', group_cols=group_cols,
-                                                trial_col=trial_col, value_col=value_col, overwrite=False,
+                                                trial_col=trial_col, value_col=value_col, overwrite=overwrite,
                                                 nIter=nIter, save_dir=save_dir, flag=flag)
 ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag=flag)
 
 early = NB_df_accuracy.loc[NB_df_accuracy['epoch'] == 'early']
 df3, shuff = ta.preprocess_nonlinear_regression(early, subject_col='exp_name', group_cols=group_cols,
-                                                trial_col=trial_col, value_col=value_col, overwrite=False,
+                                                trial_col=trial_col, value_col=value_col, overwrite=overwrite,
                                                 nIter=nIter, save_dir=save_dir, flag='early_epoch')
 ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag='early_epoch')
 
 
 best = NB_df_accuracy.loc[NB_df_accuracy['epoch'] == 'best_acc']
 df3, shuff = ta.preprocess_nonlinear_regression(best, subject_col='exp_name', group_cols=group_cols,
-                                                trial_col=trial_col, value_col=value_col, overwrite=False,
+                                                trial_col=trial_col, value_col=value_col, overwrite=overwrite,
                                                 nIter=nIter, save_dir=save_dir, flag='best_acc_epoch')
 ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag='best_acc_epoch')

@@ -171,6 +171,12 @@ for i, row in all_units.iterrows():
     coeffs = []
     pvals = []
     for j in range(rates.shape[1]):
+        nbins = rates.shape[1]
+        ntrials = int(rates.shape[0]/4)
+        # meanrates = rates.reshape((len(dins), ntrials, nbins))
+        # meanrates = np.nanmean(meanrates, axis=1)
+        # meanpal = pal.reshape((len(dins), ntrials, nbins))
+        # meanpal = np.nanmean(meanpal, axis=1)
         correlation, pvalue = stats.spearmanr(rates[:,j], pal[:,j])
         coeffs.append(abs(correlation))
         pvals.append(pvalue)
@@ -182,6 +188,13 @@ for i, row in all_units.iterrows():
     re_coeffs = []
     re_pvals = []
     for j in range(realigned_rates.shape[1]):
+        ntrials= int(realigned_rates.shape[0]/4)
+
+        #calculate the average of realigned rates and palatability along axis 0 for every 30 indices of axis 0
+        # meanrealigned_rates = realigned_rates.reshape((len(dins), ntrials, n_realign_bins))
+        # meanrealigned_rates = np.nanmean(meanrealigned_rates, axis=0)
+        # meanpal_realigned = pal_realigned.reshape((len(dins), ntrials, n_realign_bins))
+        # meanpal_realigned = np.nanmean(meanpal_realigned, axis=0)
         correlation, pvalue = stats.spearmanr(realigned_rates[:,j], pal_realigned[:,j])
         if np.isnan(correlation):
             correlation = 0

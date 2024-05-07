@@ -185,17 +185,24 @@ group_cols = ['exp_group', 'session', 'taste']
 trial_col = 'taste_trial'
 value_col = 'euclidean_distance'
 preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, subject_col, group_cols, trial_col, value_col,
-                                                       nIter=10000, save_dir=PA.save_dir, overwrite=True)
+                                                       nIter=10000, save_dir=PA.save_dir, overwrite=False)
 
-flag = 'test'
+ta.plot_fits(preprodf, trial_col='taste_trial', dat_col='euclidean_distance', save_dir=PA.save_dir, flag='euclidean_distance_demo', time_col='session')
+
+flag = 'stereotypy_euclidean_distance'
 nIter = 10000
 textsize = 20
 parallel = True
 yMin = preprodf[value_col].min()
 yMax = preprodf[value_col].max()
+
+ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, nIter=nIter, save_dir=PA.save_dir, flag=flag)
+
+
 ta.plot_fits_summary_avg(preprodf, shuff_df=shuffle, dat_col=value_col, trial_col=trial_col, save_dir=PA.save_dir,
                          use_alpha_pos=False, textsize=textsize, dotalpha=0.15, flag=flag, nIter=nIter,
                          parallel=parallel, ymin=yMin, ymax=yMax)
+
 for exp_group, group in preprodf.groupby(['exp_group']):
     group_shuff = shuffle.groupby('exp_group').get_group(exp_group)
     if flag is not None:
@@ -217,3 +224,9 @@ pred_change_df, pred_change_shuff = ta.get_pred_change(preprodf, shuffle, subjec
                                                        group_cols=group_cols, trial_col=trial_col)
 ta.plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, value_col=value_col, trial_col=trial_col,
                          save_dir=PA.save_dir, flag=flag, textsize=textsize, nIter=nIter)
+
+ta.plot_session_differences(pred_change_df, pred_change_shuff, subject_col, group_cols,
+                            trial_col=trial_col, value_col=value_col, stat_col='pred. change', save_dir=PA.save_dir,
+                            flag=flag, textsize=textsize, nIter=nIter)
+
+#%%
