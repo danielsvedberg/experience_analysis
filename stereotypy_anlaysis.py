@@ -229,4 +229,91 @@ ta.plot_session_differences(pred_change_df, pred_change_shuff, subject_col, grou
                             trial_col=trial_col, value_col=value_col, stat_col='pred. change', save_dir=PA.save_dir,
                             flag=flag, textsize=textsize, nIter=nIter)
 
-#%%
+#%% calculate and model the average inter-trial distances for each taste trial
+import blechpy
+import stereotypy_clustering_functions as scf
+import blechpy.dio.h5io as h5io
+import pandas as pd
+from joblib import Parallel, delayed
+import trialwise_analysis as ta
+import analysis as ana
+import numpy as np
+import os
+
+proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
+
+proj = blechpy.load_project(proj_dir)  # load the project
+PA = ana.ProjectAnalysis(proj)
+proj_save_dir = PA.save_dir
+folder = 'intertrial_distances'
+save_dir = proj_save_dir + os.sep + folder
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+    print('Created directory:', save_dir)
+
+rec_info = proj.rec_info.copy()  # get the rec_info table
+rec_dirs = rec_info['rec_dir']
+PA = ana.ProjectAnalysis(proj)
+all_units, held_df = PA.get_unit_info(overwrite=False)
+
+# Parallelize processing of each rec_dir
+num_cores = -1  # Use all available cores
+final_dfs = Parallel(n_jobs=num_cores)(delayed(scf.get_avg_intertrial_distances)(rec_dir) for rec_dir in rec_dirs)
+
+# Concatenate all resulting data frames into one
+final_df = pd.concat(final_dfs, ignore_index=True)
+
+# merge in rec_info into final_df
+final_df = pd.merge(final_df, rec_info, on='rec_dir')
+final_df['session'] = final_df['rec_num']
+
+
+subject_col = 'exp_name'
+group_cols = ['exp_group', 'session', 'taste']
+trial_col = 'taste_trial'
+value_col = 'euclidean_distance'
+preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, subject_col, group_cols, trial_col, value_col,
+                                                       nIter=1000, save_dir=save_dir, overwrite=True)
+
+ta.plot_fits(preprodf, trial_col='taste_trial', dat_col='euclidean_distance', save_dir=save_dir, flag='intertrial_distance_demo', time_col='session')
+
+flag = 'intertrial_euc_dist'
+nIter = 10000
+textsize = 20
+parallel = True
+yMin = preprodf[value_col].min()
+yMax = preprodf[value_col].max()
+
+ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag=flag)
+
+
+ta.plot_fits_summary_avg(preprodf, shuff_df=shuffle, dat_col=value_col, trial_col=trial_col, save_dir=save_dir,
+                         use_alpha_pos=False, textsize=textsize, dotalpha=0.15, flag=flag, nIter=nIter,
+                         parallel=parallel, ymin=yMin, ymax=yMax)
+
+for exp_group, group in preprodf.groupby(['exp_group']):
+    group_shuff = shuffle.groupby('exp_group').get_group(exp_group)
+    if flag is not None:
+        save_flag = exp_group + '_' + flag
+    else:
+        save_flag = exp_group
+    ta.plot_fits_summary_avg(group, shuff_df=group_shuff, dat_col=value_col, trial_col=trial_col,
+                             save_dir=save_dir, use_alpha_pos=False, textsize=textsize, dotalpha=0.15,
+                             flag=save_flag, nIter=nIter, parallel=parallel, ymin=yMin, ymax=yMax)
+
+ta.plot_fits_summary(preprodf, dat_col=value_col, trial_col=trial_col, save_dir=save_dir, time_col='session',
+                     use_alpha_pos=False, dotalpha=0.15, flag=flag)
+
+ta.plot_nonlinear_regression_stats(preprodf, shuffle, subject_col=subject_col, group_cols=group_cols,
+                                   trial_col=trial_col, value_col=value_col, save_dir=save_dir, flag=flag,
+                                   textsize=textsize, nIter=nIter)
+
+pred_change_df, pred_change_shuff = ta.get_pred_change(preprodf, shuffle, subject_col=subject_col,
+                                                       group_cols=group_cols, trial_col=trial_col)
+ta.plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, value_col=value_col, trial_col=trial_col,
+                         save_dir=save_dir, flag=flag, textsize=textsize, nIter=nIter)
+
+ta.plot_session_differences(pred_change_df, pred_change_shuff, subject_col, group_cols,
+                            trial_col=trial_col, value_col=value_col, stat_col='pred. change', save_dir=save_dir,
+                            flag=flag, textsize=textsize, nIter=nIter)
+

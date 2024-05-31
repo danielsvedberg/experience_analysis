@@ -20,6 +20,52 @@ import pingouin as pg
 
 def average_difference(u, v):
     return np.mean(np.abs(u - v))
+
+def get_trial_info(dat):
+    dintrials = dat.dig_in_trials
+    dintrials['taste_trial'] = 1
+    # groupby name and cumsum taste trial
+    dintrials['taste_trial'] = dintrials.groupby('name')['taste_trial'].cumsum()
+    # rename column trial_num to 'session_trial'
+    dintrials = dintrials.rename(columns={'trial_num': 'session_trial', 'name': 'taste'})
+    # select just the columns 'taste_trial', 'taste', 'session_trial', 'channel', and 'on_time'
+    dintrials = dintrials[['taste_trial', 'taste', 'session_trial', 'channel', 'on_time']]
+    return dintrials
+
+def get_avg_intertrial_distances(rec_dir):
+    df_list = []
+    dat = blechpy.load_dataset(rec_dir)
+    dintrials = get_trial_info(dat)
+    time_array, rate_array = h5io.get_rate_data(rec_dir)
+    for din, rate in rate_array.items():
+        euc_dist_mat = np.zeros((rate.shape[1], rate.shape[2]))  # Trials x Bins
+
+        for j in range(rate.shape[2]):  # Loop over bins
+            euc_dist = squareform(pdist(rate[:, :, j].T, metric='euclidean'))
+            avg_euc_dist = np.mean(euc_dist, axis=1)
+            euc_dist_mat[:, j] = avg_euc_dist
+
+        avg_euc_dist = np.mean(euc_dist_mat[:, 2000:5000], axis=1)
+
+        df = pd.DataFrame({
+            'euclidean_distance': avg_euc_dist,
+            'rec_dir': rec_dir,
+            'channel': int(din[-1]),  # get the din number from string din
+            'taste_trial': np.arange(rate.shape[1])
+        })
+        df_list.append(df)
+    df = pd.concat(df_list, ignore_index=True)
+    # add index info to df from dintrials using merge on taste_trial and channel
+    df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
+    # remove all rows where taste == 'Spont'
+    df = df.loc[df['taste'] != 'Spont']
+    df['euclidean_distance'] = df['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
+    # subtract the min of 'session_trial' from 'session_trial' to get the session_trial relative to the start of the recording
+    df['session_trial'] = df['session_trial'] - df['session_trial'].min()
+    return df
+
+
+
 def make_consensus_matrix2(rec_info, shuffle=False):
     bins = np.arange(210, 500)
     df_list = []

@@ -353,7 +353,7 @@ def iter_shuffle(data, nIter=10000, subject_cols=['Subject'], trial_col='Trial',
     if overwrite is True:
         if parallel:
             iters = iter_shuffle_parallel(data, nIter=nIter, subject_cols=subject_cols, trial_col=trial_col,
-                                          value_col=value_col, save_dir=save_dir, overwrite=overwrite, ymin=ymin, ymax=ymax)
+                                          value_col=value_col, save_dir=save_dir, ymin=ymin, ymax=ymax)
         else:
             iters = []
             for i in range(nIter):
@@ -369,8 +369,7 @@ def iter_shuffle(data, nIter=10000, subject_cols=['Subject'], trial_col='Trial',
                 df['iternum'] = i
                 iters.append(df)
 
-            iters = pd.concat(iters)
-            iters = iters.reset_index(drop=True)
+            iters = pd.concat(iters, ignore_index=True)
         if save_dir is not None:
             iters.to_feather(save_dir + '/' + shuffname)
         return iters
@@ -401,8 +400,7 @@ def iter_shuffle_parallel(data, nIter=10000, subject_cols=['Subject'], trial_col
             pass
 
     iters = Parallel(n_jobs=-1)(delayed(single_iteration)(i) for i in range(nIter))
-    iters = pd.concat(iters)
-    iters = iters.reset_index(drop=True)
+    iters = pd.concat(iters, ignore_index=True)
 
     if save_dir is not None:
         iters.to_feather(save_dir + '/' + shuffname)
@@ -651,19 +649,20 @@ def mean_resample(col):
 
 def calc_boot(group, trial_col, nIter=100, parallel=False):
     unique_trials = np.sort(group[trial_col].unique())
-    trial = []
+    params = group[['alpha','beta', 'c', 'd']]
+    params = params.drop_duplicates(ignore_index=True) #get each unique model
+
     models = []
-    for id, grp in group.groupby(['exp_name', 'taste']):
-        alpha = grp['alpha'].unique()
-        beta = grp['beta'].unique()
-        c = grp['c'].unique()
-        d = grp['d'].unique()
-        # if len of alpha, beta, or c are greater than 1, raise exception
-        if len(alpha) > 1 or len(beta) > 1 or len(c) > 1:
-            raise Exception('More than one value for alpha, beta, or c')
-        models.append(model(unique_trials, alpha[0], beta[0], c[0], d[0]))
+    #for id, grp in group.groupby(['exp_name', 'taste']):
+    for i, row in params.iterrows():
+        alpha = row['alpha']#grp['alpha'].unique()
+        beta = row['beta']#grp['beta'].unique()
+        c = row['c']#grp['c'].unique()
+        d = row['d']#grp['d'].unique()
+        models.append(model(unique_trials, alpha, beta, c, d))
     models = np.vstack(models)
-    model_mean = np.nanmean(models, axis=0)
+    if len(models) == len(group):
+        raise Exception('trials mishandled')
     # for each column in models, bootstrap the 95% ci
     boot_mean = []
     boot_low = []
@@ -685,14 +684,14 @@ def calc_boot(group, trial_col, nIter=100, parallel=False):
     return boot_mean, boot_low, boot_high
 
 
-def plot_boot(ax, nm, group, color, trial_col='session_trial', shade_alpha=0.2, nIter=100, parallel=False):
+def plot_boot(ax, nm, group, color, trial_col='taste_trial', shade_alpha=0.2, nIter=100, parallel=False):
     unique_trials = np.sort(group[trial_col].unique())
     boot_mean, boot_low, boot_high = calc_boot(group, trial_col, nIter=nIter, parallel=parallel)
     ax.fill_between(unique_trials, boot_low, boot_high, alpha=shade_alpha, color=color)
     ax.plot(unique_trials, boot_mean, alpha=1, color=color, linewidth=2)
 
 
-def plot_scatter(ax, group, color, dat_col, trial_col='session_trial', dotalpha=0.2):
+def plot_scatter(ax, group, color, dat_col, trial_col='taste_trial', dotalpha=0.2):
     x = group[trial_col]
     y = group[dat_col]
     scatter = ax.plot(x, y, 'o', alpha=dotalpha, color=color,
@@ -1394,7 +1393,12 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
         plt.savefig(save_dir + savename)
 
 def preprocess_nonlinear_regression(df, subject_col, group_cols, trial_col, value_col, ymin=None, ymax=None, parallel=True, overwrite=False, nIter=10000, save_dir=None, flag=None):
-    groupings = [subject_col] + group_cols
+    if type(subject_col) is list:
+        groupings = subject_col + group_cols
+    elif type(subject_col) is str:
+        groupings = [subject_col] + group_cols
+    else:
+        raise ValueError('subject_col must be a string or a list of strings')
     params, r2, y_pred = nonlinear_regression(df, subject_cols=groupings, trial_col=trial_col, value_col=value_col,
                                                  parallel=parallel, ymin=ymin, ymax=ymax)
     r2_df = pd.Series(r2).reset_index()  # turn dict into a series with multi-index
@@ -1435,15 +1439,17 @@ def preprocess_nonlinear_regression(df, subject_col, group_cols, trial_col, valu
     df3['modeled'] = modeled
     # get the null distribution of r2 values
     shuffle = iter_shuffle(df3, nIter=nIter, subject_cols=groupings, trial_col=trial_col, value_col=value_col,
-                            ymin=ymin, ymax=ymax,
-                            save_dir=save_dir, overwrite=overwrite, parallel=parallel, flag=flag)
+                            ymin=ymin, ymax=ymax, save_dir=save_dir, overwrite=overwrite, parallel=parallel, flag=flag)
 
     if shuffle is [] or shuffle is None:
         raise ValueError('shuffle is None')
     return df3, shuffle
 
 def plot_nonlinear_regression_stats(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20, ymin=None, ymax=None, save_dir=None):
-    groups = [subject_col] + group_cols
+    if type(subject_col) is list:
+        groups = subject_col + group_cols
+    elif type(subject_col) is str:
+        groups = [subject_col] + group_cols
     avg_shuff = shuff.groupby(groups + ['iternum']).mean().reset_index() #average across exp_names
     avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
 
@@ -1456,6 +1462,7 @@ def plot_nonlinear_regression_stats(df3, shuff, subject_col, group_cols, trial_c
             save_flag = trial_col + '_' + value_col + '_' + exp_group + '_only'
         plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2, ymin=ymin, ymax=ymax)
 
+#TODO: fix issus with this:
 def get_session_differences(df3, shuff, stat_col='r2'):
     diff_col = stat_col + ' difference'
     #make a new dataframe called day_diffs that contains the difference in r2 between day 1 and day 2, and day 1 and day 3, and day 2 and day 3
@@ -1524,6 +1531,29 @@ def get_pred_change(df3, shuff, subject_col, group_cols, trial_col):
         pred_change_shuff.append(calc_pred_change(trials, params))
     shuff['pred. change'] = pred_change_shuff
     return pred_change_df, shuff
+
+def get_params_df(df3, shuff, subject_col, group_cols, trial_col):
+    groups = [subject_col] + group_cols
+    trials = df3[trial_col].unique()
+
+    avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
+    def add_pred_change(df):
+        pred_change = []
+        for i, row in df.iterrows():
+            params = row[['alpha', 'beta', 'c', 'd']]
+            pred_change.append(calc_pred_change(trials, params))
+        df['pred. change'] = pred_change
+        return df
+
+    pred_change_df = add_pred_change(avg_df3)
+
+    pred_change_shuff = []
+    for i, row in shuff.iterrows():
+        params = row['params']
+        pred_change_shuff.append(calc_pred_change(trials, params))
+    shuff['pred. change'] = pred_change_shuff
+    return pred_change_df, shuff
+
 def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20, ymin=None, ymax=None, save_dir=None):
 
     avg_shuff = pred_change_shuff.groupby(group_cols + ['iternum']).mean().reset_index()
@@ -1556,7 +1586,10 @@ def plot_nonlinear_line_graphs(df3, shuff, subject_col, group_cols, trial_col, v
                                  flag=save_flag, nIter=nIter, parallel=parallel, ymin=ymin, ymax=ymax)
 
 def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_col, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, ymin=None, ymax=None, textsize=20):
-    groups = [subject_col] + group_cols
+    if type(subject_col) is list:
+        groups = subject_col + group_cols
+    elif type(subject_col) is str:
+        groups = [subject_col] + group_cols
     avg_shuff = shuff.groupby(group_cols + ['iternum']).mean().reset_index()
     avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
     # plot the r2 values for each session with the null distribution
@@ -1568,8 +1601,9 @@ def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_col, grou
 
 
 def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nIter=10000, save_dir=None, flag=None):
-    subject_col = 'exp_name'
+    subject_col = ['exp_name', 'unit_name']
     group_cols=['exp_group', 'session', 'taste']
+
     args = {'subject_col': subject_col, 'group_cols': group_cols, 'trial_col': trial_col, 'value_col': value_col, 'nIter': nIter, 'save_dir':save_dir,
             'textsize':20, 'flag': flag, 'ymin':ymin, 'ymax':ymax}
     
@@ -1587,8 +1621,7 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nI
     # plot the within session difference between naive and preexp for pred. change
     ymin = min(r2_pred_change['pred. change'].min(), shuff_r2_pred_change['pred. change'].min())
     ymax = max(r2_pred_change['pred. change'].max(), shuff_r2_pred_change['pred. change'].max())
-    args2 = {'group_cols': group_cols, 'trial_col': trial_col, 'value_col': value_col, 'nIter': nIter, 'save_dir':save_dir,
-            'textsize':20, 'flag': flag, 'ymin':ymin, 'ymax':ymax}
+
     # plot the predicted change in value col over the course of the session, with stats
     #plot_predicted_change(r2_pred_change, shuff_r2_pred_change, **args2)
 

@@ -26,7 +26,7 @@ for unit in h5.root.sorted_units:
     for bidx in badidxs: 
         times = h5.root.sorted_units[unm].times[:]
         waves = h5.root.sorted_units[unm].waveforms[:]
-        t = times[(times> bidx - 30) & (times < bidx + 30)]
+        t = times[(times > bidx - 30) & (times < bidx + 30)]
         if len(t) > 0:
             idx = np.where(times==t)
             idx = idx[0][0]
