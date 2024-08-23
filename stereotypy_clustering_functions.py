@@ -32,20 +32,34 @@ def get_trial_info(dat):
     dintrials = dintrials[['taste_trial', 'taste', 'session_trial', 'channel', 'on_time']]
     return dintrials
 
-def get_avg_intertrial_distances(rec_dir):
+def get_avg_intertrial_distances(rec_dir, bsln_sub=True):
     df_list = []
     dat = blechpy.load_dataset(rec_dir)
     dintrials = get_trial_info(dat)
-    time_array, rate_array = h5io.get_rate_data(rec_dir)
-    for din, rate in rate_array.items():
+    #time_array, rate_array = h5io.get_rate_data(rec_dir)
+    time_array, rate_array = h5io.get_psths(rec_dir)
+    ts = 100
+    te = 3000
+    sidx = np.where(time_array >= ts)
+    eidx = np.where(time_array <= te)
+    idx = np.intersect1d(sidx, eidx)
+    bslnidx = np.where(time_array < 0)[0]
+    for din, rate in rate_array.items(): #loop through dins
+        baseline = rate[:, :, bslnidx].mean(axis=2)
+        rate = rate[:, :, idx]
+
         euc_dist_mat = np.zeros((rate.shape[1], rate.shape[2]))  # Trials x Bins
 
         for j in range(rate.shape[2]):  # Loop over bins
-            euc_dist = squareform(pdist(rate[:, :, j].T, metric='euclidean'))
-            avg_euc_dist = np.mean(euc_dist, axis=1)
-            euc_dist_mat[:, j] = avg_euc_dist
+            if bsln_sub:
+                binrate = rate[:, :, j] - baseline
+            else:
+                binrate = rate[:, :, j]
+            euc_dist = squareform(pdist(binrate.T, metric='euclidean'))
+            it_euc_dist = np.mean(euc_dist, axis=1)
+            euc_dist_mat[:, j] = it_euc_dist
 
-        avg_euc_dist = np.mean(euc_dist_mat[:, 2000:5000], axis=1)
+        avg_euc_dist = np.mean(euc_dist_mat, axis=1)
 
         df = pd.DataFrame({
             'euclidean_distance': avg_euc_dist,
@@ -55,11 +69,12 @@ def get_avg_intertrial_distances(rec_dir):
         })
         df_list.append(df)
     df = pd.concat(df_list, ignore_index=True)
-    # add index info to df from dintrials using merge on taste_trial and channel
-    df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
     # remove all rows where taste == 'Spont'
     df = df.loc[df['taste'] != 'Spont']
     df['euclidean_distance'] = df['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
+    # add index info to df from dintrials using merge on taste_trial and channel
+    df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
+
     # subtract the min of 'session_trial' from 'session_trial' to get the session_trial relative to the start of the recording
     df['session_trial'] = df['session_trial'] - df['session_trial'].min()
     return df

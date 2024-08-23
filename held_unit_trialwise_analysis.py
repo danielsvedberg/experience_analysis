@@ -88,8 +88,9 @@ import trialwise_analysis as ta
 import hmm_analysis as hmma
 
 group_cols = ['exp_group', 'session', 'taste']
+subject_cols = ['exp_name', 'unit_name']
 trial_col = 'taste_trial'
-nIter = 10
+nIter = 100
 
 save_dir = PA.save_dir
 #make a new folder called nonlinear_regression in save_dir
@@ -100,7 +101,7 @@ if not os.path.exists(save_dir):
 
 value_col = 'prestim'
 flag = 'response'
-df3, shuff = ta.preprocess_nonlinear_regression(df, subject_col=['exp_name', 'unit_name'], group_cols=group_cols,
+df3, shuff = ta.preprocess_nonlinear_regression(df, subject_cols=['exp_name', 'unit_name'], group_cols=group_cols,
                                                 trial_col=trial_col, value_col=value_col, overwrite=False,
                                                 nIter=nIter, save_dir=save_dir, flag=flag)
-ta.plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, save_dir=save_dir, flag=flag)
+ta.plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, subject_cols, nIter=nIter, save_dir=save_dir, flag=flag)

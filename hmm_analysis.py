@@ -1092,11 +1092,10 @@ def analyze_NB_state_classification(best_hmms,all_units):
     
     return NB_res, NB_meta #should do process_NB_classification next
 
-def NB_state_classification(best_hmms, all_units):
+def NB_state_classification(best_hmms, all_units, label_col='taste'):
 # classify all the states at once
     best_hmms = best_hmms.copy()
     all_units = all_units.copy()
-    label_col = 'taste'
     id_cols = ['exp_name', 'exp_group', 'time_group']
 
     all_units = all_units.query('area == "GC" and single_unit == True')
@@ -1106,12 +1105,14 @@ def NB_state_classification(best_hmms, all_units):
     NB_res = []
     for name, group in best_hmms_.groupby(id_cols):
         un = get_common_units(group, all_units)
-        res = NB_classify_rec(group, un)
+        res = NB_classify_rec(group, un, label_col)
         NB_res.append(res)
     result = pd.concat(NB_res, axis=0, ignore_index=True, sort=False)
     return result
+
 #classify rec is the sub function to NB_state_classification
-def NB_classify_rec(group, units):
+def NB_classify_rec(group, units, label_col='taste'):
+    valence_map = {'Suc': 'pos', 'NaCl': 'pos', 'CA': 'neg', 'QHCl': 'neg'}
     labels = []
     rates = []
     identifiers = []
@@ -1120,15 +1121,16 @@ def NB_classify_rec(group, units):
     state_ends = []
     for i, row in group.iterrows():
         rec_dir = row['rec_dir']
+        channel = row['channel']
         un = units[rec_dir]
         h5 = get_hmm_h5(rec_dir)
         hmm, _, _ = ph.load_hmm_from_hdf5(h5, row['hmm_id'])
 
         for i in range(hmm.n_states):
-            label = row['taste'] + '_' + str(i)
+            label = row[label_col] + '_' + str(i)
             tmp_r, tmp_trials , start, end = get_state_firing_rates(row['rec_dir'], row['hmm_id'], i, units=un, other_state=None,
                                                        remove_baseline=False)
-            tmp_id = [(rec_dir, row['hmm_id'], row['taste'], x, i) for x in tmp_trials]
+            tmp_id = [(rec_dir, row['hmm_id'], row[label_col], x, i, channel) for x in tmp_trials]
             # for each index in dim 0 of tmp_r, append the label and id
             trials.extend(tmp_trials)
             rates.extend(tmp_r)
@@ -1158,21 +1160,28 @@ def NB_classify_rec(group, units):
         res_frame['Y'] = res.Y
         res_frame['Y_pred'] = res.Y_predicted
         res_frame['row_ID'] = identifiers
-        res_frame[['rec_dir', 'hmm_id', 'taste', 'trial', 'state']] = pd.DataFrame(res_frame['row_ID'].tolist(),
+        res_frame[['rec_dir', 'hmm_id', label_col, 'trial', 'state','channel']] = pd.DataFrame(res_frame['row_ID'].tolist(),
                                                                                    index=res_frame.index)
         #drop the row_ID column
         res_frame = res_frame.drop(columns='row_ID')
         NB_res.append(res_frame)
+        print(res_frame.columns)
         NB_res = pd.concat(NB_res)
         #make 2 new columns called 'taste_pred' and 'state_pred' from the 'Y_pred' column, by splitting the entries in 'Y_pred' by '_'
         NB_res[['taste_pred', 'state_pred']] = NB_res['Y_pred'].str.split('_', expand=True)
         #make a column called 'p_correct' where for each row, is the value in the column with a name matching the entry in 'Y' for that row
-        NB_res['p_correct'] = NB_res.lookup(NB_res.index, NB_res['Y'])
+        NB_res['p_state_correct'] = NB_res.lookup(NB_res.index, NB_res['Y'])
         for i in ['Suc', 'NaCl', 'CA', 'QHCl']:
             #create a column using the name of i, where for each row, the value is the sum of the columns containing the string i
             NB_res[i] = NB_res.filter(like=i).sum(axis=1)
         NB_res['p_taste_correct'] = NB_res.lookup(NB_res.index, NB_res['taste'])
 
+        NB_res['valence'] = NB_res['taste'].map(valence_map)
+        NB_res['valence_pred'] = NB_res['taste_pred'].map(valence_map)
+        NB_res['pos'] = NB_res['Suc'] + NB_res['NaCl']
+        NB_res['neg'] = NB_res['CA'] + NB_res['QHCl']
+        NB_res['p_valence_correct'] = NB_res.lookup(NB_res.index, NB_res['valence'])
+        print('check')
         return NB_res  # should do process_NB_classification next
     else:
         print('epic fail')

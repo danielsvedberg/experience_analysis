@@ -4,7 +4,7 @@ import shutil
 import pdb
 import pandas as pd
 import numpy as np
-import feather
+import pyarrow.feather as feather
 import pickle
 import aggregation as agg
 import plotting as plt
@@ -32,6 +32,7 @@ from joblib import Parallel, delayed
 
 # PAL_MAP = {'Water': -1, 'Saccharin': -1, 'Quinine': 1,
 #            'Citric Acid': 2, 'NaCl': 3}
+
 
 PAL_MAP = {'Spont': -1, 'Suc': 1, 'QHCl': 4,
            'CA': 3, 'NaCl': 2}
@@ -108,12 +109,12 @@ class ProjectAnalysis(object):
             os.makedirs(save_dir)
 
         if os.path.isfile(all_units_file) and os.path.isfile(held_units_file) and not overwrite:
-            all_units = feather.read_dataframe(all_units_file)
-            held_df = feather.read_dataframe(held_units_file)
+            all_units = feather.read_feather(all_units_file)
+            held_df = feather.read_feather(held_units_file)
         else:
             all_units, held_df = agg.find_held_units(self.project, percent_criterion, raw_waves)
-            feather.write_dataframe(all_units, all_units_file)
-            feather.write_dataframe(held_df, held_units_file)
+            feather.write_feather(all_units, all_units_file)
+            feather.write_feather(held_df, held_units_file)
 
             # Plot waveforms and J3 distribution
             plot_dir = os.path.join(save_dir, 'held_unit_waveforms')
@@ -135,8 +136,8 @@ class ProjectAnalysis(object):
             raise ValueError('Please run get_held_units first')
 
         if os.path.isfile(all_units_file) and os.path.isfile(held_units_file):
-            all_units = feather.read_dataframe(all_units_file)
-            held_df = feather.read_dataframe(held_units_file)
+            all_units = feather.read_feather(all_units_file)
+            held_df = feather.read_feather(held_units_file)
             # Plot waveforms and J3 distribution
             plot_dir = os.path.join(save_dir, 'held_unit_waveforms')
             if not os.path.isdir(plot_dir):
@@ -154,8 +155,8 @@ class ProjectAnalysis(object):
         if not os.path.isfile(all_units_file) or not os.path.isfile(held_units_file):
             raise ValueError('Please run get_held_units first')
 
-        all_units = feather.read_dataframe(all_units_file)
-        held_df = feather.read_dataframe(held_units_file)
+        all_units = feather.read_feather(all_units_file)
+        held_df = feather.read_feather(held_units_file)
         if 'time_group' not in all_units.columns or overwrite == True:
             all_units = apply_groups_from_proj(all_units, self.project)
             self.write_unit_info(all_units=all_units)
@@ -198,10 +199,10 @@ class ProjectAnalysis(object):
         all_units_file = self.files['all_units']
         held_units_file = self.files['held_units']
         if all_units is not None:
-            feather.write_dataframe(all_units, all_units_file)
+            feather.write_feather(all_units, all_units_file)
 
         if held_df is not None:
-            feather.write_dataframe(held_df, held_units_file)
+            feather.write_feather(held_df, held_units_file)
 
     def get_params(self, params=None):
         params_file = self.files['params']
@@ -440,8 +441,8 @@ class ProjectAnalysis(object):
             os.mkdir(save_dir)
 
         if os.path.isfile(tasty_unit_file) and os.path.isfile(pal_unit_file) and not overwrite:
-            resp_units = feather.read_dataframe(tasty_unit_file)
-            pal_units = feather.read_dataframe(pal_unit_file)
+            resp_units = feather.read_feather(tasty_unit_file)
+            pal_units = feather.read_feather(pal_unit_file)
             return resp_units, pal_units
 
         if overwrite and os.path.isfile(pal_file):
@@ -461,7 +462,7 @@ class ProjectAnalysis(object):
         print('-' * 80)
         resp_units = resp_units.apply(lambda x: apply_taste_responsive(x, params, resp_file), axis=1)
         resp_units['exclude'] = resp_units.apply(agg.apply_exclude, axis=1)
-        feather.write_dataframe(resp_units, tasty_unit_file)
+        feather.write_feather(resp_units, tasty_unit_file)
         fn = os.path.join(save_dir, 'taste_responsive.svg')
         df = resp_units.query('exclude == False and taste != "Spont"')
         nplt.plot_taste_responsive_units(df, fn)
@@ -480,7 +481,7 @@ class ProjectAnalysis(object):
         pal_units = pal_units.apply(foo, axis=1)  # causes problem
         pal_units['taste_discriminative'] = pal_units['taste_discriminative'].astype('bool')
         pal_units['exclude'] = pal_units.apply(agg.apply_exclude, axis=1)
-        feather.write_dataframe(pal_units, pal_unit_file)
+        feather.write_feather(pal_units, pal_unit_file)
         df = pal_units[pal_units['exclude'] == False]
         nplt.plot_pal_responsive_units(df, save_dir)
 
@@ -494,7 +495,7 @@ class ProjectAnalysis(object):
         spearman_file = os.path.join(save_dir, 'palatability_spearman.svg')
         pearson_file = os.path.join(save_dir, 'palatability_pearson.svg')
         params = self.get_params()
-        # For responsive, plot 
+        # For responsive, plot
         if 'time_group' not in resp_units.columns or 'time_group' not in pal_units.columns:
             time_map = {'preCTA': 'preCTA', 'ctaTrain': 'preCTA', 'ctaTest':
                 'postCTA', 'postCTA': 'postCTA'}
@@ -533,9 +534,9 @@ class ProjectAnalysis(object):
 
         if os.path.isfile(pc_data_file) and os.path.isfile(dist_data_file) and os.path.isfile(
                 other_dist_file) and not overwrite:
-            pc_data = feather.read_dataframe(pc_data_file)
-            dist_data = feather.read_dataframe(dist_data_file)
-            other_dist_data = feather.read_dataframe(other_dist_file)
+            pc_data = feather.read_feather(pc_data_file)
+            dist_data = feather.read_feather(dist_data_file)
+            other_dist_data = feather.read_feather(other_dist_file)
             return pc_data, dist_data, other_dist_data
 
         params = self.get_params()
@@ -569,9 +570,9 @@ class ProjectAnalysis(object):
                                     'PC2', 'MDS1', 'MDS2'])
         dist_metrics = agg.apply_grouping_cols(dist_metrics, self.project)
         pc_data = agg.apply_grouping_cols(pc_data, self.project)
-        feather.write_dataframe(pc_data, pc_data_file)
-        feather.write_dataframe(dist_data, dist_data_file)
-        feather.write_dataframe(dist_metrics, other_dist_file)
+        feather.write_feather(pc_data, pc_data_file)
+        feather.write_feather(dist_data, dist_data_file)
+        feather.write_feather(dist_metrics, other_dist_file)
         return pc_data, dist_data, dist_metrics
 
     def plot_pca_data(self):
@@ -1045,7 +1046,7 @@ class HmmAnalysis(object):
                     else:
                         fit_df = fit_df.append(df, ignore_index=True)
 
-                feather.write_dataframe(fit_df, save_file)
+                feather.write_feather(fit_df, save_file)
                 pyplt.close('all')
 
     def check_hmm_fitting(self):
@@ -1069,7 +1070,7 @@ class HmmAnalysis(object):
             overwrite = True
 
         if not overwrite:
-            ho = feather.read_dataframe(self.files['hmm_overview'])
+            ho = feather.read_feather(self.files['hmm_overview'])
         else:
             ho = None
             print('aggregating hmm data...')
@@ -1094,19 +1095,19 @@ class HmmAnalysis(object):
                     # pbar.update(1)
 
             # pbar.close()
-            feather.write_dataframe(ho, self.files['hmm_overview'])
+            feather.write_feather(ho, self.files['hmm_overview'])
 
         if not 'exp_name' in ho.columns:
             try:
                 ho = apply_groups_from_proj(ho, self.project)
-                feather.write_dataframe(ho, self.files['hmm_overview'])
+                feather.write_feather(ho, self.files['hmm_overview'])
             except:
                 raise Exception("need to apply rec_group")
 
         if not 'single_state_trials' in ho.columns:
             print('counting single state trials...')
             ho['single_state_trials'] = ho.apply(hmma.check_single_state_trials, axis=1)
-            feather.write_dataframe(ho, self.files['hmm_overview'])
+            feather.write_feather(ho, self.files['hmm_overview'])
 
         return ho
 
@@ -1141,12 +1142,12 @@ class HmmAnalysis(object):
 
     def write_sorted_hmms(self, sorted_hmms):
         sorted_file = self.files['sorted_hmms']
-        feather.write_dataframe(sorted_hmms, sorted_file)
+        feather.write_feather(sorted_hmms, sorted_file)
 
     def get_sorted_hmms(self):
         sorted_file = self.files['sorted_hmms']
         if os.path.isfile(sorted_file):
-            sorted_hmms = feather.read_dataframe(sorted_file)
+            sorted_hmms = feather.read_feather(sorted_file)
             if 'early_state' not in sorted_hmms.columns:
                 sorted_hmms['early_state'] = np.nan
 
@@ -1230,14 +1231,14 @@ class HmmAnalysis(object):
 
         bf = os.path.isfile(best_file)
         if bf and not overwrite:
-            best_hmms = feather.read_dataframe(best_file)
+            best_hmms = feather.read_feather(best_file)
             return best_hmms
 
         df = self.get_sorted_hmms()
         all_units, _ = ProjectAnalysis(self.project).get_unit_info()  # get unit info fails to pull DS41
         out_df = hmma.make_best_hmm_list(all_units, df, sorting=sorting)
         out_df = agg.apply_grouping_cols(out_df, self.project)
-        feather.write_dataframe(out_df, best_file)
+        feather.write_feather(out_df, best_file)
         return out_df
 
     def mark_hmm_as(self, sorting, **kwargs):
@@ -1445,7 +1446,7 @@ class HmmAnalysis(object):
         ID_decode_sf = os.path.join(save_dir, 'all_states_decode.feather')
 
         if os.path.isfile(ID_decode_sf) and not overwrite:
-            NB_res = feather.read_dataframe(ID_decode_sf)
+            NB_res = feather.read_feather(ID_decode_sf)
             return NB_res
         else:
             best_hmms = self.get_best_hmms(sorting='AIC')
@@ -1457,11 +1458,40 @@ class HmmAnalysis(object):
             #rename trial to 'taste_trial'
             NB_res = NB_res.rename(columns = {'trial': 'taste_trial'})
             #merge with dig_in_trial_df along 'rec_dir' and 'taste_trial' and 'taste'
-            NB_res = pd.merge(NB_res, din_trial_df, on=['rec_dir', 'taste_trial', 'taste'], how='left')
+            NB_res = pd.merge(NB_res, din_trial_df, on=['rec_dir', 'taste_trial', 'taste', 'channel'], how='left')
             #drop the 'label' column
             NB_res = NB_res.drop(columns=['label'])
             #save NB_res to feather
-            feather.write_dataframe(NB_res, ID_decode_sf)
+            feather.write_feather(NB_res, ID_decode_sf)
+            return NB_res
+
+    def analyze_NB_val(self, overwrite=False):
+        save_dir = self.save_dir
+        ID_decode_sf = os.path.join(save_dir, 'pal_states_decode.feather')
+        valence_map = {'Suc':'pos', 'NaCl':'pos', 'CA':'neg', 'QHCl':'neg'}
+
+
+        if os.path.isfile(ID_decode_sf) and not overwrite:
+            NB_res = feather.read_feather(ID_decode_sf)
+            return NB_res
+        else:
+            best_hmms = self.get_best_hmms(sorting='AIC')
+            # apply a column to best_hmms called valence, using the taste column to map to pos or neg
+            best_hmms['valence'] = best_hmms['taste'].map(valence_map)
+            proj = self.project
+            PA = ProjectAnalysis(proj)
+            din_trial_df = proj.get_dig_in_trial_df(reformat=True)
+            #apply a
+            all_units, held_units = PA.get_unit_info()
+            NB_res = hmma.NB_state_classification(best_hmms, all_units, label_col='valence')
+            #rename trial to 'taste_trial'
+            NB_res = NB_res.rename(columns={'trial': 'taste_trial'})
+            #merge with dig_in_trial_df along 'rec_dir' and 'taste_trial' and 'taste'
+            NB_res = pd.merge(NB_res, din_trial_df, on=['rec_dir', 'taste_trial', 'channel'], how='left')
+            #drop the 'label' column
+            NB_res = NB_res.drop(columns=['label'])
+            #save NB_res to feather
+            feather.write_feather(NB_res, ID_decode_sf)
             return NB_res
 
     def analyze_NB_ID(self, overwrite=True, multi_process=False, sorting="best_AIC"):
@@ -1519,18 +1549,18 @@ class HmmAnalysis(object):
             save_dir = self.save_dir
             ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')
             self.files['early_ID_timing'] = ID_timing_sf
-            feather.write_dataframe(timings, ID_timing_sf)
+            feather.write_feather(timings, ID_timing_sf)
             print('saving ID_timing to %s' % ID_timing_sf)
 
             ID_decode_sf = os.path.join(save_dir, 'ID_decode.feather')
             self.files['decode'] = ID_decode_sf
-            feather.write_dataframe(decode_data, ID_decode_sf)
+            feather.write_feather(decode_data, ID_decode_sf)
             print('saving ID_decode to %s' % ID_decode_sf)
 
             # TODO: consolidate output of this function so it's the same when saved or not
             # NB_meta.drop(columns = ['hmm_state'])
             best_file = self.files['best_hmms']
-            feather.write_dataframe(best_hmms, best_file)
+            feather.write_feather(best_hmms, best_file)
             print('saving best_hmms to %s' % best_file)
 
             return NB_meta, decode_data, best_hmms, timings
@@ -1539,10 +1569,10 @@ class HmmAnalysis(object):
             save_dir = self.save_dir
 
             ID_decode_sf = os.path.join(save_dir, 'ID_decode.feather')
-            decode_data = feather.read_dataframe(ID_decode_sf)
+            decode_data = feather.read_feather(ID_decode_sf)
 
             ID_timing_sf = os.path.join(save_dir, 'ID_timing.feather')
-            timings = feather.read_dataframe(ID_timing_sf)
+            timings = feather.read_feather(ID_timing_sf)
             best_hmms = ['need to run with overwrite to get best_hmms']
             NB_meta = ['need to run with overwrite to get NB_meta']
 
@@ -1602,24 +1632,24 @@ class HmmAnalysis(object):
         timing_stats = timing_file.replace('feather', 'txt')
         # coding analyses
         if os.path.isfile(coding_file) and not overwrite:
-            coding = feather.read_dataframe(coding_file)
+            coding = feather.read_feather(coding_file)
         else:
             coding = hmma.analyze_hmm_state_coding(best_hmms, all_units)
         # end of coding analysis
 
         if os.path.isfile(timing_file) and not overwrite:
-            timings = feather.read_dataframe(timing_file)
+            timings = feather.read_feather(timing_file)
         else:
             timings = hmma.analyze_hmm_state_timing(best_hmms)
-            feather.write_dataframe(timings, timing_file)
+            feather.write_feather(timings, timing_file)
         # if os.path.isfile(confusion_file) and not overwrite:
-        #     confusion = feather.read_dataframe(confusion_file)
+        #     confusion = feather.read_feather(confusion_file)
         # else:
         #     confusion = hmma.saccharin_confusion_analysis(best_hmms, all_units,
         #                                                   area='GC',
         #                                                   single_unit=True,
         #                                                   repeats=50)
-        #     feather.write_dataframe(confusion, confusion_file)
+        #     feather.write_feather(confusion, confusion_file)
         coding, confusion = None, None
 
         if not os.path.isfile(timing_stats) or overwrite:
@@ -1873,7 +1903,7 @@ class HmmAnalysis(object):
 
         print('Gathering hmm trial data ... ')
         trial_df = get_hmm_trial_info(self, sorting=sorting)
-        feather.write_dataframe(trial_df,
+        feather.write_feather(trial_df,
                                 os.path.join(save_dir, 'hmm_trial_breakdown.feather'))
 
         fn = os.path.join(save_dir, 'hmm_trial_breakdown.svg')
@@ -2254,11 +2284,11 @@ class HmmAnalysis(object):
 
             #save the dataframe to a feather file
             mode_state_sf = self.files['pr_mode_state']
-            feather.write_dataframe(gamma_mode_df, mode_state_sf) # save dataframe to feather file
+            feather.write_feather(gamma_mode_df, mode_state_sf) # save dataframe to feather file
 
         else:
             mode_state_sf = self.files['pr_mode_state']
-            gamma_mode_df = feather.read_dataframe(mode_state_sf)
+            gamma_mode_df = feather.read_feather(mode_state_sf)
 
         return gamma_mode_df
 

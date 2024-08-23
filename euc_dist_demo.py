@@ -720,5 +720,60 @@ ani = FuncAnimation(fig, animate, frames=total_frames, init_func=init,
 
 save_path= os.path.join(euc_dist_demo_folder, 'every_trial_v_avg.mp4')
 ani.save(save_path, writer='ffmpeg', fps=30)  # Save the animation as a GIF
+#%% static plot of the rates
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.cm import get_cmap
 
+# Assuming final_output has been defined and has shape (3, 30, downscaled time bins)
+# For demonstration, use your processed data
+# Select trials 1 and 20 (indexing from 0, these are trials 0 and 19)
 
+trial_indices = [3, 25]  # Adjust according to your 1-based indices if needed
+time_points = final_output.shape[2]
+
+# Use a continuous colormap to represent time progression
+cmap = get_cmap('viridis', time_points)
+
+fig = plt.figure(figsize=(5, 6))
+ax = fig.add_subplot(111, projection='3d')
+
+# Set axis limits based on the data of the selected trials
+max_vals = np.max(final_output[:, trial_indices, :], axis=(1, 2))
+min_vals = np.min(final_output[:, trial_indices, :], axis=(1, 2))
+
+ax.set_xlim([min_vals[0], max_vals[0]])
+ax.set_ylim([min_vals[1], max_vals[1]])
+ax.set_zlim([min_vals[2], max_vals[2]])
+
+markers = ['o', '^']  # Example: 'o' for trial 1, '^' for trial 20
+# Plot each trial
+for i, trial_index in enumerate(trial_indices):
+    x = final_output[0, trial_index, :]
+    y = final_output[1, trial_index, :]
+    z = final_output[2, trial_index, :]
+
+    # Color each point by its index in time
+    for t in range(time_points):
+        ax.scatter(x[t], y[t], z[t], color=cmap(t), s=15, marker=markers[i])  # s is the size of the point
+
+import matplotlib.lines as mlines
+tr3 = mlines.Line2D([], [], color='black', marker='o', linestyle='None',
+                          markersize=12, label='Trial 3')
+tr25 = mlines.Line2D([], [], color='black', marker='^', linestyle='None',
+                          markersize=12, label='Trial 25')
+
+plt.legend(handles=[tr3, tr25], loc='upper right')
+
+# Optional: Add colorbar to indicate the progression of time
+sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=2000))
+sm.set_array([])
+cbar = fig.colorbar(sm, ax=ax, orientation='horizontal')
+cbar.set_label('Time post-stim. (ms)')
+#plt.title('3D Plot of Trials 1 and 20')
+plt.show()
+
+#save as svg
+save_path= os.path.join(euc_dist_demo_folder, 'static_example_trials.svg')
+plt.savefig(save_path, format='svg')  # Save the plot as SVG file

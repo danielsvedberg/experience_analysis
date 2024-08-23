@@ -8,39 +8,35 @@ import os
 import numpy as np
 import trialwise_analysis as ta
 import scipy.stats as stats
+from joblib import Parallel, delayed
+import multiprocessing
 
-proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
-proj = blechpy.load_project(proj_dir)  # load the project
-HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
+def preprocess_NB(NB_df):
+    valence_map = {'Suc':'pos', 'NaCl':'pos', 'CA': 'neg', 'QHCl':'neg'}
+    NB_df['valence'] = NB_df['taste'].map(valence_map)
+    NB_df['valence_pred'] = NB_df['taste_pred'].map(valence_map)
 
-NB_df = HA.analyze_NB_ID2(overwrite=True)
-NB_df['duration'] = NB_df['t_end'] - NB_df['t_start']
-NB_df['t_med'] = (NB_df['t_end'] + NB_df['t_start']) / 2
+    NB_df['duration'] = NB_df['t_end'] - NB_df['t_start']
+    NB_df['t_med'] = (NB_df['t_end'] + NB_df['t_start']) / 2
 
-#for each rec_dir, subtract the min of off_time from all off_times
-NB_df['off_time'] = NB_df.groupby('rec_dir')['off_time'].apply(lambda x: x - x.min())
+    #for each rec_dir, subtract the min of off_time from all off_times
+    NB_df['off_time'] = NB_df.groupby('rec_dir')['off_time'].apply(lambda x: x - x.min())
 
-#for each grouping of taste and rec_dir, make a new column called 'length_rank' ranking the states' length
-NB_df['order_in_seq'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
-NB_df['length_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['duration'].rank(ascending=False)
-NB_df['accuracy_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['p_correct'].rank(ascending=False)
+    #for each grouping of taste and rec_dir, make a new column called 'length_rank' ranking the states' length
+    NB_df['order_in_seq'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
+    NB_df['length_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['duration'].rank(ascending=False)
+    NB_df['state_accuracy_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['p_state_correct'].rank(ascending=False)
+    NB_df['taste_accuracy_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['p_taste_correct'].rank(ascending=False)
+    NB_df['valence_accuracy_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['p_valence_correct'].rank(ascending=False)
 
-NB_df['p(correct state)'] = NB_df['p_correct']
-NB_df['p(correct taste)'] = NB_df['p_taste_correct']
-NB_df['session time'] = NB_df['off_time']
-NB_df['t(median)'] = NB_df['t_med']
-NB_df['t(start)'] = NB_df['t_start']
+    NB_df['p(correct state)'] = NB_df['p_state_correct']
+    NB_df['p(correct taste)'] = NB_df['p_taste_correct']
+    NB_df['p(correct valence)'] = NB_df['p_valence_correct']
 
-def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, ymin=None, ymax=None, textsize=20):
-    groups = [subject_col] + group_cols
-    avg_shuff = shuff.groupby(group_cols + ['iternum']).mean().reset_index()
-    avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
-    # plot the r2 values for each session with the null distribution
-    if flag is not None:
-        save_flag = trial_col + '_' + value_col + '_' + flag
-    else:
-        save_flag = trial_col + '_' + value_col
-    ta.plot_r2_pval_diffs_summary(avg_shuff, avg_df3, stat_col, save_flag=save_flag, save_dir=HA.save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)#re-run and replot with nIter=nIter
+    NB_df['session time'] = NB_df['off_time']
+    NB_df['t(median)'] = NB_df['t_med']
+    NB_df['t(start)'] = NB_df['t_start']
+    return NB_df
 
 #for each group, plot the bar graphs quantifying the r2 values
 def plot_nonlinear_regression_stats(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20, ymin=None, ymax=None):
@@ -92,7 +88,7 @@ def plot_nonlinear_line_graphs(df3, shuff, subject_col, group_cols, trial_col, v
 
     ta.plot_fits_summary_avg(df3, shuff_df=shuff, dat_col=value_col, trial_col=trial_col, save_dir=HA.save_dir,
                              use_alpha_pos=False, textsize=textsize, dotalpha=0.15, flag=flag, nIter=nIter,
-                             parallel=parallel, yMin=yMin, yMax=yMax)
+                             parallel=parallel)
     for exp_group, group in df3.groupby(['exp_group']):
         group_shuff = shuff.groupby('exp_group').get_group(exp_group)
         if flag is not None:
@@ -101,14 +97,8 @@ def plot_nonlinear_line_graphs(df3, shuff, subject_col, group_cols, trial_col, v
             save_flag = exp_group
         ta.plot_fits_summary_avg(group, shuff_df=group_shuff, dat_col=value_col, trial_col=trial_col,
                                  save_dir=HA.save_dir, use_alpha_pos=False, textsize=textsize, dotalpha=0.15,
-                                 flag=flag, nIter=nIter, parallel=parallel, yMin=yMin, yMax=yMax)
+                                 flag=save_flag, nIter=nIter, parallel=parallel)
 
-
-trial_col = ['session_trial', 'taste_trial', 'session time']
-value_col = ['p(correct state)', 'p(correct taste)', 't(median)', 't(start)', 'duration']
-state_determinant = ['duration', 'p_correct']
-#get each unique combination of trial col, value col, and state determinant
-trial_combos = [(t, v, s) for t in trial_col for v in value_col for s in state_determinant]
 
 def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nIter=10000, flag=None):
     subject_col = 'exp_name'
@@ -119,15 +109,15 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nI
     # #plot the stats quantificaation of the r2 values with head to head of naive vs sucrose preexposed
     plot_nonlinear_regression_comparison(df3, shuff, stat_col='r2', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
     # #plot the sessionwise differences in the r2 values
-    ta.plot_session_differences(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
+    ta.plot_session_differences(df3, shuff, subject_cols=subject_col, group_cols=group_cols, trial_col=trial_col,
 
                              value_col=value_col, stat_col='r2', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
-    r2_pred_change, shuff_r2_pred_change = ta.get_pred_change(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col)
+    r2_pred_change, shuff_r2_pred_change = ta.get_pred_change(df3, shuff, subject_cols=subject_col, group_cols=group_cols, trial_col=trial_col)
     # #plot the predicted change in value col over the course of the session, with stats
-    ta.plot_predicted_change(r2_pred_change, shuff_r2_pred_change, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
+    ta.plot_predicted_change(r2_pred_change, shuff_r2_pred_change, subject_cols=subject_col, group_cols=group_cols, trial_col=trial_col,
                           value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
     # # #plot the session differences in the predicted change of value col
-    ta.plot_session_differences(r2_pred_change, shuff_r2_pred_change, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col,
+    ta.plot_session_differences(r2_pred_change, shuff_r2_pred_change, subject_cols=subject_col, group_cols=group_cols, trial_col=trial_col,
                              value_col=value_col, stat_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
 
     # plot the within session difference between naive and preexp for pred. change
@@ -137,35 +127,57 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nI
 
 def pipeline(df, value_col, trial_col, state_determinant):
     print('running pipeline for ' + value_col + ' and ' + trial_col + ' and ' + state_determinant)
+    analysis_folder = value_col + '_' + trial_col + '_' + state_determinant + '_nonlinear_regression'
+    #check if dir exists, if not, make it
+    save_dir = os.path.join(HA.save_dir, analysis_folder)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
     nIter = 10000
     epoch_idx = {1: 'early', 2: 'late'}
 
     subject_col = 'exp_name'
     group_cols=['exp_group', 'session', 'taste']
 
-    df = df[df[state_determinant] < 2]
+    df = df.loc[df[state_determinant] <= 2]
     df['order_in_seq'] = df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
+    df = df.loc[df['order_in_seq'] <= 2]
     for nm, group in df.groupby(['order_in_seq']):
         #get rid of any rows with nans value col of group
         group = group.dropna(subset=[value_col])
         epoch = epoch_idx[nm]
-        flag = state_determinant + '_determine_' + epoch
+        save_flag = state_determinant + '_determine_' + epoch
 
-        df3, shuff = ta.preprocess_nonlinear_regression(group, subject_col=subject_col, group_cols=group_cols,
-                                                                 trial_col=trial_col, value_col=value_col, overwrite=False,
-                                                                 nIter=nIter, save_dir=HA.save_dir, flag=flag)
+        df3, shuff = ta.preprocess_nonlinear_regression(group, subject_cols=subject_col, group_cols=group_cols,
+                                                                 trial_col=trial_col, value_col=value_col, overwrite=True,
+                                                                 nIter=nIter, save_dir=save_dir, flag=save_flag)
 
-        plotting_pipeline(df3, shuff, trial_col, value_col, nIter=nIter, flag=flag)
+        ta.plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, [subject_col], nIter=nIter, save_dir=save_dir, flag=save_flag)
 
+
+
+proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
+proj = blechpy.load_project(proj_dir)  # load the project
+HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
+
+###Process state coding
+NB_df = HA.analyze_NB_ID2(overwrite=False)
+NB_df = preprocess_NB(NB_df)
+
+trial_col = 'taste_trial'
+state_determinant = 'valence_accuracy_rank'
+value_col = 'p(correct valence)'
+pipeline(NB_df, value_col, trial_col, state_determinant)
+
+trial_col = ['session_trial', 'taste_trial', 'session time']
+value_col = ['p(correct state)', 'p(correct taste)', 't(median)', 't(start)', 'duration']
+state_determinant = ['duration', 'p_correct']
+#get each unique combination of trial col, value col, and state determinant
+trial_combos = [(t, v, s) for t in trial_col for v in value_col for s in state_determinant]
 
 #for each trial_combo, run the pipeline in parallel using joblib
-from joblib import Parallel, delayed
-import multiprocessing
+
 num_cores = multiprocessing.cpu_count()
 #get rid of the first
 
 Parallel(n_jobs=-1)(delayed(pipeline)(NB_df, value_col, trial_col, state_determinant) for trial_col, value_col, state_determinant in trial_combos)
-
-# for i in trial_combos:
-#     print('running pipeline for ' + i[0] + ' and ' + i[1] + ' and ' + i[2])
-#     pipeline(NB_df, i[0], i[1], i[2])

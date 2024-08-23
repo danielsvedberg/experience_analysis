@@ -7,6 +7,8 @@ import seaborn as sns
 import pandas as pd
 import os
 import numpy as np
+
+import stereotypy_clustering_functions
 import trialwise_analysis as ta
 import scipy.stats as stats
 import time
@@ -48,16 +50,23 @@ def euc_dist_trials(rates):
 
 def process_split(rec_dir, split=10, shuffle=False):
     df_list = []
-    time_array, rate_array = h5io.get_rate_data(rec_dir)
+    time_array, rate_array = h5io.get_psths(rec_dir)
+    ts = 100
+    te = 3000
     for din, rate in rate_array.items():
         if din != 'dig_in_4':
-            rate = rate[:,:,2000:5000]
+            i_e = time_array <= te
+            rate = rate[:, :, i_e]
+            time_array2 = time_array[i_e]
+            #for each index 0, zscore rate
+            for i in range(rate.shape[0]):
+                rate[i, :, :] = (rate[i, :, :] - np.mean(rate[i, :, :])) / np.std(rate[i, :, :])
+            i_s = time_array2 >= ts
+            rate = rate[:, :, i_s]
+
             if shuffle:
                 #if shuffle, shuffle the rate array along axis 1
                 rate = rate[:, np.random.permutation(rate.shape[1]), :]
-
-            #downsample rate in axis 2 by 10, by taking the average of every 10 bins
-            rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
 
             pre_rate = rate[:, :split, :]
             post_rate = rate[:, split:, :]
@@ -72,8 +81,7 @@ def process_split(rec_dir, split=10, shuffle=False):
                 euc_dist_mat = pre_euc_dist_mat
             else: #concantenate pre_euc_dist_mat and post_euc_dist_mat along axis 1
                 euc_dist_mat = np.concatenate((pre_euc_dist_mat, post_euc_dist_mat), axis=0)
-            # zscore every entry of euc_dist_mat
-            #euc_dist_mat = (euc_dist_mat - np.mean(euc_dist_mat)) / np.std(euc_dist_mat)
+
             avg_euc_dist = np.mean(euc_dist_mat, axis=1) #average across bins
 
             df = pd.DataFrame({
@@ -90,15 +98,15 @@ def process_split(rec_dir, split=10, shuffle=False):
             min_post_trial = df.loc[df['splitside'] == 'post', 'taste_trial'].min() + 1
             max_post_trial = df.loc[df['splitside'] == 'post', 'taste_trial'].max() + 1
             maxlabel = str(min_post_trial) + '-' + str(max_post_trial)
-            all_df = df.groupby(['rec_dir', 'channel']).mean().reset_index()
-            all_df['splitside'] = 'both'
-            all_df['trial_group'] = '1-30'
-            df = df.groupby(['rec_dir', 'channel', 'splitside']).mean().reset_index()
+            #all_df = df.groupby(['rec_dir', 'channel']).mean().reset_index()
+            #all_df['splitside'] = 'both'
+            #all_df['trial_group'] = '1-30'
+            #df = df.groupby(['rec_dir', 'channel', 'splitside']).mean().reset_index()
             df['trial_group'] = df['splitside'].apply(lambda x: minlabel if x == 'pre' else maxlabel)
             #concatenate all_df and df
-            df = pd.concat([df, all_df], ignore_index=True)
+            # df = pd.concat([df, all_df], ignore_index=True)
             #drop taste_trial column
-            df = df.drop(columns='taste_trial')
+            #df = df.drop(columns='taste_trial')
             df_list.append(df)
     df = pd.concat(df_list, ignore_index=True)
     df = df.reset_index(drop=True)
@@ -106,9 +114,15 @@ def process_split(rec_dir, split=10, shuffle=False):
 
 def process_rec_dir(rec_dir, shuffle=False):
     splits = np.arange(30)
+    #get the 0th index, and indices 2 to -1
+    splits = np.concatenate((splits[:1], splits[2:-1]))
     dfs = [process_split(rec_dir, split, shuffle) for split in splits]
     dfs = pd.concat(dfs, ignore_index=True).reset_index(drop=True)
     return dfs
+
+import stereotypy_clustering_functions as scf
+def process_rec_dir2(rec_dir, shuffle=False):
+    itd = scf.get_avg_intertrial_distances(rec_dir)
 
 # Parallelize processing of each rec_dir
 num_cores = -1  # Use all available cores
@@ -126,9 +140,13 @@ final_df.to_pickle(save_dir + '/double_mode_stereotypy_analysis.pkl')
 #make the shuffle
 def iter_shuffle(rec_dirs, niter=100):
     def sing_iter(iternum):
-        for rec_dir in rec_dirs:
-            res = process_rec_dir(rec_dir, shuffle=True)
+        res_list = []
+        for rd in rec_dirs:
+            print('Processing rec_dir: ' + rd)
+            res = process_rec_dir(rd, shuffle=True)
             res['iternum'] = iternum
+            res_list.append(res)
+        res = pd.concat(res_list, ignore_index=True).reset_index(drop=True)
         return res
 
     dfs = Parallel(n_jobs=-1)(delayed(sing_iter)(iternum) for iternum in range(niter))
@@ -140,21 +158,22 @@ shuff_dfs.to_pickle(save_dir + '/double_mode_euc_dist_stereotypy_shuffle.pkl')
 
 #get final df from pickle
 final_df = pd.read_pickle(save_dir + '/double_mode_stereotypy_analysis.pkl')
-
-
-
+shuff_dfs = pd.read_pickle(save_dir + '/double_mode_euc_dist_stereotypy_shuffle.pkl')
 
 rec_info = proj.rec_info.copy()
 rec_info = rec_info[['exp_name', 'exp_group', 'rec_num', 'rec_dir']]
 #rename rec num to session
 rec_info = rec_info.rename(columns={'rec_num': 'session'})
-final_df = pd.merge(final_df, rec_info, on='rec_dir')
-final_df = final_df.loc[(final_df['split'] != 1) & (final_df['split'] != 29)]
-final_df['euclidean_distance'] = final_df.groupby('rec_dir')['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
 
+final_df = pd.merge(final_df, rec_info, on='rec_dir')
+final_df['euclidean_distance'] = final_df.groupby(['exp_name', 'channel'])['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
 unsplit_df = final_df.loc[final_df['splitside'] == 'both']
 split_df = final_df.loc[final_df['splitside'] != 'both']
 
+final_shuff_df = pd.merge(shuff_dfs, rec_info, on='rec_dir')
+final_shuff_df['euclidean_distance'] = final_shuff_df.groupby(['exp_name', 'channel','iternum'])['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
+unsplit_shuff_df = final_shuff_df.loc[final_shuff_df['splitside'] == 'both']
+split_shuff_df = final_shuff_df.loc[final_shuff_df['splitside'] != 'both']
 #plot the data
 
 fontsize = 20
@@ -163,10 +182,12 @@ fig, axs = plt.subplots(1, 3, figsize=(10,5), sharey=True, sharex=True)
 for session in [1,2,3]:
     ax = axs[session - 1]
     for exp_group in ['naive']:
-
-        df = unsplit_df.loc[(unsplit_df['exp_group'] == exp_group) & (unsplit_df['session'] == session)]
+        df = final_df.loc[(final_df['exp_group'] == exp_group) & (final_df['session'] == session)]
+        #df = unsplit_df.loc[(unsplit_df['exp_group'] == exp_group) & (unsplit_df['session'] == session)]
+        #shuff_df = unsplit_shuff_df.loc[(unsplit_shuff_df['exp_group'] == exp_group) & (unsplit_shuff_df['session'] == session)]
         #make a seaborn lineplot
-        sns.lineplot(x='split', y='euclidean_distance', data=df, ax=ax)
+        sns.lineplot(x='split', y='euclidean_distance', hue = 'exp_name', data=df, ax=ax)
+        #sns.lineplot(x='split', y='euclidean_distance', data=shuff_df, ax=ax, color='black', alpha=0.1)
         ax.set_title('Session ' + str(session), fontsize=fontsize)
         ax.set_xlabel('Split-trial', fontsize=fontsize)
         ax.set_ylabel('Z-scored Euc. Dist.', fontsize=fontsize)
@@ -177,7 +198,7 @@ plt.savefig(save_dir + '/double_mode_dist_vs_split.png')
 plt.savefig(save_dir + '/double_mode_dist_vs_split.svg')
 
 
-#for each grouping of split and session, find the template with the lowest euclidean distance in unsplit_df
+#%%for each grouping of split and session, find the template with the lowest euclidean distance in unsplit_df
 best_splits = unsplit_df.groupby(['session', 'split', 'exp_group'])['euclidean_distance'].mean().reset_index()
 best_splits = best_splits.loc[best_splits.groupby(['session', 'exp_group'])['euclidean_distance'].idxmin()]
 #make split zero, which is all rows of final_df where split == 0 and splitside == 'both'
@@ -270,3 +291,24 @@ fig1.savefig(save_dir + '/double_mode_split_prevspost.png')
 fig1.savefig(save_dir + '/double_mode_split_prevspost.svg')
 fig2.savefig(save_dir + '/double_mode_split_latevssing.svg')
 fig2.savefig(save_dir + '/double_mode_split_latevssing.png')
+
+#%% get the best split for each recording x taste, plot the average split for each taste
+#remove rows with nan values from unsplit_df
+unsplit_df = unsplit_df.dropna()
+best_splits = unsplit_df.loc[unsplit_df.groupby(['exp_name', 'session', 'exp_group', 'channel'])['euclidean_distance'].idxmin()]
+naive_best = best_splits.loc[best_splits['exp_group'] == 'naive']
+#convert channel to a column called 'taste', where 0 is 'Suc', 1 is 'NaCl', 2 is 'CA', 3 is 'QHCl'
+naive_best['taste'] = naive_best['channel'].map({0: 'Suc', 1: 'NaCl', 2: 'CA', 3: 'QHCl'})
+#remove channel column
+naive_best = naive_best.drop(columns='channel')
+naive_best_all = naive_best.groupby(['exp_name', 'session']).mean().reset_index()
+naive_best_all['taste'] = 'all'
+naive_best = pd.concat([naive_best, naive_best_all], ignore_index=True)
+
+channels = [0,1,2,3]
+tastes = ['all', 'Suc', 'NaCl', 'CA', 'QHCl']
+sessions = [1,2,3]
+test = sns.barplot(x='session', y='split', data=naive_best, hue='taste')
+plt.show()
+test2 = sns.barplot(x='session', y='euclidean_distance', data=naive_best, hue='taste')
+plt.show()
