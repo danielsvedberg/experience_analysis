@@ -145,9 +145,6 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
             raise Exception('paramMin or paramMax is nan')
         return paramMin, paramMax
 
-    trialMax = np.max(data[trial_col])
-    trialMin = np.min(data[trial_col])
-
     def fit_for_subject(subject, subject_data):
         if len(subject_data[trial_col]) < 2:
             print('Not enough data points to fit model for subject ' + str(subject))
@@ -163,19 +160,25 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
             trials = np.delete(trials, nan_indices)
             values = np.delete(values, nan_indices)
 
+        trialMax = np.max(trials)
+        trialMin = np.min(trials)
+        nTrials = len(trials)
+        trialRange = (trialMax - trialMin) + 1
+        trialStep = trialRange / nTrials
+        minD = trialStep + trialStep / 2
+
         valMax = np.max(values)
         valMin = np.min(values)
         aMin = valMin
         aMax = valMax
         bMax = valMax
         bMin = valMin
-        dMin = trialMin
-        dMax = trialMax
+        dMin = minD
+        dMax = trialMax - minD
         d0 = np.median(trials)
 
         dy = abs(valMax - valMin)
         dx = abs(trialMax - trialMin)
-        nTrials = len(trials)
         #if dy, dx, or nTrials are nan, raise exception
         if np.isnan(dy) or np.isnan(dx) or np.isnan(nTrials):
             print('valmax: ' + str(valMax))
@@ -438,8 +441,8 @@ def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode sta
     unique_exp_names = avg_gamma_mode_df['exp_name'].unique()
     unique_tastes = ['Suc', 'NaCl', 'CA', 'QHCl']  # avg_shuff['taste'].unique()
 
-    unique_time_groups = np.sort(avg_gamma_mode_df[time_col].unique())
-
+    #unique_time_groups = np.sort(avg_gamma_mode_df[time_col].unique())
+    unique_time_groups = [1, 2, 3]
     if use_alpha_pos == True:
         unique_alpha_pos = avg_gamma_mode_df['alpha_pos'].unique()
     n_tastes = len(unique_tastes)
@@ -925,12 +928,10 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
                  color=color, size=textsize * 0.8, rotation='vertical')
 
 #plots the bar graphs for the value col  
-def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=20, nIter=100, n_comp=1, ymin=None, ymax=None):
+def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=20, nIter=100, n_comp=1):
     if stat_col is None:
         stat_col = 'r2'
-    
-    unique_exp_groups = r2_df['exp_group'].unique()
-    unique_time_groups = r2_df['session'].unique()
+
     r2_df['session_index'] = r2_df['session'].map(session_index)
     shuff_r2_df['session_index'] = shuff_r2_df['session'].map(session_index)
     pal = sns.color_palette()
@@ -942,6 +943,8 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
     groups = ['exp_group', 'session', 'taste']
     # Get unique sessions
     sessions = shuff_r2_df['session'].unique()
+    #order sessions
+    sessions = np.sort(sessions)
     n_sessions = len(sessions)
 
     # Iterate over each session and create a subplot
@@ -985,8 +988,8 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
 
             if stat_col == 'r2':
                 ax.set_ylim(0, 1)
-            else:
-                ax.set_ylim(ymin, ymax)
+            # else:
+            #     ax.set_ylim(ymin, ymax)
             # Set the x-ticks
             ax.set_xticks(np.arange(len(tastes) + 1))
             ax.set_xticklabels(tastes + ['Combined'], rotation=60, size=textsize)
@@ -1461,7 +1464,7 @@ def plot_nonlinear_regression_stats(df3, shuff, subject_cols, group_cols, trial_
             save_flag = trial_col + '_' + value_col + '_' + flag
         else:
             save_flag = trial_col + '_' + value_col + '_' + exp_group + '_only'
-        plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2, ymin=ymin, ymax=ymax)
+        plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2)
 
 #TODO: fix issus with this:
 def get_session_differences(df3, shuff, stat_col='r2', group_cols=['exp_group', 'taste'], subject_cols = ['exp_name'], parallel=False):
@@ -1575,7 +1578,7 @@ def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_c
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    plot_r2_pval_summary(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, two_tailed=True, textsize=textsize, nIter=nIter, n_comp=2, ymin=ymin, ymax=ymax)
+    plot_r2_pval_summary(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, two_tailed=True, textsize=textsize, nIter=nIter, n_comp=2)
 
 
 def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, parallel=True, ymin=None, ymax=None, textsize=20):

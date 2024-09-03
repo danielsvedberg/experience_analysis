@@ -162,11 +162,94 @@ def plot_held_psth(group):
     plt.savefig(save_path + '.svg')
     plt.close()
 
+def plot_held_psth_split(group, save_dir): #same as plot_held_psth, but splitting up by 10 trial chunks
+    taste_map = {'Suc': 0, 'NaCl': 1, 'CA': 2, 'QHCl': 3, 'Spont':4, 0: 'Suc', 1: 'NaCl', 2: 'CA', 3: 'QHCl', 4:'Spont'}
+    session_map = {1: 0, 2: 1, 3: 2}
+    exp_group_map = {'naive': 0, 'suc_preexp': 1, 0: 'naive', 1: 'suc_preexp'}
+    dins = ["dig_in_0", "dig_in_1", "dig_in_2", "dig_in_3"]#, "dig_in_4"]
+    tastes = ['Suc', 'NaCl', 'CA', 'QHCl', 'Spont']
+    sessions = [1, 2, 3]
+    #make a subplot with 3 columns and 1 row
+    fig, axs = plt.subplots(3, 3, figsize=(12, 12), sharex=True)
+    for i, session in enumerate(sessions):
+        #for j, taste in enumerate(tastes):
+        subset = group.query('session == @session')
+        if len(subset) == 0:
+            continue
+        time_array, rate_array = h5io.get_rate_data(subset['rec_dir'].iloc[0], units=[subset['unit_name'].iloc[0]])
+        spike_array = rate_array
+        time_array = time_array[::50]
+        #get the indices of time array that are greater than -500 and less than 3000
+        tidxs = np.where((time_array >= -500) & (time_array < 2500))[0]
+        time_array = time_array[tidxs]
+        dflist = []
+        #loop throug the dictionary spike_array
+        for channel, din in enumerate(dins):
+            full_spikes = spike_array[din]
+            for chunk in [0,1,2]:
+                if chunk == 0:
+                    spikes = full_spikes[:, :10, :]
+                elif chunk == 1:
+                    spikes = full_spikes[:, 10:20, :]
+                elif chunk == 2:
+                    spikes = full_spikes[:, 20:, :]
+                else:
+                    raise ValueError('chunk must be 0, 1, or 2')
+                n_trials = spikes.shape[0]
+                reshaped_matrix = spikes.reshape(n_trials, -1, 50)
+                spikes = reshaped_matrix.mean(axis=2)
+                #spikes = gaussian_filter1d(spikes, 2, axis=1)
+                spikes = spikes[:, tidxs]
+                time_mat = np.tile(time_array, (n_trials, 1))
+                trial_array = np.arange(n_trials)
+                spikes = list(spikes)
+                time_mat = list(time_mat)
+                trial_array = trial_array.tolist()
+                df = pd.DataFrame({'spikes': spikes, 'timebin':time_mat, 'trial': trial_array, 'trial block': chunk})
+                df = df.explode(['spikes', 'timebin']).reset_index(drop=True)
+                taste = taste_map[channel]
+                df['taste'] = taste
+                dflist.append(df)
+        df = pd.concat(dflist)
+        df = df.reset_index(drop=True)
+        for chunk in [0,1,2]:
+            ax = axs[chunk, i]
+            if i == 2:
+                legend = True
+            else:
+                legend = False
+            #if len of df is 0, raise an error
+            if len(df) == 0:
+                raise ValueError('DataFrame is empty')
+            chunk_df = df.query('`trial block` == @chunk')
+            sns.lineplot(data=chunk_df, x='timebin', y='spikes', hue='taste', ax=ax, legend=legend)
+            if chunk == 0:
+                ax.set_title('Session ' + str(session), fontsize=20)
+            ax.set_xlabel('Time (ms)', fontsize=20)
+            if session == 1:
+                ax.set_ylabel('Firing rate', fontsize=20)
+            #set the x and y font size
+            ax.tick_params(axis='both', which='major', labelsize=17)
+    plt.suptitle("held unit#: " + str(group['held_unit_name'].iloc[0]))
+    #pad the subplots so the title doesn't overlap with the plots
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.825)#, right=0.95)
+    en = str(group['exp_name'].iloc[0])
+    hua = str(group['held_unit_name'].iloc[0])
+    save_name = en + '_' + hua
+    save_path = save_dir + '/' + save_name + '_unscaled'
+    plt.savefig(save_path + '.png')
+    plt.savefig(save_path + '.svg')
+    plt.close()
+
 def plot_an(an_group):
     for name, group in an_group.groupby('held_unit_name'):
+        save_dir = PA.save_dir + '/held_unit_psth'
         plot_held_psth(group)
+        save_dir = PA.save_dir + '/held_unit_psth_split'
+        plot_held_psth_split(group, save_dir)
 
-Parallel(n_jobs=-1)(delayed(plot_an)(group) for name, group in max_response.groupby('exp_name'))
+Parallel(n_jobs=-1)(delayed(plot_an)(group) for name, group in max_response.groupby('exp_name')) #TODO 09/03/24: run this
 
 #%%
 import scipy.stats as stats

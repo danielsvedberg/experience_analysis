@@ -154,6 +154,14 @@ def pipeline(df, value_col, trial_col, state_determinant):
 
         ta.plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, [subject_col], nIter=nIter, save_dir=save_dir, flag=save_flag)
 
+def get_relevant_states(df, state_determinant):
+    epoch_idx = {1: 'early', 2: 'late'}
+    df = df.loc[df[state_determinant] <= 2]
+    df['order_in_seq'] = df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
+    df = df.loc[df['order_in_seq'] <= 2]
+    #apply epoch index according to order_in_seq
+    df['epoch'] = df['order_in_seq'].map(epoch_idx)
+    return df
 
 
 proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
@@ -164,20 +172,37 @@ HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 NB_df = HA.analyze_NB_ID2(overwrite=False)
 NB_df = preprocess_NB(NB_df)
 
+#remove DS33 and DS41
+NB_df = NB_df.loc[NB_df['exp_name'] != 'DS33']
+NB_df = NB_df.loc[NB_df['exp_name'] != 'DS41']
+test = get_relevant_states(NB_df, 'taste_accuracy_rank')
+
+
+
+
 trial_col = 'taste_trial'
-state_determinant = 'valence_accuracy_rank'
+state_determinant = 'taste_accuracy_rank'
 value_col = 'p(correct valence)'
 pipeline(NB_df, value_col, trial_col, state_determinant)
+plt.close('all')
 
-trial_col = ['session_trial', 'taste_trial', 'session time']
-value_col = ['p(correct state)', 'p(correct taste)', 't(median)', 't(start)', 'duration']
-state_determinant = ['duration', 'p_correct']
-#get each unique combination of trial col, value col, and state determinant
-trial_combos = [(t, v, s) for t in trial_col for v in value_col for s in state_determinant]
+trial_col = 'taste_trial'
+state_determinant = 'taste_accuracy_rank'
+value_col = 'p(correct taste)'
+pipeline(NB_df, value_col, trial_col, state_determinant)
 
-#for each trial_combo, run the pipeline in parallel using joblib
 
-num_cores = multiprocessing.cpu_count()
-#get rid of the first
 
-Parallel(n_jobs=-1)(delayed(pipeline)(NB_df, value_col, trial_col, state_determinant) for trial_col, value_col, state_determinant in trial_combos)
+#
+# trial_col = ['session_trial', 'taste_trial', 'session time']
+# value_col = ['p(correct taste)', 't(median)', 't(start)', 'duration']
+# state_determinant = ['p(correct taste)']
+# #get each unique combination of trial col, value col, and state determinant
+# trial_combos = [(t, v, s) for t in trial_col for v in value_col for s in state_determinant]
+#
+# #for each trial_combo, run the pipeline in parallel using joblib
+#
+# num_cores = multiprocessing.cpu_count()
+# #get rid of the first
+#
+# Parallel(n_jobs=-1)(delayed(pipeline)(NB_df, value_col, trial_col, state_determinant) for trial_col, value_col, state_determinant in trial_combos)
