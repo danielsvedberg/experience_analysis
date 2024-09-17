@@ -36,6 +36,10 @@ def preprocess_NB(NB_df):
     NB_df['session time'] = NB_df['off_time']
     NB_df['t(median)'] = NB_df['t_med']
     NB_df['t(start)'] = NB_df['t_start']
+    NB_df['t(end)'] = NB_df['t_end']
+    NB_df['change in t(end)'] = NB_df['t(end)'].sub(NB_df.groupby(['taste', 'rec_dir'])['t(end)'].transform('mean'))
+    NB_df['Δ t(early-late trans.)'] = NB_df['t(end)'].sub(NB_df.groupby(['taste', 'rec_dir'])['t(end)'].transform('mean'))
+    NB_df['|Δ t(early-late trans.)|'] = NB_df['Δ t(early-late trans.)'].abs()
     return NB_df
 
 #for each group, plot the bar graphs quantifying the r2 values
@@ -125,7 +129,7 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nI
     ymax = max(r2_pred_change['pred. change'].max(), shuff_r2_pred_change['pred. change'].max())
     ta.plot_nonlinear_regression_comparison(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
 
-def pipeline(df, value_col, trial_col, state_determinant):
+def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
     print('running pipeline for ' + value_col + ' and ' + trial_col + ' and ' + state_determinant)
     analysis_folder = value_col + '_' + trial_col + '_' + state_determinant + '_nonlinear_regression'
     #check if dir exists, if not, make it
@@ -142,10 +146,20 @@ def pipeline(df, value_col, trial_col, state_determinant):
     df = df.loc[df[state_determinant] <= 2]
     df['order_in_seq'] = df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
     df = df.loc[df['order_in_seq'] <= 2]
+    if exclude_epoch is not None:
+        if exclude_epoch == 'early':
+            df = df.loc[df['order_in_seq'] != 1]
+        elif exclude_epoch == 'late':
+            df = df.loc[df['order_in_seq'] != 2]
+        else:
+            raise ValueError('exclude_epoch must be either "early" or "late"')
+
     for nm, group in df.groupby(['order_in_seq']):
         #get rid of any rows with nans value col of group
         group = group.dropna(subset=[value_col])
         epoch = epoch_idx[nm]
+
+
         save_flag = state_determinant + '_determine_' + epoch
 
         df3, shuff = ta.preprocess_nonlinear_regression(group, subject_cols=subject_col, group_cols=group_cols,
@@ -175,9 +189,6 @@ NB_df = preprocess_NB(NB_df)
 #remove DS33 and DS41
 NB_df = NB_df.loc[NB_df['exp_name'] != 'DS33']
 NB_df = NB_df.loc[NB_df['exp_name'] != 'DS41']
-test = get_relevant_states(NB_df, 'taste_accuracy_rank')
-
-
 
 
 trial_col = 'taste_trial'
@@ -191,7 +202,15 @@ state_determinant = 'taste_accuracy_rank'
 value_col = 'p(correct taste)'
 pipeline(NB_df, value_col, trial_col, state_determinant)
 
+trial_col = 'taste_trial'
+state_determinant = 'taste_accuracy_rank'
+value_col = 't(end)'
+pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='late')
 
+trial_col = 'taste_trial'
+state_determinant = 'taste_accuracy_rank'
+value_col = '|t(early:late)-x̄(t(early:late)|'
+pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='late')
 
 #
 # trial_col = ['session_trial', 'taste_trial', 'session time']

@@ -32,7 +32,7 @@ def get_trial_info(dat):
     dintrials = dintrials[['taste_trial', 'taste', 'session_trial', 'channel', 'on_time']]
     return dintrials
 
-def get_avg_intertrial_distances(rec_dir, bsln_sub=True):
+def get_avg_intertrial_distances(rec_dir, bsln_sub=True, metric = 'euclidean'):
     df_list = []
     dat = blechpy.load_dataset(rec_dir)
     dintrials = get_trial_info(dat)
@@ -55,7 +55,7 @@ def get_avg_intertrial_distances(rec_dir, bsln_sub=True):
                 binrate = rate[:, :, j] - baseline
             else:
                 binrate = rate[:, :, j]
-            euc_dist = squareform(pdist(binrate.T, metric='euclidean'))
+            euc_dist = squareform(pdist(binrate.T, metric=metric))
             it_euc_dist = np.mean(euc_dist, axis=1)
             euc_dist_mat[:, j] = it_euc_dist
 
@@ -79,10 +79,151 @@ def get_avg_intertrial_distances(rec_dir, bsln_sub=True):
     df['session_trial'] = df['session_trial'] - df['session_trial'].min()
     return df
 
+#TODO 090524: get this into something coherent I can run for the graph
+def get_neuron_intertrial_correlations(rec_dir, bsln_sub=False):
+    df_list = []
+    dat = blechpy.load_dataset(rec_dir)
+    dintrials = get_trial_info(dat)
+    #time_array, rate_array = h5io.get_rate_data(rec_dir)
+    time_array, rate_array = h5io.get_psths(rec_dir)
+    ts = 100
+    te = 3000
+    sidx = np.where(time_array >= ts)
+    eidx = np.where(time_array <= te)
+    idx = np.intersect1d(sidx, eidx)
+    bslnidx = np.where(time_array < 0)[0]
+
+
+    for din, rate in rate_array.items(): #loop through dins
+        baseline = rate[:, :, bslnidx].mean(axis=2)
+        rate = rate[:, :, idx]
+        if bsln_sub:
+            rate = rate - baseline[:, :, np.newaxis]
+
+        n_trials = rate.shape[1]
+        neuron_idx = []
+        i_indices = []
+        j_indices = []
+        corrs = []
+        pvals = []
+
+        for n in range(rate.shape[0]):  # Loop over neurons
+            for i in range(1, n_trials):
+                for j in range(i):
+                    i_indices.append(i)
+                    j_indices.append(j)
+                    rate_i = rate[n, i, :]
+                    rate_j = rate[n, j, :]
+                    corr, pval = stats.pearsonr(rate_i, rate_j)
+                    corrs.append(corr)
+                    pvals.append(pval)
+                    neuron_idx.append(n)
+
+
+        df = pd.DataFrame({
+            'correlation': corrs,
+            'pval': pvals,
+            'taste_trial': i_indices,
+            'comp_trial' : j_indices,
+            'i_trial': i_indices,
+            'j_trial': j_indices,
+            'neuron': neuron_idx})
+        df['rec_dir'] = rec_dir
+        df['channel'] = int(din[-1])  # get the din number from string din
+        df_list.append(df)
+    df = pd.concat(df_list, ignore_index=True)
+    # remove all rows where taste == 'Spont'
+    df = df.loc[df['channel'] != 4]
+    # add index info to df from dintrials using merge on taste_trial and channel
+    df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
+    # subtract the min of 'session_trial' from 'session_trial' to get the session_trial relative to the start of the recording
+    df['session_trial'] = df['session_trial'] - df['session_trial'].min()
+    return df
+
+def get_neuron_intertrialgroup_correlations(rec_dir, bsln_sub=False, chunk_size = 10):
+    df_list = []
+    dat = blechpy.load_dataset(rec_dir)
+    dintrials = get_trial_info(dat)
+    #time_array, rate_array = h5io.get_rate_data(rec_dir)
+    time_array, rate_array = h5io.get_psths(rec_dir)
+    ts = 100
+    te = 3000
+    sidx = np.where(time_array >= ts)
+    eidx = np.where(time_array <= te)
+    idx = np.intersect1d(sidx, eidx)
+    bslnidx = np.where(time_array < 0)[0]
+
+
+    for din, rate in rate_array.items(): #loop through dins
+        baseline = rate[:, :, bslnidx].mean(axis=2)
+        rate = rate[:, :, idx]
+        if bsln_sub:
+            rate = rate - baseline[:, :, np.newaxis]
+
+        n_trials = rate.shape[1]
+        # Split the second dimension into chunks, even if it isn't perfectly divisible
+        split_rate = np.array_split(rate, range(chunk_size, n_trials, chunk_size), axis=1)
+
+        # Take the mean of each chunk along the second dimension (axis=1)
+        rate = np.stack([np.mean(chunk, axis=1) for chunk in split_rate], axis=1)
+        n_chunks = rate.shape[1]
+
+        # create a list of strings called 'chunk ranges' i.e. '1-10' for the first chunk, '11-20' for the second, '21-30, etc
+        chunk_ranges = [str((i+1)*chunk_size - chunk_size+1) + '-' + str((i+1)*chunk_size) for i in range(n_chunks)]
+        #for n in range(rate.shape[0]):
+        neuron_idx = []
+        i_indices = []
+        j_indices = []
+        corrs = []
+        pvals = []
+        trial_groups = []
+        comp_trial_groups = []
+
+        for n in range(rate.shape[0]):  # Loop over neurons
+            for i in range(1, n_chunks):
+                for j in range(i):
+                    i_indices.append(i)
+                    j_indices.append(j)
+                    rate_i = rate[n, i, :]
+                    rate_j = rate[n, j, :]
+                    trial_group = chunk_ranges[j]
+                    comp_trial_group = chunk_ranges[i]
+
+                    corr, pval = stats.pearsonr(rate_i, rate_j)
+                    corrs.append(corr)
+                    pvals.append(pval)
+                    neuron_idx.append(n)
+                    trial_groups.append(trial_group)
+                    comp_trial_groups.append(comp_trial_group)
+
+
+        df = pd.DataFrame({
+            'correlation': corrs,
+            'pval': pvals,
+            'trial_group' : trial_groups,
+            'comp_trial_group' : comp_trial_groups,
+            'i_index': i_indices,
+            'j_index': j_indices,
+            'neuron': neuron_idx})
+        df['rec_dir'] = rec_dir
+        df['channel'] = int(din[-1])  # get the din number from string din
+        df_list.append(df)
+    df = pd.concat(df_list, ignore_index=True)
+    # remove all rows where taste == 'Spont'
+    df = df.loc[df['channel'] != 4]
+    # add index info to df from dintrials using merge on taste_trial and channel
+    dintrials = dintrials[['channel', 'taste']]
+    #remove duplicates from dintrials
+    dintrials = dintrials.drop_duplicates()
+    df = pd.merge(df, dintrials, on=['channel'])
+    return df
+
 
 
 def make_consensus_matrix2(rec_info, shuffle=False):
-    bins = np.arange(210, 500)
+    #bins = np.arange(210, 500)
+    tmin = 100
+    tmax = 3000
     df_list = []
     matrices = []
     names = []
@@ -93,31 +234,41 @@ def make_consensus_matrix2(rec_info, shuffle=False):
         rec_dirs = []
         names.append(name)
         consensus_matrix = np.empty((30, 30, len(group), 4))
-        consensus_matrix[:] = np.nan
-        group = group.reset_index(drop=True)
+        consensus_matrix[:] = 1
+        #group = group.reset_index(drop=True)
+
         for exp_num, row in group.iterrows():
             rec_dir = row['rec_dir']
-            time_array, rate_array = h5io.get_rate_data(rec_dir)
+            #time_array, rate_array = h5io.get_rate_data(rec_dir)
+            time_array, rate_array = h5io.get_psths(rec_dir)
+            #get indices of time array where time is between 100 and 3000
+            sidx = np.where(time_array >= tmin)
+            eidx = np.where(time_array <= tmax)
+            idx = np.intersect1d(sidx, eidx)
+            time_array = time_array[idx]
             for din, rate in rate_array.items():
                 dinnum = int(din[-1])
                 if din != 'dig_in_4':
+                    rate = rate[:, :, idx]
                     dinnums.append(dinnum)
                     # downsample rate from 7000 bins to 700 by averaging every 10 bins
-                    rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
+                    #rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
                     n_trials = rate.shape[1]
+
                     if shuffle:
                         # create a trial index that is resampled with replacement
                         trial_index = np.arange(n_trials)
                         resampled_index = np.random.choice(trial_index, size=n_trials, replace=True)
                         # recreate rate with resampled index
                         rate = rate[:, resampled_index, :]
-                    # zscore the rate
-                    rate = (rate - np.mean(rate)) / np.std(rate)
+                    # # zscore the rate
+                    # rate = (rate - np.nanmean(rate)) / np.nanstd(rate)
+                    # rate = rate[:, :, idx]
 
                     #create empty distance matrix
-                    dms = np.zeros((n_trials, n_trials, len(bins)))
-                    for b, bn in enumerate(bins):
-                        X = rate[:, :, bn].T
+                    dms = np.zeros((n_trials, n_trials, len(time_array)))
+                    for b, bn in enumerate(time_array):
+                        X = rate[:, :, b].T
                         dms[:,:,b] = squareform(pdist(X, metric=average_difference))
 
                     dm = np.mean(dms, axis=2)
@@ -132,6 +283,8 @@ def make_consensus_matrix2(rec_info, shuffle=False):
 
                     best_score = -1
                     cluster_labels = None
+
+
                     for t in np.linspace(min_t, max_t, 1000):
                         clabs = fcluster(linkages, t=t, criterion='distance')
                         if (len(np.unique(clabs)) > 1) and (len(np.unique(clabs)) < len(rate)):
@@ -156,6 +309,7 @@ def make_consensus_matrix2(rec_info, shuffle=False):
         cluster_dict = {'channel': dinnums, 'top_branch_dist': top_branch_dist}
         cluster_df = pd.DataFrame(cluster_dict)
         cluster_df['cluster_labels'] = cluster_arrays
+
         cluster_df['exp_group'] = name[0]
         cluster_df['session'] = name[1]
         cluster_df['rec_dir'] = rec_dirs

@@ -28,5 +28,3 @@ NB_meta,NB_decode,NB_best,NB_timings = HA.analyze_NB_ID(overwrite=False, multi_p
 ov = HA.get_hmm_overview(overwrite=False) #get the hmm_overview dataframe
 sorted = HA.sort_hmms_by_AIC(overwrite=False) #get hmm_overview sorted by best AIC
 best = HA.get_best_hmms(sorting='best_AIC', overwrite=False) #get rows of hmm_overview where sorting column==sorting arugument
-
-

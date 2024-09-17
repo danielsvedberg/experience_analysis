@@ -26,7 +26,7 @@ if not os.path.exists(save_dir):
 matrices, names, df = scf.make_consensus_matrix2(rec_info)
 
 shuff_dir = PA.save_dir + os.sep + 'clustering_analysis/shuffles'
-shuff_matrices,shuff_names_df,shuff_dfs = scf.make_consensus_matrix_shuffle(rec_info, n_iter=100, overwrite=False, save_dir=shuff_dir)
+shuff_matrices,shuff_names_df,shuff_dfs = scf.make_consensus_matrix_shuffle(rec_info, n_iter=1000, overwrite=True, save_dir=shuff_dir)
 
 scf.plot_correlation_matrices(matrices, names, save=True, save_dir=save_dir)
 scf.plot_heirarchical_clustering(matrices, names, save=True, save_dir=save_dir)
