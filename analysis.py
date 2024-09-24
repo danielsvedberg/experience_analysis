@@ -161,7 +161,7 @@ class ProjectAnalysis(object):
         if change_dirs:
             proj = self.project
             rec_info = proj.get_rec_info()
-            rec_info = ['rec_name', 'rec_dir']
+            rec_info = rec_info[['rec_name', 'rec_dir']]
             #replace rec_dir in all_units and held_df with rec_dir in rec_info along rec_name
             #first remove rec_dir from all_units and held_df
             all_units = all_units.drop(columns=['rec_dir'])
