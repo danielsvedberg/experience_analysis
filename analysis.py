@@ -168,6 +168,7 @@ class ProjectAnalysis(object):
             all_units = pd.merge(all_units, rec_info, on='rec_name', how='left')
             held_df = held_df.drop(columns=['rec_dir'])
             held_df = pd.merge(held_df, rec_info, on='rec_name', how='left')
+            self.write_unit_info(all_units=all_units, held_df=held_df)
 
         if 'time_group' not in all_units.columns or overwrite == True:
             all_units = apply_groups_from_proj(all_units, self.project)
