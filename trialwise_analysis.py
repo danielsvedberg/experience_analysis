@@ -430,7 +430,7 @@ def get_shuff_pvals(shuff, r2_df, groups=['exp_group', 'exp_name', 'taste', 'ses
 
 exp_group_index = {'naive': 0, 'suc_preexp': 1, 'sucrose preexposed': 1, 'sucrose pre-exposed': 1}
 taste_index = {'Suc': 0, 'NaCl': 1, 'CA': 2, 'QHCl': 3}
-session_index = {1: 0, 2: 1, 3: 2}
+#session_index = {1: 0, 3: 1} #2: 1, 3: 2}
 unique_tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
 
 #plot line graphs of each fit for each animal
@@ -450,11 +450,14 @@ def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode sta
     n_exp_groups = len(unique_exp_groups)
     pal = sns.color_palette()
     colmap = {}
+    n_time_groups = len(unique_time_groups)
+    width = 2*n_time_groups + 2
+
     for i, exp in enumerate(unique_exp_names):
         colmap[exp] = i
     def plot_ind_fit(df):
 
-        fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=False, figsize=(8, 12))
+        fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=False, figsize=(width, 12))
         for i, taste in enumerate(unique_tastes):
             for j, time_group in enumerate(unique_time_groups):
                 subset = df[(df['taste'] == taste) & (df[time_col] == time_group)]
@@ -527,6 +530,15 @@ def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode sta
 def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode state)', model_col='modeled',
                       time_col='time_group', save_dir=None, use_alpha_pos=True, dotalpha=0.05, flag=None, nIter=100, r2df=None):
     # sort avg_gamma_mode_df by exp_group, time_group, taste, mapping the order
+    sessions = avg_gamma_mode_df[time_col].unique()
+    n_sessions = len(sessions)
+    session_idx = np.arange(n_sessions)
+    #turn all session values into integers
+    session_idx = session_idx.astype(int)
+    #make a dictionary mapping session to index
+    session_index = dict(zip(sessions, session_idx))
+
+
     avg_gamma_mode_df['session_index'] = avg_gamma_mode_df[time_col].map(session_index)
     avg_gamma_mode_df['taste_index'] = avg_gamma_mode_df['taste'].map(taste_index)
     avg_gamma_mode_df['exp_group_index'] = avg_gamma_mode_df['exp_group'].map(exp_group_index)
@@ -549,11 +561,16 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
     colmap = {}
     for i, grp in enumerate(unique_exp_groups):
         colmap[grp] = i
-    # upper_y_bound = avg_gamma_mode_df[dat_col].max()
-    # lower_y_bound = avg_gamma_mode_df[dat_col].min()
+    ymax = avg_gamma_mode_df[dat_col].max()
+    ymin = avg_gamma_mode_df[dat_col].min()
+    bound01 = False
+    if ymax <= 1 and ymin >= 0:
+        bound01 = True
 
+
+    plotwidth = 3*n_time_groups + 1
     def plot_ind_fit(df):
-        fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=True, figsize=(10, 10))
+        fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=True, figsize=(plotwidth, 10))
         for i, taste in enumerate(unique_tastes):
             for j, time_group in enumerate(unique_time_groups):
                 ax = axes[i, j]
@@ -595,7 +612,8 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
                         scatter = ax.plot(row[trial_col], row[dat_col], 'o', alpha=dotalpha, color=color,
                                           mfc='none')
                     line = ax.plot(unique_trials, model_mean, alpha=0.9, color=color)
-                    # ax.set_ylim(lower_y_bound, upper_y_bound)
+                    if bound01:
+                        ax.set_ylim(0, 1)
 
                     if i == 0 and j == 0:
                         legend_handle = mlines.Line2D([], [], color=color, marker='o', linestyle='None',
@@ -630,18 +648,6 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
     else:
         save_str = model_col + '_' + trial_col + '_' + 'summary.svg'
 
-    # if use_alpha_pos:
-    #     for m, alpha_pos in enumerate(unique_alpha_pos):
-    #         data = avg_gamma_mode_df[avg_gamma_mode_df['alpha_pos'] == alpha_pos]
-    #         fig, axes = plot_ind_fit(data)
-    #         if save_dir is not None:
-    #             if alpha_pos == True:
-    #                 alpha_lab = 'pos'
-    #             else:
-    #                 alpha_lab = 'neg'
-    #             savename = '/' + alpha_lab + '_' + save_str
-    #             plt.savefig(save_dir + savename)
-    # else:
     fig, axes = plot_ind_fit(avg_gamma_mode_df)
     if save_dir is not None:
         savename = '/' + save_str
@@ -723,6 +729,19 @@ def plot_shuff(ax, group, trials, color, linestyle):
 def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(mode state)', time_col='session',
                           save_dir=None, use_alpha_pos=False, dotalpha=0.1, textsize=20, flag=None, nIter=100,
                           parallel=True, r2df=None, ymin=None, ymax=None):
+    bound01 = False
+    if ymin is not None and ymax is not None:
+        if ymin <= 1 and ymax >= 0:
+            bound01 = True
+
+
+    sessions = df[time_col].unique()
+    n_sessions = len(sessions)
+    session_idx = np.arange(n_sessions)
+    # turn all session values into integers
+    session_idx = session_idx.astype(int)
+    # make a dictionary mapping session to index
+    session_index = dict(zip(sessions, session_idx))
 
     # get the 97.5 and 2.5 percentile of df[dat_col], assign them to ymax and ymin
     ntiles = df[dat_col].quantile([0.01, 0.99])
@@ -758,8 +777,8 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
     def make_grid_plot(plot_df, shuff_plot_df, textsize=textsize):
         plot_df = add_indices(plot_df)
         shuff_plot_df = add_indices(shuff_plot_df)
-
-        fig, axes = plt.subplots(1, n_time_groups, sharex=True, sharey=True, figsize=(10, 4))
+        plotwidth = 3*n_time_groups + 1
+        fig, axes = plt.subplots(1, n_time_groups, sharex=True, sharey=True, figsize=(plotwidth, 4))
         legend_handles = []
         # plot shuffled data:
         for nm, group in shuff_plot_df.groupby([time_col, 'session_index', 'exp_group', 'exp_group_index']):
@@ -793,6 +812,8 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
             ax.set_title(label, rotation=0, size=textsize)
             ax.set_xlabel(trial_col, size=textsize, labelpad=0.1)
             ax.xaxis.set_tick_params(labelsize=textsize * 0.85)
+            if bound01:
+                ax.set_ylim(0, 1)
             # ax.set_ylim(ymin, ymax)
         # make y label "avg" + dat_col
         ax = axes[0]
@@ -926,12 +947,20 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
     # print the p-value above the bar
     ax.text(bar_pos + 0.1, ci_upper + 0.01, p_val_str, ha='center', va='bottom',
                  color=color, size=textsize * 0.8, rotation='vertical')
+    # print the actual p value rounded to 3 decimal places below the star
+    ax.text(bar_pos + 0.1, ci_upper - 0.01, str(round(p_val, 3)), ha='center', va='top', rotation='vertical')
 
 #plots the bar graphs for the value col  
 def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=20, nIter=100, n_comp=1):
     if stat_col is None:
         stat_col = 'r2'
-
+    sessions = r2_df['session'].unique()
+    n_sessions = len(sessions)
+    session_idx = np.arange(n_sessions)
+    # turn all session values into integers
+    session_idx = session_idx.astype(int)
+    # make a dictionary mapping session to index
+    session_index = dict(zip(sessions, session_idx))
     r2_df['session_index'] = r2_df['session'].map(session_index)
     shuff_r2_df['session_index'] = shuff_r2_df['session'].map(session_index)
     pal = sns.color_palette()
@@ -951,9 +980,10 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
     exp_groups = r2_df['exp_group'].unique()
     # Width of each bar
     bar_width = 0.75
+    plotwidth = 3*n_sessions + 1
     for k, exp_group in enumerate(exp_groups):
         # Set up the subplots
-        fig, axes = plt.subplots(1, n_sessions, figsize=(10, 5), sharey=True)
+        fig, axes = plt.subplots(1, n_sessions, figsize=(plotwidth, 5), sharey=True)
         for i, session in enumerate(sessions):
             ax = axes[i]
             # Plot bars for each taste
@@ -1057,7 +1087,10 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
     for k, exp_group in enumerate(exp_groups):
         fig, axes = plt.subplots(1, n_diffs, figsize=(10, 4), sharey=True)
         for i, sess_diff in enumerate(sess_diffs):
-            ax = axes[i]
+            if n_diffs == 1:
+                ax = axes
+            else:
+                ax = axes[i]
         # Plot bars for each taste
             for j, taste in enumerate(tastes):
                 r2_data = r2_diffs[(r2_diffs['exp_group'] == exp_group) & (r2_diffs['Session Difference'] == sess_diff) & (r2_diffs['taste'] == taste)][diff_col]
@@ -1091,18 +1124,25 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
             ax.set_xticks(np.arange(len(tastes) + 1))
             ax.set_xticklabels(tastes + ['Combined'], rotation=60, size=textsize)
             ax.xaxis.set_tick_params(labelsize=textsize * 0.9)
-
-        for ax, col in zip(axes, sess_diffs):
-            label = 'sessions ' + str(col)
-            ax.set_title(label, rotation=0, size=textsize)
+        if n_diffs > 1:
+            for ax, col in zip(axes, sess_diffs):
+                label = 'sessions ' + str(col)
+                ax.set_title(label, rotation=0, size=textsize)
+        else:
+            label = 'sessions ' + str(sess_diffs[0])
+            axes.set_title(label, rotation=0, size=textsize)
 
         handles = [mlines.Line2D([], [], color='gray', marker='s', linestyle='None', label='trial-shuffle 95% CI')]
         handles.append(mlines.Line2D([], [], color=pal[colmap[exp_group]], marker='s', linestyle='None', label='avg. of models'))
 
-        # Add the legend to the figure
-        axes[-1].legend(handles=handles, loc='best', fontsize=textsize * 0.8)
         lab = '$\Delta $ ' + stat_col
-        axes[0].set_ylabel(lab, size=textsize)
+        # Add the legend to the figure
+        if n_diffs > 1:
+            axes[-1].legend(handles=handles, loc='best', fontsize=textsize * 0.8)
+            axes[0].set_ylabel(lab, size=textsize)
+        else:
+            axes.legend(handles=handles, loc='best', fontsize=textsize * 0.8)
+            axes.set_ylabel(lab, size=textsize)
         plt.subplots_adjust(**default_margins)
 
     ####################################################################################################
@@ -1127,6 +1167,14 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
         ymin = min(shuff_r2_df[stat_col].min(), r2_df[stat_col].min())
     if ymax is None:
         ymax = max(shuff_r2_df[stat_col].max(), r2_df[stat_col].max())
+
+    sessions = r2_df['session'].unique()
+    n_sessions = len(sessions)
+    session_idx = np.arange(n_sessions)
+    # turn all session values into integers
+    session_idx = session_idx.astype(int)
+    # make a dictionary mapping session to index
+    session_index = dict(zip(sessions, session_idx))
 
     unique_exp_groups = r2_df['exp_group'].unique()
     unique_time_groups = r2_df['session'].unique()
@@ -1228,7 +1276,8 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
     n_sessions = len(sessions)
 
     # Set up the subplots
-    fig, axes = plt.subplots(1, n_sessions, figsize=(10, 4), sharey=True)
+    plotwidth = 3*n_sessions + 1
+    fig, axes = plt.subplots(1, n_sessions, figsize=(plotwidth, 4), sharey=True)
     # Iterate over each session and create a subplot
     exp_groups = r2_df['exp_group'].unique()
     # Width of each bar
@@ -1336,8 +1385,9 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
     buffer = range * 0.05
     xmin = xmin - buffer
     xmax = xmax + buffer
-
-    fig, axes = plt.subplots(4, 3, sharex=True, sharey=True, figsize=(10, 10))
+    n_time_groups = len(unique_time_groups)
+    plotwidth = n_time_groups * 3 + 1
+    fig, axes = plt.subplots(4, n_time_groups, sharex=True, sharey=True, figsize=(plotwidth, 10))
     # Iterate over each combination of taste and time_group
     legend_handles = []
     for i, taste in enumerate(unique_tastes):
@@ -1362,6 +1412,7 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
                 # print the p-value with the color code
                 pvaltext = "p = " + str(np.round(pval, 3))
                 ax.text(0.95, textpos - 0.2, pvaltext, transform=ax.transAxes, color=color, horizontalalignment='right')
+
                 r2text = "r2 = " + str(np.round(row['r2'], 3))
                 ax.text(0.95, textpos, r2text, transform=ax.transAxes, color=color, horizontalalignment='right')
                 if i == 0 and j == 0:
@@ -1583,6 +1634,7 @@ def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_c
 
 def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, parallel=True, ymin=None, ymax=None, textsize=20):
     groups = [subject_cols] + group_cols
+
     if ymin is None:
         ymin = min(df3[value_col])
     if ymax is None:

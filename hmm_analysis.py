@@ -883,7 +883,12 @@ def sort_hmms(df, required_params=None):
 def get_hmm_h5(rec_dir):
     tmp = glob.glob(rec_dir + os.sep + '**' + os.sep + '*HMM_Analysis.hdf5', recursive=True)
     if len(tmp)>1:
-        raise ValueError(str(tmp))
+        #remove any string in list tmp that contains the substring 'old'
+        tmp = [x for x in tmp if 'old' not in x]
+        #if there are still multiple files, raise an error
+        if len(tmp)>1:
+            raise ValueError(str(tmp))
+
 
     if len(tmp) == 0:
         return None
@@ -1126,11 +1131,16 @@ def NB_classify_rec(group, units, label_col='taste'):
         h5 = get_hmm_h5(rec_dir)
         hmm, _, _ = ph.load_hmm_from_hdf5(h5, row['hmm_id'])
 
-        for i in range(hmm.n_states):
-            label = row[label_col] + '_' + str(i)
-            tmp_r, tmp_trials , start, end = get_state_firing_rates(row['rec_dir'], row['hmm_id'], i, units=un, other_state=None,
+        for j in range(hmm.n_states):
+            label = row[label_col] + '_' + str(j)
+            tmp_r, tmp_trials , start, end = get_state_firing_rates(row['rec_dir'], row['hmm_id'], j, units=un, other_state=None,
                                                        remove_baseline=False)
-            tmp_id = [(rec_dir, row['hmm_id'], row[label_col], x, i, channel) for x in tmp_trials]
+            # calculate the average time of the state using start, end
+            avg_start = np.mean(start)
+            if avg_start < 0:
+                label = 'prestim'
+
+            tmp_id = [(rec_dir, row['hmm_id'], row[label_col], x, j, channel) for x in tmp_trials]
             # for each index in dim 0 of tmp_r, append the label and id
             trials.extend(tmp_trials)
             rates.extend(tmp_r)
@@ -1138,7 +1148,7 @@ def NB_classify_rec(group, units, label_col='taste'):
             state_ends.extend(end)
             identifiers.extend(tmp_id)
             if len(tmp_r) != 0:
-                for j in range(tmp_r.shape[0]):
+                for k in range(tmp_r.shape[0]):
                     labels.append(label)
 
     # bind rates along dim 0
@@ -1171,7 +1181,7 @@ def NB_classify_rec(group, units, label_col='taste'):
         NB_res[['taste_pred', 'state_pred']] = NB_res['Y_pred'].str.split('_', expand=True)
         #make a column called 'p_correct' where for each row, is the value in the column with a name matching the entry in 'Y' for that row
         NB_res['p_state_correct'] = NB_res.lookup(NB_res.index, NB_res['Y'])
-        for i in ['Suc', 'NaCl', 'CA', 'QHCl']:
+        for i in ['prestim','Suc', 'NaCl', 'CA', 'QHCl']:
             #create a column using the name of i, where for each row, the value is the sum of the columns containing the string i
             NB_res[i] = NB_res.filter(like=i).sum(axis=1)
         NB_res['p_taste_correct'] = NB_res.lookup(NB_res.index, NB_res['taste'])

@@ -129,6 +129,41 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nI
     ymax = max(r2_pred_change['pred. change'].max(), shuff_r2_pred_change['pred. change'].max())
     ta.plot_nonlinear_regression_comparison(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
 
+def get_relevant_states(df, state_determinant, exclude_epoch=None):
+    #remove all rows where Y == 'prestim'
+    df = df.loc[df['Y'] != 'prestim']
+    #remove all rows where duration is less than 100
+    df = df.loc[df['duration'] >= 100]
+    #remove all rows where t_start is greater than 2500
+    df = df.loc[df['t_start'] <= 2000]
+    df = df.loc[df['t_end'] >= 200] #remove all rows where t_end is less than 100
+    epoch_idx = {1: 'early', 2: 'late'}
+    #rerank early_df by state_determinant for each taste, rec_dir, and taste_trial
+    df[state_determinant] = df.groupby(['taste', 'rec_dir','taste_trial'])[state_determinant].rank(ascending=False)
+
+    df = df.loc[df[state_determinant] <= 2]
+    df['order_in_seq'] = df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
+    df = df.loc[df['order_in_seq'] <= 2]
+    # apply epoch index according to order_in_seq
+    df['epoch'] = df['order_in_seq'].map(epoch_idx)
+    #for each grouping of rec_dir, taste, and taste_trial, check if there is just one state
+    #if the group just has one row, check if t_start is greater than 1000
+    #if it is, reassign 'epoch' to 'late'
+    for nm, group in df.groupby(['taste', 'rec_dir', 'taste_trial']):
+        if len(group) == 1:
+            if group['t(start)'].values[0] > 1000:
+                df.loc[(df['taste'] == nm[0]) & (df['rec_dir'] == nm[1]) & (df['taste_trial'] == nm[2]), 'epoch'] = 'late'
+
+    if exclude_epoch is not None:
+        if exclude_epoch == 'early':
+            df = df.loc[df['epoch'] != 'early']
+        elif exclude_epoch == 'late':
+            df = df.loc[df['epoch'] != 'late']
+        else:
+            raise ValueError('exclude_epoch must be either "early" or "late"')
+
+    return df
+
 def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
     print('running pipeline for ' + value_col + ' and ' + trial_col + ' and ' + state_determinant)
     analysis_folder = value_col + '_' + trial_col + '_' + state_determinant + '_nonlinear_regression'
@@ -142,17 +177,6 @@ def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
 
     subject_col = 'exp_name'
     group_cols=['exp_group', 'session', 'taste']
-
-    df = df.loc[df[state_determinant] <= 2]
-    df['order_in_seq'] = df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
-    df = df.loc[df['order_in_seq'] <= 2]
-    if exclude_epoch is not None:
-        if exclude_epoch == 'early':
-            df = df.loc[df['order_in_seq'] != 1]
-        elif exclude_epoch == 'late':
-            df = df.loc[df['order_in_seq'] != 2]
-        else:
-            raise ValueError('exclude_epoch must be either "early" or "late"')
 
     for nm, group in df.groupby(['order_in_seq']):
         #get rid of any rows with nans value col of group
@@ -168,34 +192,13 @@ def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
 
         ta.plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, [subject_col], nIter=nIter, save_dir=save_dir, flag=save_flag)
 
-def get_relevant_states(df, state_determinant):
-    epoch_idx = {1: 'early', 2: 'late'}
-    df = df.loc[df[state_determinant] <= 2]
-    df['order_in_seq'] = df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
-    df = df.loc[df['order_in_seq'] <= 2]
-    #apply epoch index according to order_in_seq
-    df['epoch'] = df['order_in_seq'].map(epoch_idx)
-    return df
-
-
 proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
 ###Process state coding
-NB_df = HA.analyze_NB_ID2(overwrite=False)
+NB_df = HA.analyze_NB_ID2(overwrite=True)
 NB_df = preprocess_NB(NB_df)
-
-#remove DS33 and DS41
-NB_df = NB_df.loc[NB_df['exp_name'] != 'DS33']
-NB_df = NB_df.loc[NB_df['exp_name'] != 'DS41']
-
-
-trial_col = 'taste_trial'
-state_determinant = 'taste_accuracy_rank'
-value_col = 'p(correct valence)'
-pipeline(NB_df, value_col, trial_col, state_determinant)
-plt.close('all')
 
 trial_col = 'taste_trial'
 state_determinant = 'taste_accuracy_rank'
@@ -204,13 +207,21 @@ pipeline(NB_df, value_col, trial_col, state_determinant)
 
 trial_col = 'taste_trial'
 state_determinant = 'taste_accuracy_rank'
-value_col = 't(end)'
+value_col = 't(start)'
 pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='late')
 
 trial_col = 'taste_trial'
 state_determinant = 'taste_accuracy_rank'
-value_col = '|t(early:late)-x̄(t(early:late)|'
-pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='late')
+value_col = 'p(correct valence)'
+pipeline(NB_df, value_col, trial_col, state_determinant)
+plt.close('all')
+
+
+#
+# trial_col = 'taste_trial'
+# state_determinant = 'taste_accuracy_rank'
+# value_col = '|t(early:late)-x̄(t(early:late)|'
+# pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='late')
 
 #
 # trial_col = ['session_trial', 'taste_trial', 'session time']

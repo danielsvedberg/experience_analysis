@@ -91,9 +91,6 @@ final_df = pd.concat(final_dfs, ignore_index=True)
 # merge in rec_info into final_df
 final_df = pd.merge(final_df, rec_info, on='rec_dir')
 final_df['session'] = final_df['rec_num']
-#remove DS33 and DS41
-final_df = final_df.loc[final_df['exp_name'] != 'DS33']
-final_df = final_df.loc[final_df['exp_name'] != 'DS41']
 
 subject_cols = ['exp_name']
 group_cols = ['exp_group', 'session', 'taste']
@@ -106,15 +103,16 @@ if not os.path.exists(save_dir):
     os.makedirs(save_dir)
     print('Created directory:', save_dir)
 nIter = 10000
+#remove session 2
+final_df = final_df.loc[final_df['rec_num'] != 2]
 preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, subject_cols, group_cols, trial_col, value_col,
-                                                       nIter=nIter, save_dir=save_dir, overwrite=True)
+                                                       nIter=nIter, save_dir=save_dir, overwrite=False)
 ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, group_cols, subject_cols, nIter=nIter, save_dir=save_dir)
 
 ta.plot_fits(preprodf, trial_col='taste_trial', dat_col='euclidean_distance', save_dir=save_dir,
              time_col='session')
 
 ###baseline sub version
-
 folder = 'dist_to_avg_stereotypy_bsln_sub'
 proj_save_dir = PA.save_dir
 save_dir = proj_save_dir + os.sep + folder
@@ -128,9 +126,6 @@ final_df = pd.concat(final_dfs, ignore_index=True)
 # merge in rec_info into final_df
 final_df = pd.merge(final_df, rec_info, on='rec_dir')
 final_df['session'] = final_df['rec_num']
-#remove DS33 and DS41
-final_df = final_df.loc[final_df['exp_name'] != 'DS33']
-final_df = final_df.loc[final_df['exp_name'] != 'DS41']
 subject_cols = ['exp_name']
 group_cols = ['exp_group', 'session', 'taste']
 trial_col = 'taste_trial'

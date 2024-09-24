@@ -148,11 +148,12 @@ max_trials = max_trials.rename(columns={'taste_trial': 'max_trial'})
 final_df = pd.merge(final_df, max_trials, on=['rec_dir', 'channel'])
 final_df = final_df.loc[final_df['max_trial'] - final_df['split'] > 1]
 final_df = final_df.loc[final_df['split'] != 2]
-final_df['Z(euc dist)'] = final_df.groupby(['rec_dir','channel'])['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
-unsplit = final_df.loc[final_df['split'] == 0]
-splitzero = unsplit.groupby(['exp_name', 'channel', 'session', 'exp_group']).mean().reset_index()
-final_df = pd.merge(final_df, splitzero, on=['exp_name', 'channel', 'session', 'exp_group'], suffixes=('', '_splitzero'))
-final_df['net_euc_dist'] = final_df['euclidean_distance']/final_df['euclidean_distance_splitzero']
+final_df['Z(Euc dist)'] = final_df.groupby(['rec_dir'])['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
+#final_df['Z(euc dist)'] = final_df.groupby(['rec_dir'])['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
+# unsplit = final_df.loc[final_df['split'] == 0]
+# splitzero = unsplit.groupby(['exp_name', 'channel', 'session', 'exp_group']).mean().reset_index()
+# final_df = pd.merge(final_df, splitzero, on=['exp_name', 'channel', 'session', 'exp_group'], suffixes=('', '_splitzero'))
+# final_df['net_euc_dist'] = final_df['euclidean_distance']/final_df['euclidean_distance_splitzero']
 
 
 #preprocess the shuffle ################################################################################################
@@ -166,11 +167,11 @@ max_trials = max_trials.rename(columns={'taste_trial': 'max_trial'})
 final_shuff_df = pd.merge(final_shuff_df, max_trials, on=['rec_dir', 'channel'])
 final_shuff_df = final_shuff_df.loc[final_shuff_df['max_trial'] - final_shuff_df['split'] > 1]
 final_shuff_df = final_shuff_df.loc[final_shuff_df['split'] != 2]
-final_shuff_df['Z(euc dist)'] = final_shuff_df.groupby(['rec_dir','channel','iternum'])['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
-unsplit_shuff = final_shuff_df.loc[final_shuff_df['split'] == 0]
-splitzero_shuff = unsplit_shuff.groupby(['exp_name', 'channel', 'session', 'exp_group', 'iternum']).mean().reset_index()
-final_shuff_df = pd.merge(final_shuff_df, splitzero_shuff, on=['exp_name', 'channel', 'session', 'exp_group', 'iternum'], suffixes=('', '_splitzero'))
-final_shuff_df['net_euc_dist'] = final_shuff_df['euclidean_distance']/final_shuff_df['euclidean_distance_splitzero']
+final_shuff_df['Z(Euc dist)'] = final_shuff_df.groupby(['rec_dir', 'channel','iternum'])['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
+# unsplit_shuff = final_shuff_df.loc[final_shuff_df['split'] == 0]
+# splitzero_shuff = unsplit_shuff.groupby(['exp_name', 'channel', 'session', 'exp_group', 'iternum']).mean().reset_index()
+# final_shuff_df = pd.merge(final_shuff_df, splitzero_shuff, on=['exp_name', 'channel', 'session', 'exp_group', 'iternum'], suffixes=('', '_splitzero'))
+# final_shuff_df['net_euc_dist'] = final_shuff_df['euclidean_distance']/final_shuff_df['euclidean_distance_splitzero']
 
 #for each split in avg_df, for each grouping of rec_dir and channel, get the difference between the real euclidean distance and the shuffled euclidean distance for that grouping
 #first, get the average shuffled euclidean distance for each split:
@@ -179,16 +180,26 @@ iteravgshuff = final_shuff_df.groupby(['exp_name', 'channel', 'session', 'exp_gr
 final_df = pd.merge(final_df, iteravgshuff, on=['exp_name', 'channel', 'session', 'exp_group', 'split', 'taste_trial'], suffixes=('', '_shuff'))
 final_shuff_df = pd.merge(final_shuff_df, iteravgshuff, on=['exp_name', 'channel', 'session', 'exp_group', 'split', 'taste_trial'], suffixes=('', '_shuff'))
 
-final_df['euc_dist_shuffnorm'] = final_df['euclidean_distance']/final_df['euclidean_distance_shuff']
-final_df['Z(euc_dist_shuffnorm)'] = final_df.groupby(['rec_dir','channel'])['euc_dist_shuffnorm'].transform(lambda x: (x - x.mean()) / x.std())
-final_shuff_df['euc_dist_shuffnorm'] = final_shuff_df['euclidean_distance']/final_shuff_df['euclidean_distance_shuff']
-final_shuff_df['Z(euc_dist_shuffnorm)'] = final_shuff_df.groupby(['rec_dir','channel','iternum'])['euc_dist_shuffnorm'].transform(lambda x: (x - x.mean()) / x.std())
+final_df['euc_dist_shuffnorm'] = final_df['euclidean_distance']-final_df['euclidean_distance_shuff']
+final_df['Z(euc_dist_shuffnorm)'] = final_df.groupby(['rec_dir', 'channel'])['euc_dist_shuffnorm'].transform(lambda x: (x - x.mean()) / x.std())
+final_shuff_df['euc_dist_shuffnorm'] = final_shuff_df['euclidean_distance']-final_shuff_df['euclidean_distance_shuff']
+final_shuff_df['Z(euc_dist_shuffnorm)'] = final_shuff_df.groupby(['rec_dir', 'channel', 'iternum'])['euc_dist_shuffnorm'].transform(lambda x: (x - x.mean()) / x.std())
 
 unsplit = final_df.loc[final_df['split'] == 0]
 splitzero = unsplit.groupby(['exp_name', 'channel', 'session', 'exp_group']).mean().reset_index()
+final_df = pd.merge(final_df, splitzero, on=['exp_name', 'channel', 'session', 'exp_group'], suffixes=('', '_splitzero'))
+final_df['euc_dist_zeronorm'] = final_df['euclidean_distance']-final_df['euclidean_distance_splitzero']
+final_df['Z(euc_dist_zeronorm)'] = final_df.groupby(['rec_dir', 'channel'])['euc_dist_zeronorm'].transform(lambda x: (x - x.mean()) / x.std())
+final_df['euc_dist_splitzero-shuff'] = final_df['euclidean_distance_splitzero']-final_df['euclidean_distance_shuff']
+unsplit = final_df.loc[final_df['split'] == 0]
 final_df = final_df.loc[final_df['split'] != 0]
+
 unsplit_shuff = final_shuff_df.loc[final_shuff_df['split'] == 0]
 splitzero_shuff = unsplit_shuff.groupby(['exp_name', 'channel', 'session', 'exp_group', 'iternum']).mean().reset_index()
+final_shuff_df = pd.merge(final_shuff_df, splitzero_shuff, on=['exp_name', 'channel', 'session', 'exp_group', 'iternum'], suffixes=('', '_splitzero'))
+final_shuff_df['euc_dist_zeronorm'] = final_shuff_df['euclidean_distance']-final_shuff_df['euclidean_distance_splitzero']
+final_shuff_df['Z(euc_dist_zeronorm)'] = final_shuff_df.groupby(['rec_dir', 'channel', 'iternum'])['euc_dist_zeronorm'].transform(lambda x: (x - x.mean()) / x.std())
+unsplit_shuff = final_shuff_df.loc[final_shuff_df['split'] == 0]
 final_shuff_df = final_shuff_df.loc[final_shuff_df['split'] != 0]
 
 
@@ -200,8 +211,20 @@ avg_shuff_df = final_shuff_df.groupby(['exp_name', 'channel', 'split', 'session'
 #get the average euclidean distance for split == 0
 shuffsplitzero = unsplit_shuff.groupby(['exp_name', 'channel', 'session', 'exp_group']).mean().reset_index()
 
-best_split_df = avg_df.loc[avg_df.groupby(['exp_name', 'session', 'exp_group', 'channel'])['net_euc_dist'].idxmin()]
+best_split_df = avg_df.loc[avg_df.groupby(['exp_name', 'session', 'exp_group', 'channel'])['euclidean_distance'].idxmin()]
+best_split_df['Z(euc_dist - shuff)'] = best_split_df.groupby(['exp_name', 'session', 'channel'])['euc_dist_shuffnorm'].transform(lambda x: (x - x.mean()) / x.std())
 best_shuff = avg_shuff_df.loc[avg_shuff_df.groupby(['exp_name', 'session', 'exp_group', 'channel', 'iternum'])['euclidean_distance'].idxmin()]
+
+def get_sig_stars(pval):
+    if pval < 0.001:
+        return '***'
+    elif pval < 0.01:
+        return '**'
+    elif pval < 0.05:
+        return '*'
+    else:
+        return ''
+
 
 sbcolors = sns.color_palette()
 fontsize = 14
@@ -212,21 +235,46 @@ for i, session in enumerate([1,3]):
     ax = axs[i]
     for exp_group in ['naive']:
         df = avg_df.loc[(avg_df['exp_group'] == exp_group) & (avg_df['session'] == session)]
-        sz = splitzero.loc[(splitzero['exp_group'] == exp_group) & (splitzero['session'] == session)]
+        sz = splitzero.loc[(splitzero['exp_group'] == exp_group) & (splitzero['session'] == session)].mean()
         shuff_df = avg_shuff_df.loc[(avg_shuff_df['exp_group'] == exp_group) & (avg_shuff_df['session'] == session)]
         #make a seaborn lineplot
         sns.lineplot(x='split', y='euclidean_distance', data=df, ax=ax, ci=None)
         sns.lineplot(x='split', y='euclidean_distance', data=shuff_df, ax=ax, color='black', alpha=0.1, ci = ci)
         #plot a blue dashed horizontal line at y = splitzero, with a 95% confidence interval
-        sns.lineplot(x=[2, 29], y=sz['euclidean_distance'].mean(), ax=ax, linestyle='--', color = sbcolors[0])
+        sns.lineplot(x=[3, 28], y=sz['euclidean_distance'], ax=ax, linestyle='--', color = sbcolors[0])
         ax.set_title('Session ' + str(session), fontsize=fontsize)
         ax.set_xlabel('Split-trial', fontsize=fontsize)
-        ax.set_ylabel('Z(Euc. Dist.)', fontsize=fontsize)
+        ax.set_ylabel('Euc. dist. (AU)', fontsize=fontsize)
         ax.tick_params(axis='both', which='major', labelsize=axticksize)
 plt.tight_layout()
 plt.show()
 plt.savefig(save_dir + '/double_mode_dist_vs_split.png')
 plt.savefig(save_dir + '/double_mode_dist_vs_split.svg')
+
+sbcolors = sns.color_palette()
+fontsize = 14
+axticksize = 14
+ci = (1-(0.05/24)/2)*100
+fig, axs = plt.subplots(1, 2, figsize=(5,3), sharey=True, sharex=True)
+for i, session in enumerate([1,3]):
+    ax = axs[i]
+    for exp_group in ['naive']:
+        df = final_df.loc[(final_df['exp_group'] == exp_group) & (final_df['session'] == session)]
+        sz = splitzero.loc[(splitzero['exp_group'] == exp_group) & (splitzero['session'] == session)]
+        shuff_df = final_shuff_df.loc[(final_shuff_df['exp_group'] == exp_group) & (final_shuff_df['session'] == session)]
+        #make a seaborn lineplot
+        sns.lineplot(x='split', y='euc_dist_splitzero-shuff', data=df, ax=ax, linestyle='--', color=sbcolors[0])
+        sns.lineplot(x='split', y='euc_dist_shuffnorm', data=df, ax=ax)
+        sns.lineplot(x='split', y='euc_dist_shuffnorm', data=shuff_df, ax=ax, color='black', alpha=0.1, ci = ci)
+        ax.set_title('Session ' + str(session), fontsize=fontsize)
+        ax.set_xlabel('Split-trial', fontsize=fontsize)
+        ax.set_ylabel('Euc. dist. - shuff', fontsize=fontsize)
+        ax.tick_params(axis='both', which='major', labelsize=axticksize)
+plt.tight_layout()
+plt.show()
+plt.savefig(save_dir + '/double_mode_dist_vs_split_shuffnorm.png')
+plt.savefig(save_dir + '/double_mode_dist_vs_split_shuffnorm.svg')
+
 
 sbcolors = sns.color_palette()
 fontsize = 14
@@ -243,10 +291,10 @@ for i, session in enumerate([1,3]):
         sns.lineplot(x='split', y='Z(euc_dist_shuffnorm)', data=df, ax=ax)
         sns.lineplot(x='split', y='Z(euc_dist_shuffnorm)', data=shuff_df, ax=ax, color='black', alpha=0.1, ci = ci)
         #plot a blue dashed horizontal line at y = splitzero, with a 95% confidence interval
-        #sns.lineplot(x='split', y='euclidean_distance_splitzero', ax=ax, linestyle='--', color = sbcolors[0])
+        sns.lineplot(x='split', y='Z(euc_dist_shuffnorm)_splitzero',data=df,  ax=ax, linestyle='--', color = sbcolors[0])
         ax.set_title('Session ' + str(session), fontsize=fontsize)
         ax.set_xlabel('Split-trial', fontsize=fontsize)
-        ax.set_ylabel('Z(Euc. Dist.)', fontsize=fontsize)
+        ax.set_ylabel('Z(euc dist - shuff)', fontsize=fontsize)
         ax.tick_params(axis='both', which='major', labelsize=axticksize)
 plt.tight_layout()
 plt.show()
@@ -288,93 +336,171 @@ final_df['splitside'] = final_df['splitside'].replace('post', 'post\nsplit')
 final_df['splitside'] = final_df['splitside'].replace('pre', 'pre\nsplit')
 final_df['template'] = 'two\ntemplate'
 
-def get_sig_stars(pval):
-    if pval < 0.001:
-        return '***'
-    elif pval < 0.01:
-        return '**'
-    elif pval < 0.05:
-        return '*'
-    else:
-        return ''
+def plot_split_bars(final_df, best_split_df, save_dir, yvar):
+    sbcolors = sns.color_palette()
+    fontsize = 13
+    axticksize = 13
+    splitavos = []
+    templavos = []
+    import pingouin as pg
+    fig1, axs1 = plt.subplots(1, 2, figsize=(5,3), sharey=True)
+    fig2, axs2 = plt.subplots(1, 2, figsize=(5,3), sharey=True)
+    for i, session in enumerate([1,3]):
+        axtop = axs1[i]
+        axbot = axs2[i]
+        for exp_group in ['naive']:
+            #get the df with the best split for each exp_name
+            best_split = best_split_df.loc[(best_split_df['exp_group'] == exp_group) & (best_split_df['session'] == session)][['exp_name','split']]
+            #get the rows of final_df where the exp_name and split match the best split
+            df = final_df.loc[(final_df['exp_group'] == exp_group) & (final_df['session'] == session)]
+            df = pd.merge(df, best_split, on=['exp_name', 'split'])
+
+            df['AnTaste'] = df['exp_name'] + df['channel'].astype(str)
+            #for splitavodf, get all rows where splitside == 'pre\nsplit' and 'post\nsplit'
+            splitavodf = df.loc[(df['splitside'] == 'pre\nsplit') | (df['splitside'] == 'post\nsplit')]
+            #take the average of euclidean distance for each exp_name, channel, and splitside
+            splitavodf = splitavodf.groupby(['exp_name', 'channel', 'splitside', 'session', 'exp_group']).mean().reset_index()
+            splitavodf['expXchannel'] = splitavodf['exp_name'] + splitavodf['channel'].astype(str)
+    
+
+            #take the average of euclidean distance for each exp_name, channel, and template
+            templdf = df.copy()
+            templdf['template'] = 'single\ntemplate'
+            templdf['euc_dist_shuffnorm'] =  templdf['euclidean_distance_splitzero'] - templdf['euclidean_distance_shuff']
+            #concatenate df with templdf
+            templdf = pd.concat([templdf, df], ignore_index=True)
+            templdf = templdf.groupby(['exp_name', 'channel', 'template', 'session', 'exp_group']).mean().reset_index()
+
+            templdf['expXchannel'] = templdf['exp_name'] + templdf['channel'].astype(str)
+            #perform a repeated measures anova
+            splitavo = pg.rm_anova(data=splitavodf, dv=yvar, within=['splitside'], subject='expXchannel', detailed=True)
+            split_pval = splitavo['p-unc'].values[0]
+            splitavos.append(splitavo)
+            templavo = pg.rm_anova(data=templdf, dv=yvar, within=['template'], subject='expXchannel', detailed=True)
+            templ_pval = templavo['p-unc'].values[0]
+            templavos.append(templavo)
+            #append dfzero to df
+            sns.swarmplot(x='splitside', y=yvar, data=splitavodf, ax=axtop,
+                          order=['pre\nsplit', 'post\nsplit'], color=sbcolors[0], alpha = 0.5)
+            sns.barplot(x='splitside', y=yvar, data=splitavodf, ax=axtop, order=['pre\nsplit', 'post\nsplit'], fill=False, edgecolor='black', capsize = 0.4)
+            sns.swarmplot(x='template', y=yvar, data=templdf, ax=axbot,
+                          order=['two\ntemplate', 'single\ntemplate'], color=sbcolors[0], alpha=0.5)
+            sns.barplot(x='template', y=yvar, data=templdf, ax=axbot, order=['two\ntemplate', 'single\ntemplate'], fill=False, edgecolor='black', capsize = 0.4)
+
+            #get the height of the upper whisker in the barplot
+            max_split = splitavodf[yvar].max()
+            max_templ = templdf[yvar].max()
+            min_split = splitavodf[yvar].min()
+            min_templ = templdf[yvar].min()
+            #set the y axis top limit for both plots to 1
+            #axtop.set_ylim(top=1)
+            #axbot.set_ylim(top=1)
+            if split_pval < 0.05: #then draw a line between 0 and 1, and put a star above the line
+                height = max_split * 1.1
+                axtop.plot([0, 1], [height, height], lw=2, color='black')
+                stars = get_sig_stars(split_pval)
+                axtop.text(0.5, height*0.8, stars, fontsize=fontsize, ha='center')
+                #round the p value to 3 decimal places and print it
+                split_pval = round(split_pval, 4)
+                axtop.text(0.5, min_split, 'p = ' + str(split_pval), fontsize=fontsize, ha='center')
+            if templ_pval < 0.05:
+                height = max_templ * 1.1
+                axbot.plot([0,1], [height, height], lw=2, color='black')
+                stars = get_sig_stars(templ_pval)
+                axbot.text(0.5, height*0.8, stars, fontsize=fontsize, ha='center')
+                #print the p value
+                templ_pval = round(templ_pval, 4)
+                axbot.text(0.5, min_templ, 'p = ' + str(templ_pval), fontsize=fontsize, ha='center')
+    
+            #take away the y axis label
+            if session == 1:
+                axtop.set_ylabel('Euc. dist. - shuff', fontsize=fontsize)
+                #make the y axis labels larger
+                axbot.set_ylabel('Euc. dist. - shuff', fontsize=fontsize)
+    
+            else:
+                axtop.set_ylabel('')
+                axbot.set_ylabel('')
+            axtop.set_xlabel('')
+            axbot.set_xlabel('')
+            axtop.tick_params(axis='both', which='major', labelsize=axticksize)
+            axbot.tick_params(axis='both', which='major', labelsize=axticksize)
+            axtop.set_title('Session ' + str(session), fontsize=fontsize)
+            axbot.set_title('Session ' + str(session), fontsize=fontsize)
+    
+    fig1.tight_layout()
+    fig2.tight_layout()
+    plt.show()
+    #save the figures
+    fig1.savefig(save_dir + '/double_mode_split_prevspost.png')
+    fig1.savefig(save_dir + '/double_mode_split_prevspost.svg')
+    fig2.savefig(save_dir + '/double_mode_split_latevssing.svg')
+    fig2.savefig(save_dir + '/double_mode_split_latevssing.png')
+
+plot_split_bars(final_df, best_split_df, save_dir, 'Z(euc_dist_shuffnorm)')
+plot_split_bars(final_df, best_split_df, save_dir, 'euc_dist_shuffnorm')
 
 
-splitavos = []
-templavos = []
-import pingouin as pg
-fig1, axs1 = plt.subplots(1, 2, figsize=(10,5), sharey=True)
-fig2, axs2 = plt.subplots(1, 2, figsize=(10,5), sharey=True)
-for i, session in enumerate([1,3]):
-    axtop = axs1[i]
-    axbot = axs2[i]
+
+#for unsplit, make a histogram of the euclidean distances
+unsplit['Z(euc_dist)'] = unsplit.groupby(['rec_dir', 'channel'])['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
+unsplit['taste_trial'] = unsplit['taste_trial'] + 1
+#for each grouping of session, exp_group, and taste trial, perform a one sample t-test against 0 for Z(euc_dist)
+unsplit_ttest = unsplit.groupby(['session', 'exp_group', 'taste_trial']).apply(lambda x: stats.ttest_1samp(x['Z(euc_dist)'], 0))
+unsplit_ttest = pd.DataFrame(unsplit_ttest.tolist(), index=unsplit_ttest.index, columns=['tstat', 'pval'])
+unsplit_ttest = unsplit_ttest.reset_index()
+#bonferroni correct for 30 comparisons
+unsplit_ttest['pval'] = unsplit_ttest['pval'] * 30
+
+
+sbcolors = sns.color_palette()
+fontsize = 14
+axticksize = 14
+sessions = [1,3]
+max_euc_dist = unsplit['Z(euc_dist)'].max()
+min_euc_dist = unsplit['Z(euc_dist)'].min()
+#plot a correlogram of the euclidean distances and trial number
+fig, axs = plt.subplots(1, 2, figsize=(10,3), sharey=True, sharex=True)
+for i, session in enumerate(sessions):
+    ax = axs[i]
     for exp_group in ['naive']:
-        #get the df with the best split for each exp_name
-        best_split = best_split_df.loc[(best_split_df['exp_group'] == exp_group) & (best_split_df['session'] == session)][['exp_name','split']]
-        #get the rows of final_df where the exp_name and split match the best split
-        df = final_df.loc[(final_df['exp_group'] == exp_group) & (final_df['session'] == session)]
-        df = pd.merge(df, best_split, on=['exp_name', 'split'])
+        df = unsplit.loc[(unsplit['exp_group'] == exp_group) & (unsplit['session'] == session)]
+        pvaldf = unsplit_ttest.loc[(unsplit_ttest['exp_group'] == exp_group) & (unsplit_ttest['session'] == session)]
+        sns.boxenplot(data=df, x='taste_trial', y='Z(euc_dist)', ax=ax, color = sbcolors[0], linewidth=0.5, showfliers=False, k_depth='full')
+        #plot a horizontal line that is the average euclidean distance
+        avg_euc_dist = df['Z(euc_dist)'].mean()
+        ax.axhline(avg_euc_dist, color='black', linestyle='--')
+        #if the pvalue for the trial is less than 0.05, plot a star above the line
+        for idx, row in pvaldf.iterrows():
+            if row['pval'] < 0.05:
+                #get the number of stars to plot
+                stars = get_sig_stars(row['pval'])
+                #get the maximum value of df at the trial number
+                med= df.loc[df['taste_trial'] == row['taste_trial'], 'Z(euc_dist)'].max()
+                #print the stars turned 90 degrees
+                ax.text(row['taste_trial']-0.7, max_euc_dist, stars, fontsize=fontsize, ha='center', va ='bottom', rotation=90)
+                #print the p value below
+                ax.text(row['taste_trial']-0.7, max_euc_dist, 'p = ' + str(round(row['pval'], 4)), fontsize=9, ha='center', va='top', rotation=-90)
 
-        dfzero = unsplit.loc[(unsplit['exp_group'] == exp_group) & (unsplit['session'] == session)]
-        df = pd.concat([df, dfzero], ignore_index=True)
-        #join exp_name and channel to make column antaste
-        df['AnTaste'] = df['exp_name'] + df['channel'].astype(str)
-        #for splitavodf, get all rows where splitside == 'pre\nsplit' and 'post\nsplit'
-        splitavodf = df.loc[(df['splitside'] == 'pre\nsplit') | (df['splitside'] == 'post\nsplit')]
-        #take the average of euclidean distance for each exp_name, channel, and splitside
-        splitavodf = splitavodf.groupby(['exp_name', 'channel', 'splitside', 'session', 'exp_group']).mean().reset_index()
-        splitavodf['expXchannel'] = splitavodf['exp_name'] + splitavodf['channel'].astype(str)
+        ax.set_ylim(min_euc_dist,max_euc_dist*1.3)
 
-        #for templdf, get all rows where splitside == 'two\ntemplate' or 'single\ntemplate'
-        templdf = df.loc[(df['template'] == 'two\ntemplate') | (df['template'] == 'single\ntemplate')]
-        #take the average of euclidean distance for each exp_name, channel, and template
-        templdf = templdf.groupby(['exp_name', 'channel', 'template', 'session', 'exp_group']).mean().reset_index()
-        templdf['expXchannel'] = templdf['exp_name'] + templdf['channel'].astype(str)
-        #perform a repeated measures anova
-        splitavo = pg.rm_anova(data=splitavodf, dv='net_euc_dist', within=['splitside'], subject='expXchannel', detailed=True)
-        split_pval = splitavo['p-unc'].values[0] * 3
-        splitavos.append(splitavo)
-        templavo = pg.rm_anova(data=templdf, dv='net_euc_dist', within=['template'], subject='expXchannel', detailed=True)
-        templ_pval = templavo['p-unc'].values[0] * 3
-        templavos.append(templavo)
-        #append dfzero to df
-        sns.barplot(x='splitside', y='net_euc_dist', data=splitavodf, ax=axtop, order=['pre\nsplit', 'post\nsplit'], fill=False, edgecolor='black')
-        sns.swarmplot(x='splitside', y='net_euc_dist', data=splitavodf, ax=axtop, order=['pre\nsplit', 'post\nsplit'])
-        sns.barplot(x='template', y='net_euc_dist', data=templdf, ax=axbot, order=['two\ntemplate', 'single\ntemplate'], fill=False, edgecolor='black')
-        sns.swarmplot(x='template', y='net_euc_dist', data=templdf, ax=axbot, order=['two\ntemplate', 'single\ntemplate'])
-        #set the y axis top limit for both plots to 1
-        #axtop.set_ylim(top=1)
-        #axbot.set_ylim(top=1)
-        if split_pval < 0.05: #then draw a line between 0 and 1, and put a star above the line
-            axtop.plot([0, 1], [0.8, 0.8], lw=2, color='black')
-            stars = get_sig_stars(split_pval)
-            axtop.text(0.5, 0.8, stars, fontsize=fontsize, ha='center')
-        if templ_pval < 0.05:
-            axbot.plot([0,1], [0.9, 0.9], lw=2, color='black')
-            stars = get_sig_stars(templ_pval)
-            axbot.text(0.5, 0.9, stars, fontsize=fontsize, ha='center')
+        ax.set_title('Session ' + str(session), fontsize=fontsize)
+        ax.set_xlabel('trial number', fontsize=fontsize)
+        ax.tick_params(axis='both', which='major', labelsize=axticksize)
+        #make the x axis labels every other label
+        xlabs = ax.get_xticklabels()
+        #set every other label to ''
+        for label in xlabs:
+            label.set_visible(False)
+        for label in xlabs[::2]:
+            label.set_visible(True)
 
-        #take away the y axis label
-        if session == 1:
-            axtop.set_ylabel('shuff. normalized\nZ(Euc. Dist.)', fontsize=fontsize)
-            #make the y axis labels larger
-            axbot.set_ylabel('shuff. normalized\nZ(Euc. Dist.)', fontsize=fontsize)
-
+        if i == 0:
+            ax.set_ylabel('Z(euc. dist.)', fontsize=fontsize)
         else:
-            axtop.set_ylabel('')
-            axbot.set_ylabel('')
-        axtop.tick_params(axis='both', which='major', labelsize=axticksize)
-        axbot.tick_params(axis='both', which='major', labelsize=axticksize)
-
-        #axbot.set_xlabel("split trial: " + str(int(best_split+1)), fontsize=fontsize)
-        #axtop.set_xlabel("split trial: " + str(int(best_split+1)), fontsize=fontsize)
-        axtop.set_title('Session ' + str(session), fontsize=fontsize)
-        axbot.set_title('Session ' + str(session), fontsize=fontsize)
-
-fig1.tight_layout()
-fig2.tight_layout()
+            ax.set_ylabel('')
+plt.tight_layout()
+#save the figure
 plt.show()
-#save the figures
-fig1.savefig(save_dir + '/double_mode_split_prevspost.png')
-fig1.savefig(save_dir + '/double_mode_split_prevspost.svg')
-fig2.savefig(save_dir + '/double_mode_split_latevssing.svg')
-fig2.savefig(save_dir + '/double_mode_split_latevssing.png')
+plt.savefig(save_dir + '/trialwise_boxenplot.png')
+plt.savefig(save_dir + '/trialwise_boxenplot.svg')
