@@ -139,9 +139,12 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     df = df.loc[df['t_end'] >= 200] #remove all rows where t_end is less than 100
     epoch_idx = {1: 'early', 2: 'late'}
     #rerank early_df by state_determinant for each taste, rec_dir, and taste_trial
-    df[state_determinant] = df.groupby(['taste', 'rec_dir','taste_trial'])[state_determinant].rank(ascending=False)
+    #remove '_rank' from state_determinant
+    #det = state_determinant.split('_rank')[0]
+    sd_rank = state_determinant + '_rank'
+    df[sd_rank] = df.groupby(['taste', 'rec_dir','taste_trial'])[state_determinant].rank(ascending=False)
 
-    df = df.loc[df[state_determinant] <= 2]
+    df = df.loc[df[sd_rank] <= 2]
     df['order_in_seq'] = df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
     df = df.loc[df['order_in_seq'] <= 2]
     # apply epoch index according to order_in_seq
@@ -201,21 +204,25 @@ NB_df = HA.analyze_NB_ID2(overwrite=True)
 NB_df = preprocess_NB(NB_df)
 
 trial_col = 'taste_trial'
-state_determinant = 'taste_accuracy_rank'
+state_determinant = 'p(correct taste)'
 value_col = 'p(correct taste)'
 pipeline(NB_df, value_col, trial_col, state_determinant)
 
 trial_col = 'taste_trial'
-state_determinant = 'taste_accuracy_rank'
+state_determinant = 'p(correct taste)'
 value_col = 't(start)'
-pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='late')
+pipeline(NB_df, value_col, trial_col, state_determinant)
 
 trial_col = 'taste_trial'
-state_determinant = 'taste_accuracy_rank'
+state_determinant = 'p(correct taste)'
 value_col = 'p(correct valence)'
 pipeline(NB_df, value_col, trial_col, state_determinant)
 plt.close('all')
 
+trial_col = 'taste_trial'
+state_determinant = 'p(correct taste)'
+value_col = 't(end)'
+pipeline(NB_df, value_col, trial_col, state_determinant)
 
 #
 # trial_col = 'taste_trial'
