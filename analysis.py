@@ -148,7 +148,7 @@ class ProjectAnalysis(object):
             raise ValueError('Please run get_held_units first')
         return all_units, held_df
 
-    def get_unit_info(self, overwrite=False):
+    def get_unit_info(self, overwrite=False, change_dirs=False):
         save_dir = self.save_dir
         all_units_file = self.files['all_units']
         held_units_file = self.files['held_units']
@@ -157,6 +157,18 @@ class ProjectAnalysis(object):
 
         all_units = feather.read_feather(all_units_file)
         held_df = feather.read_feather(held_units_file)
+
+        if change_dirs:
+            proj = self.project
+            rec_info = proj.get_rec_info()
+            rec_info = ['rec_name', 'rec_dir']
+            #replace rec_dir in all_units and held_df with rec_dir in rec_info along rec_name
+            #first remove rec_dir from all_units and held_df
+            all_units = all_units.drop(columns=['rec_dir'])
+            all_units = pd.merge(all_units, rec_info, on='rec_name', how='left')
+            held_df = held_df.drop(columns=['rec_dir'])
+            held_df = pd.merge(held_df, rec_info, on='rec_name', how='left')
+
         if 'time_group' not in all_units.columns or overwrite == True:
             all_units = apply_groups_from_proj(all_units, self.project)
             self.write_unit_info(all_units=all_units)
