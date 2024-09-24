@@ -162,12 +162,34 @@ class ProjectAnalysis(object):
             proj = self.project
             rec_info = proj.get_rec_info()
             rec_info = rec_info[['rec_name', 'rec_dir']]
+            old_rec_info = all_units[['rec_name', 'rec_dir']]
+            #rename rec_dir in old_rec_info to rec_dir_old
+            old_rec_info = old_rec_info.rename(columns={'rec_dir': 'old_rec'})
+            #merge rec_info with old_rec_info on rec_name
+            old_rec_info = pd.merge(rec_info, old_rec_info, on='rec_name', how='left')
             #replace rec_dir in all_units and held_df with rec_dir in rec_info along rec_name
             #first remove rec_dir from all_units and held_df
             all_units = all_units.drop(columns=['rec_dir'])
             all_units = pd.merge(all_units, rec_info, on='rec_name', how='left')
-            held_df = held_df.drop(columns=['rec_dir'])
-            held_df = pd.merge(held_df, rec_info, on='rec_name', how='left')
+
+            #drop rec_name from old_rec_info
+            old_rec_info = old_rec_info.drop(columns=['rec_name'])
+            #create new df from old_rec_info where rec_dir is renamed to rec1
+            r1merge = old_rec_info.rename(columns={'rec_dir': 'rec1'})
+            #also make one for rec2
+            r2merge = old_rec_info.rename(columns={'rec_dir': 'rec2'})
+            #rename rec1 column in held_df to old_rec
+            held_df = held_df.rename(columns={'rec_dir': 'old_rec'})
+            #merge held_df with r1merge on old_rec
+            held_df = pd.merge(held_df, r1merge, on='old_rec', how='left')
+            #drop old_rec from held_df
+            held_df = held_df.drop(columns=['old_rec'])
+            #rename rec2 column in held_df to old_rec
+            held_df = held_df.rename(columns={'rec2': 'old_rec'})
+            #merge held_df with r2merge on old_rec
+            held_df = pd.merge(held_df, r2merge, on='old_rec', how='left')
+            #drop old_rec from held_df
+            held_df = held_df.drop(columns=['old_rec'])
             self.write_unit_info(all_units=all_units, held_df=held_df)
 
         if 'time_group' not in all_units.columns or overwrite == True:
