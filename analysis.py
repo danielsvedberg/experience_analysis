@@ -179,7 +179,7 @@ class ProjectAnalysis(object):
             #also make one for rec2
             r2merge = old_rec_info.rename(columns={'rec_dir': 'rec2'})
             #rename rec1 column in held_df to old_rec
-            held_df = held_df.rename(columns={'rec_dir': 'old_rec'})
+            held_df = held_df.rename(columns={'rec1': 'old_rec'})
             #merge held_df with r1merge on old_rec
             held_df = pd.merge(held_df, r1merge, on='old_rec', how='left')
             #drop old_rec from held_df
