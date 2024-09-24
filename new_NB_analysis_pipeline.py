@@ -176,15 +176,15 @@ def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
         os.makedirs(save_dir)
 
     nIter = 10000
-    epoch_idx = {1: 'early', 2: 'late'}
+    df = get_relevant_states(df, state_determinant, exclude_epoch=exclude_epoch)
 
     subject_col = 'exp_name'
     group_cols=['exp_group', 'session', 'taste']
 
-    for nm, group in df.groupby(['order_in_seq']):
+    for nm, group in df.groupby(['epoch']):
         #get rid of any rows with nans value col of group
         group = group.dropna(subset=[value_col])
-        epoch = epoch_idx[nm]
+        epoch = nm
 
 
         save_flag = state_determinant + '_determine_' + epoch
