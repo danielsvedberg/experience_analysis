@@ -177,6 +177,18 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
         dMax = trialMax - minD
         d0 = np.median(trials)
 
+        if valMin == valMax:
+            a0 = valMin
+            b0 = valMax
+            c0 = 0
+            d0 = int(dMin + (dMax - dMin) / 2)
+            params = [a0, b0, c0, d0]
+
+            y_pred = model(trials, *params)
+            r2 = r2_score(values, y_pred)
+
+            return subject, params, r2, y_pred
+
         dy = abs(valMax - valMin)
         dx = abs(trialMax - trialMin)
         #if dy, dx, or nTrials are nan, raise exception
