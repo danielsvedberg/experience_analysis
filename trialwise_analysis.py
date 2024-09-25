@@ -202,16 +202,31 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
 
         if aMin <= y0 <= aMax:
             a0 = y0
-        else:
+        elif aMin <= values[0] <= aMax:
             a0 = values[0]
+        else:
+            #figure out if a0 is closer to aMin or aMax
+            if abs(aMin - y0) < abs(aMax - y0):
+                a0 = aMin
+            else:
+                a0 = aMax
 
         if bMin <= y1 <= bMax:
             b0 = y1
-        else:
+        elif bMin <= values[-1] <= bMax:
             b0 = values[-1]
+        else:
+            #figure out if b0 is closer to bMin or bMax
+            if abs(bMin - y1) < abs(bMax - y1):
+                b0 = bMin
+            else:
+                b0 = bMax
 
         if c0 > cMax:
             c0 = cMax
+        elif c0 < cMin:
+            c0 = cMin
+
 
         params, _ = curve_fit(model, trials, values, p0=[a0, b0, c0, d0], bounds=[[aMin, bMin, cMin, dMin], [aMax, bMax, cMax, dMax]],
                               maxfev=10000000)

@@ -200,18 +200,18 @@ proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
 ###Process state coding
-NB_df = HA.analyze_NB_ID2(overwrite=True)
+NB_df = HA.analyze_NB_ID2(overwrite=False)
 NB_df = preprocess_NB(NB_df)
 
-trial_col = 'taste_trial'
-state_determinant = 'p(correct taste)'
-value_col = 'p(correct taste)'
-pipeline(NB_df, value_col, trial_col, state_determinant)
-
-trial_col = 'taste_trial'
-state_determinant = 'p(correct taste)'
-value_col = 't(start)'
-pipeline(NB_df, value_col, trial_col, state_determinant)
+# trial_col = 'taste_trial'
+# state_determinant = 'p(correct taste)'
+# value_col = 'p(correct taste)'
+# pipeline(NB_df, value_col, trial_col, state_determinant)
+#
+# trial_col = 'taste_trial'
+# state_determinant = 'p(correct taste)'
+# value_col = 't(start)'
+# pipeline(NB_df, value_col, trial_col, state_determinant)
 
 trial_col = 'taste_trial'
 state_determinant = 'p(correct taste)'
