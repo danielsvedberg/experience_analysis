@@ -193,7 +193,6 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
         bMin, bMax = parse_bounds(bMax, bMin)
         cMin, cMax = parse_bounds(cMax, cMin)
 
-
         slope, intercept, r_value, p_value, std_err = stats.linregress(trials,
                                                                        values)  # first estimate bounds using linear regression
         y0 = slope * np.min(trials) + intercept  # calculate the y value at the min(trials)
@@ -226,6 +225,12 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
             c0 = cMax
         elif c0 < cMin:
             c0 = cMin
+        if not (cMin <= c0 <= cMax):
+            raise Exception('c0 is not between cMin and cMax')
+
+        if d0 > dMax or d0 < dMin:
+            #d0 becomes the midpoint between dMin and dMax
+            d0 = int(dMin + (dMax - dMin) / 2)
 
 
         params, _ = curve_fit(model, trials, values, p0=[a0, b0, c0, d0], bounds=[[aMin, bMin, cMin, dMin], [aMax, bMax, cMax, dMax]],

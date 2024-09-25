@@ -185,6 +185,7 @@ def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
         #get rid of any rows with nans value col of group
         group = group.dropna(subset=[value_col])
         epoch = nm
+        print(epoch)
 
 
         save_flag = state_determinant + '_determine_' + epoch
