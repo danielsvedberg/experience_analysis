@@ -89,7 +89,7 @@ def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    nIter = 10000
+    nIter = 100
     df = get_relevant_states(df, state_determinant, exclude_epoch=exclude_epoch)
 
     subject_col = 'exp_name'
@@ -115,44 +115,29 @@ proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
 ###Process state coding
-NB_df = HA.analyze_NB_ID2(overwrite=False)
-NB_df_raw = NB_df.copy()
-test = NB_df_raw.loc[NB_df_raw['Y'] != 'prestim']
-#sort test by ascending order of duration
-test = test.sort_values(by='duration', ascending=True)
-#make a dataframe counting how many trials there are for each rec_dir + taste + epoch
+HA = ana.HmmAnalysis(proj) #create a hmm analysis object
+ov = HA.get_hmm_overview(overwrite=True) #extract all the hmms into a dataframe and saves it
+HA.sort_hmms_by_AIC(overwrite=True) #label hmms in hmm_overview with lowest AIC for each recording, save to sorted hmms
+best_hmms = HA.get_best_hmms(sorting='best_AIC', overwrite=True) #get rows of hmm_overview where sorting column==sorting arugument
 
-#make a pairplot between duration and accuracy
-sns.pairplot(test, x_vars='duration', y_vars='p(correct taste)', hue='taste')
-sns.lineplot(data=test, x='duration', y='p(correct taste)', hue='taste')
-sns.histplot(data=test, x='duration', multiple='stack')
-sns.lineplot(data=test, x='length_rank', y='p(correct taste)')
-sns.lineplot(data=test, x='length_rank', y='p(correct valence)')
-sns.lineplot(data=test, x='t(start)', y='p(correct taste)')
-
-best_hmms = HA.get_best_hmms(sorting='best_AIC', overwrite=False)
+NB_df = HA.analyze_NB_ID2(overwrite=True)
 NB_df = preprocess_NB(NB_df)
-NB_df_releant = get_relevant_states(NB_df, 'p(correct taste)')
-trial_count = NB_df_releant.groupby(['rec_dir', 'taste', 'epoch']).size().reset_index(name='counts')
 
-relevant_early = NB_df_releant.loc[NB_df_releant['epoch'] == 'early']
-relevant_late = NB_df_releant.loc[NB_df_releant['epoch'] == 'late']
+trial_col = 'taste_trial'
+state_determinant = 'p(correct taste)'
+value_col = 'p(correct taste)'
+pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='early')
 
-# trial_col = 'taste_trial'
-# state_determinant = 'p(correct taste)'
-# value_col = 'p(correct taste)'
-# pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='early')
+trial_col = 'taste_trial'
+state_determinant = 'p(correct taste)'
+value_col = 't(start)'
+pipeline(NB_df, value_col, trial_col, state_determinant)
 
-# trial_col = 'taste_trial'
-# state_determinant = 'p(correct taste)'
-# value_col = 't(start)'
-# pipeline(NB_df, value_col, trial_col, state_determinant)
-
-# trial_col = 'taste_trial'
-# state_determinant = 'p(correct taste)'
-# value_col = 'p(correct valence)'
-# pipeline(NB_df, value_col, trial_col, state_determinant)
-# plt.close('all')
+trial_col = 'taste_trial'
+state_determinant = 'p(correct taste)'
+value_col = 'p(correct valence)'
+pipeline(NB_df, value_col, trial_col, state_determinant)
+plt.close('all')
 
 trial_col = 'taste_trial'
 state_determinant = 'p(correct taste)'

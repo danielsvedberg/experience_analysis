@@ -1137,8 +1137,8 @@ def NB_classify_rec(group, units, label_col='taste'):
                                                        remove_baseline=False)
             # calculate the average median time of the state
             medians = []
-            for start, end in zip(start, end):
-                med = (start + end) / 2
+            for s, e in zip(start, end):
+                med = (s + e) / 2
                 medians.append(med)
             avg_med = np.mean(medians)
 
