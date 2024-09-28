@@ -42,93 +42,6 @@ def preprocess_NB(NB_df):
     NB_df['|Δ t(early-late trans.)|'] = NB_df['Δ t(early-late trans.)'].abs()
     return NB_df
 
-#for each group, plot the bar graphs quantifying the r2 values
-def plot_nonlinear_regression_stats(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20, ymin=None, ymax=None):
-    groups = [subject_col] + group_cols
-    avg_shuff = shuff.groupby(groups + ['iternum']).mean().reset_index() #average across exp_names
-    avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
-
-    for exp_group, group in avg_df3.groupby(['exp_group']):
-        group_shuff = shuff.groupby('exp_group').get_group(exp_group)
-        avg_group_shuff = avg_shuff.groupby('exp_group').get_group(exp_group)
-
-        if flag is not None:
-            save_flag = trial_col + '_' + value_col + '_' + flag
-        else:
-            save_flag = trial_col + '_' + value_col + '_' + exp_group + '_only'
-        ta.plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=HA.save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)
-def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, ymin=None, ymax=None, textsize=20):
-    groups = [subject_col] + group_cols
-    avg_shuff = shuff.groupby(group_cols + ['iternum']).mean().reset_index()
-    avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
-    # plot the r2 values for each session with the null distribution
-    if flag is not None:
-        save_flag = trial_col + '_' + value_col + '_' + flag
-    else:
-        save_flag = trial_col + '_' + value_col
-    ta.plot_r2_pval_diffs_summary(avg_shuff, avg_df3, stat_col, save_flag=save_flag, save_dir=HA.save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)#re-run and replot with nIter=nIter
-
-#for each group, plot the bar graphs quantifying the r2 values
-def plot_nonlinear_regression_stats(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20, ymin=None, ymax=None):
-    groups = [subject_col] + group_cols
-    avg_shuff = shuff.groupby(groups + ['iternum']).mean().reset_index() #average across exp_names
-    avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
-
-    for exp_group, group in avg_df3.groupby(['exp_group']):
-        group_shuff = shuff.groupby('exp_group').get_group(exp_group)
-        avg_group_shuff = avg_shuff.groupby('exp_group').get_group(exp_group)
-
-        if flag is not None:
-            save_flag = trial_col + '_' + value_col + '_' + flag
-        else:
-            save_flag = trial_col + '_' + value_col + '_' + exp_group + '_only'
-        ta.plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=HA.save_dir, textsize=textsize, nIter=nIter, n_comp=3, ymin=ymin, ymax=ymax)
-def plot_nonlinear_line_graphs(df3, shuff, subject_col, group_cols, trial_col, value_col, flag=None, nIter=100, parallel=True, yMin=None, yMax=None, textsize=20):
-    groups = [subject_col] + group_cols
-    if yMin is None:
-        yMin = min(df3[value_col])
-    if yMax is None:
-        yMax = max(df3[value_col])
-
-    ta.plot_fits_summary_avg(df3, shuff_df=shuff, dat_col=value_col, trial_col=trial_col, save_dir=HA.save_dir,
-                             use_alpha_pos=False, textsize=textsize, dotalpha=0.15, flag=flag, nIter=nIter,
-                             parallel=parallel)
-    for exp_group, group in df3.groupby(['exp_group']):
-        group_shuff = shuff.groupby('exp_group').get_group(exp_group)
-        if flag is not None:
-            save_flag = exp_group + '_' + flag
-        else:
-            save_flag = exp_group
-        ta.plot_fits_summary_avg(group, shuff_df=group_shuff, dat_col=value_col, trial_col=trial_col,
-                                 save_dir=HA.save_dir, use_alpha_pos=False, textsize=textsize, dotalpha=0.15,
-                                 flag=save_flag, nIter=nIter, parallel=parallel)
-
-
-def plotting_pipeline(df3, shuff, trial_col, value_col, ymin=None, ymax=None, nIter=10000, flag=None):
-    subject_col = 'exp_name'
-    group_cols=['exp_group', 'session', 'taste']
-    plot_nonlinear_line_graphs(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, yMin=ymin, yMax=ymax, flag=flag)
-    #plot the stats quantificaiton of the r2 values
-    plot_nonlinear_regression_stats(df3, shuff, subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
-    # #plot the stats quantificaation of the r2 values with head to head of naive vs sucrose preexposed
-    plot_nonlinear_regression_comparison(df3, shuff, stat_col='r2', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
-    # #plot the sessionwise differences in the r2 values
-    ta.plot_session_differences(df3, shuff, subject_cols=subject_col, group_cols=group_cols, trial_col=trial_col,
-
-                             value_col=value_col, stat_col='r2', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
-    r2_pred_change, shuff_r2_pred_change = ta.get_pred_change(df3, shuff, subject_cols=subject_col, group_cols=group_cols, trial_col=trial_col)
-    # #plot the predicted change in value col over the course of the session, with stats
-    ta.plot_predicted_change(r2_pred_change, shuff_r2_pred_change, subject_cols=subject_col, group_cols=group_cols, trial_col=trial_col,
-                          value_col=value_col, nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
-    # # #plot the session differences in the predicted change of value col
-    ta.plot_session_differences(r2_pred_change, shuff_r2_pred_change, subject_cols=subject_col, group_cols=group_cols, trial_col=trial_col,
-                             value_col=value_col, stat_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=-ymax, ymax=ymax)
-
-    # plot the within session difference between naive and preexp for pred. change
-    ymin = min(r2_pred_change['pred. change'].min(), shuff_r2_pred_change['pred. change'].min())
-    ymax = max(r2_pred_change['pred. change'].max(), shuff_r2_pred_change['pred. change'].max())
-    ta.plot_nonlinear_regression_comparison(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', subject_col=subject_col, group_cols=group_cols, trial_col=trial_col, value_col='pred. change', nIter=nIter, textsize=20, flag=flag, ymin=ymin, ymax=ymax)
-
 def get_relevant_states(df, state_determinant, exclude_epoch=None):
     #remove all rows where Y == 'prestim'
     df = df.loc[df['Y'] != 'prestim']
@@ -136,7 +49,7 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     df = df.loc[df['duration'] >= 100]
     #remove all rows where t_start is greater than 2500
     df = df.loc[df['t_start'] <= 2000]
-    df = df.loc[df['t_end'] >= 200] #remove all rows where t_end is less than 100
+    df = df.loc[df['t_end'] >= 100] #remove all rows where t_end is less than 100
     epoch_idx = {1: 'early', 2: 'late'}
     #rerank early_df by state_determinant for each taste, rec_dir, and taste_trial
     #remove '_rank' from state_determinant
