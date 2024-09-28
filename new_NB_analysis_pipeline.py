@@ -145,6 +145,7 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     df[sd_rank] = df.groupby(['taste', 'rec_dir','taste_trial'])[state_determinant].rank(ascending=False)
 
     df = df.loc[df[sd_rank] <= 2]
+
     df['order_in_seq'] = df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
     df = df.loc[df['order_in_seq'] <= 2]
     # apply epoch index according to order_in_seq
@@ -202,23 +203,43 @@ HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
 ###Process state coding
 NB_df = HA.analyze_NB_ID2(overwrite=False)
+NB_df_raw = NB_df.copy()
+test = NB_df_raw.loc[NB_df_raw['Y'] != 'prestim']
+#sort test by ascending order of duration
+test = test.sort_values(by='duration', ascending=True)
+#make a dataframe counting how many trials there are for each rec_dir + taste + epoch
+
+#make a pairplot between duration and accuracy
+sns.pairplot(test, x_vars='duration', y_vars='p(correct taste)', hue='taste')
+sns.lineplot(data=test, x='duration', y='p(correct taste)', hue='taste')
+sns.histplot(data=test, x='duration', multiple='stack')
+sns.lineplot(data=test, x='length_rank', y='p(correct taste)')
+sns.lineplot(data=test, x='length_rank', y='p(correct valence)')
+sns.lineplot(data=test, x='t(start)', y='p(correct taste)')
+
+best_hmms = HA.get_best_hmms(sorting='best_AIC', overwrite=False)
 NB_df = preprocess_NB(NB_df)
+NB_df_releant = get_relevant_states(NB_df, 'p(correct taste)')
+trial_count = NB_df_releant.groupby(['rec_dir', 'taste', 'epoch']).size().reset_index(name='counts')
+
+relevant_early = NB_df_releant.loc[NB_df_releant['epoch'] == 'early']
+relevant_late = NB_df_releant.loc[NB_df_releant['epoch'] == 'late']
 
 # trial_col = 'taste_trial'
 # state_determinant = 'p(correct taste)'
 # value_col = 'p(correct taste)'
-# pipeline(NB_df, value_col, trial_col, state_determinant)
-#
+# pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='early')
+
 # trial_col = 'taste_trial'
 # state_determinant = 'p(correct taste)'
 # value_col = 't(start)'
 # pipeline(NB_df, value_col, trial_col, state_determinant)
 
-trial_col = 'taste_trial'
-state_determinant = 'p(correct taste)'
-value_col = 'p(correct valence)'
-pipeline(NB_df, value_col, trial_col, state_determinant)
-plt.close('all')
+# trial_col = 'taste_trial'
+# state_determinant = 'p(correct taste)'
+# value_col = 'p(correct valence)'
+# pipeline(NB_df, value_col, trial_col, state_determinant)
+# plt.close('all')
 
 trial_col = 'taste_trial'
 state_determinant = 'p(correct taste)'

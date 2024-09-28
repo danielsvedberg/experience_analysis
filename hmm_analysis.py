@@ -817,13 +817,13 @@ def make_best_hmm_list(all_units, sorted_hmms, min_cells=3, area='GC', sorting='
             print("good")
             hr = hmm_df.loc[exp, rec, tst]
             #hr = hr.iloc[0]
-            hid, srt, ns, nt, es, ls, notes = hr[['hmm_id', 'sorting', 'n_states','n_trials','early_state', 'late_state', 'notes']]
+            hid, con, srt, ns, nt, es, ls, notes = hr[['hmm_id', 'converged', 'sorting', 'n_states','n_trials','early_state', 'late_state', 'notes']]
         else:
             raise KeyError('missing data at', exp, ' ', rec, ' ', tst)
 
-        return pd.Series({'hmm_id':hid, 'sorting':srt, 'n_states':ns, 'n_trials':nt, 'early_state':es, 'late_state':ls, 'notes': notes})
+        return pd.Series({'hmm_id':hid, 'converged':con, 'sorting':srt, 'n_states':ns, 'n_trials':nt, 'early_state':es, 'late_state':ls, 'notes': notes})
 
-    df[['hmm_id', 'sorting', 'n_states', 'n_trials', 'early_state', 'late_state', 'notes']] = df.apply(apply_info, axis=1)
+    df[['hmm_id', 'converged', 'sorting', 'n_states', 'n_trials', 'early_state', 'late_state', 'notes']] = df.apply(apply_info, axis=1)
     return df
 
 
@@ -1135,9 +1135,14 @@ def NB_classify_rec(group, units, label_col='taste'):
             label = row[label_col] + '_' + str(j)
             tmp_r, tmp_trials , start, end = get_state_firing_rates(row['rec_dir'], row['hmm_id'], j, units=un, other_state=None,
                                                        remove_baseline=False)
-            # calculate the average time of the state using start, end
-            avg_start = np.mean(start)
-            if avg_start < 0:
+            # calculate the average median time of the state
+            medians = []
+            for start, end in zip(start, end):
+                med = (start + end) / 2
+                medians.append(med)
+            avg_med = np.mean(medians)
+
+            if avg_med < 100:
                 label = 'prestim'
 
             tmp_id = [(rec_dir, row['hmm_id'], row[label_col], x, j, channel) for x in tmp_trials]
