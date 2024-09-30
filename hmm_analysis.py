@@ -1142,7 +1142,7 @@ def NB_classify_rec(group, units, label_col='taste'):
                 medians.append(med)
             avg_med = np.mean(medians)
 
-            if avg_med < 100:
+            if avg_med <= 100:
                 label = 'prestim'
 
             tmp_id = [(rec_dir, row['hmm_id'], row[label_col], x, j, channel) for x in tmp_trials]

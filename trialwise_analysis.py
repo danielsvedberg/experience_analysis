@@ -146,9 +146,6 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
         return paramMin, paramMax
 
     def fit_for_subject(subject, subject_data):
-        if len(subject_data[trial_col]) < 2:
-            print('Not enough data points to fit model for subject ' + str(subject))
-            return subject, (np.nan, np.nan, np.nan, np.nan), np.nan, np.nan
         # sort subject data by trial_col
         subject_data = subject_data.copy().sort_values(by=[trial_col]).reset_index(drop=True)
         trials = subject_data[trial_col].to_numpy()
@@ -160,34 +157,33 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
             trials = np.delete(trials, nan_indices)
             values = np.delete(values, nan_indices)
 
-        trialMax = np.max(trials)
-        trialMin = np.min(trials)
         nTrials = len(trials)
-        trialRange = (trialMax - trialMin) + 1
-        trialStep = trialRange / nTrials
-        minD = trialStep + trialStep / 2
+        if nTrials < 4:
+            print('Not enough data points to fit model for subject ' + str(subject))
+            return subject, (np.nan, np.nan, np.nan, np.nan), np.nan, np.nan
 
         valMax = np.max(values)
         valMin = np.min(values)
-        aMin = valMin
-        aMax = valMax
-        bMax = valMax
-        bMin = valMin
-        dMin = minD
-        dMax = trialMax - minD
-        d0 = np.median(trials)
-
         if valMin == valMax:
             a0 = valMin
             b0 = valMax
             c0 = 0
-            d0 = int(dMin + (dMax - dMin) / 2)
+            d0 = np.median(trials)
             params = [a0, b0, c0, d0]
-
             y_pred = model(trials, *params)
             r2 = r2_score(values, y_pred)
-
             return subject, params, r2, y_pred
+
+        trialMax = np.max(trials)
+        trialMin = np.min(trials)
+
+        aMin = valMin
+        aMax = valMax
+        bMax = valMax
+        bMin = valMin
+        dMin = trials[1]
+        dMax = trials[-2]
+        d0 = np.median(trials)
 
         dy = abs(valMax - valMin)
         dx = abs(trialMax - trialMin)
@@ -201,8 +197,8 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
         cMax = calc_cmax(dy, dx, nTrials)
         cMin = 0
 
-        aMin, aMax = parse_bounds(aMax, aMin)
-        bMin, bMax = parse_bounds(bMax, bMin)
+        #aMin, aMax = parse_bounds(aMax, aMin)
+        #bMin, bMax = parse_bounds(bMax, bMin)
         cMin, cMax = parse_bounds(cMax, cMin)
 
         slope, intercept, r_value, p_value, std_err = stats.linregress(trials,
@@ -237,6 +233,7 @@ def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', valu
             c0 = cMax
         elif c0 < cMin:
             c0 = cMin
+
         if not (cMin <= c0 <= cMax):
             raise Exception('c0 is not between cMin and cMax')
 

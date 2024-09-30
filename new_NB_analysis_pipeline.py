@@ -41,9 +41,11 @@ def preprocess_NB(NB_df):
 
 def get_relevant_states(df, state_determinant, exclude_epoch=None):
     #remove all rows where Y == 'prestim'
-    #df = df.loc[df['Y'] != 'prestim']
+    df = df.loc[df['Y'] != 'prestim']
     #remove all rows where duration is less than 50
     df = df.loc[df['duration'] >= 50]
+    #remove all rows where duration is greater than 3000
+    df = df.loc[df['duration'] <= 3000]
     #remove all rows where t_start is greater than 2000
     df = df.loc[df['t_start'] <= 2000]
     df = df.loc[df['t_end'] >= 150] #remove all rows where t_end is less than 200
@@ -65,7 +67,7 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     #if it is, reassign 'epoch' to 'late'
     for nm, group in df.groupby(['taste', 'rec_dir', 'taste_trial']):
         if len(group) == 1:
-            if group['t(start)'].values[0] > 750:
+            if group['t(start)'].values[0] >= 400: #saddacca 2016 shows gaping can start as early as 400ms
                 df.loc[(df['taste'] == nm[0]) & (df['rec_dir'] == nm[1]) & (df['taste_trial'] == nm[2]), 'epoch'] = 'late'
 
     df['p(correct taste)-avg'] = df['p(correct taste)'].sub(df.groupby(['taste', 'rec_dir','epoch'])['p(correct taste)'].transform('mean'))
@@ -83,7 +85,7 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
 
     return df
 
-def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
+def prepipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None, nIter=1000):
     print('running pipeline for ' + value_col + ' and ' + trial_col + ' and ' + state_determinant)
     analysis_folder = value_col + '_' + trial_col + '_' + state_determinant + '_nonlinear_regression'
     #check if dir exists, if not, make it
@@ -91,7 +93,6 @@ def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    nIter = 10000
     df = get_relevant_states(df, state_determinant, exclude_epoch=exclude_epoch)
 
     subject_col = 'exp_name'
@@ -106,11 +107,36 @@ def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
 
         save_flag = state_determinant + '_determine_' + epoch
 
+        ta.preprocess_nonlinear_regression(group, subject_cols=subject_col, group_cols=group_cols,
+                                           trial_col=trial_col, value_col=value_col, overwrite=True,
+                                           nIter=nIter, save_dir=save_dir, flag=save_flag)
+
+def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None, nIter=10000):
+    print('plotting pipeline for ' + value_col + ' and ' + trial_col + ' and ' + state_determinant)
+    analysis_folder = value_col + '_' + trial_col + '_' + state_determinant + '_nonlinear_regression'
+    #check if dir exists, if not, make it
+    save_dir = os.path.join(HA.save_dir, analysis_folder)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    df = get_relevant_states(df, state_determinant, exclude_epoch=exclude_epoch)
+    subject_col = 'exp_name'
+    group_cols=['exp_group', 'session', 'taste']
+
+    for nm, group in df.groupby(['epoch']):
+        #get rid of any rows with nans value col of group
+        group = group.dropna(subset=[value_col])
+        epoch = nm
+        print(epoch)
+
+        save_flag = state_determinant + '_determine_' + epoch
+
         df3, shuff = ta.preprocess_nonlinear_regression(group, subject_cols=subject_col, group_cols=group_cols,
                                                                  trial_col=trial_col, value_col=value_col, overwrite=False,
                                                                  nIter=nIter, save_dir=save_dir, flag=save_flag)
 
         ta.plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, [subject_col], nIter=nIter, save_dir=save_dir, flag=save_flag)
+        plt.close('all')
+
 
 proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # directory where the project is
 proj = blechpy.load_project(proj_dir)  # load the project
@@ -119,8 +145,22 @@ HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 NB_df = HA.analyze_NB_ID2(overwrite=False)
 NB_df = preprocess_NB(NB_df)
 
+
 trial_col = 'taste_trial'
 state_determinant = 'p(correct taste)'
+
+value_cols = ['p(correct taste)-avg', 'p(correct valence)-avg', 't(end)-avg', 't(start)-avg']
+exclude_epochs = [None, None, 'late', 'early']
+
+for value_col, exclude_epoch in zip(value_cols, exclude_epochs):
+    prepipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch)
+
+#run plotting pipeline in parallel using joblib
+Parallel(n_jobs=-1)(delayed(plottingpipe)(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch) for value_col, exclude_epoch in zip(value_cols, exclude_epochs))
+
+
+
+
 
 # value_col = 'p(correct taste)-avg'
 # pipeline(NB_df, value_col, trial_col, state_determinant)
@@ -128,14 +168,9 @@ state_determinant = 'p(correct taste)'
 # value_col = 'p(correct valence)-avg'
 # pipeline(NB_df, value_col, trial_col, state_determinant)
 
-
-value_col = 't(start)-avg'
-pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch = 'early')
-plt.close('all')
-
-value_col = 't(end)-avg'
-pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch = 'late')
-plt.close('all')
+# value_col = 't(end)-avg'
+# pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch = 'late')
+# plt.close('all')
 
 #
 # trial_col = 'taste_trial'
