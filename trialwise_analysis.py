@@ -763,7 +763,7 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
                           parallel=True, r2df=None, ymin=None, ymax=None):
     bound01 = False
     if ymin is not None and ymax is not None:
-        if ymin <= 1 and ymax >= 0:
+        if ymax <= 1 and ymin >= 0:
             bound01 = True
 
 

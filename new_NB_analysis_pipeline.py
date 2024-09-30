@@ -24,10 +24,10 @@ def preprocess_NB(NB_df):
 
     #for each grouping of taste and rec_dir, make a new column called 'length_rank' ranking the states' length
     NB_df['order_in_seq'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
-    NB_df['length_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['duration'].rank(ascending=False)
-    NB_df['state_accuracy_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['p_state_correct'].rank(ascending=False)
-    NB_df['taste_accuracy_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['p_taste_correct'].rank(ascending=False)
-    NB_df['valence_accuracy_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['p_valence_correct'].rank(ascending=False)
+    #NB_df['length_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['duration'].rank(ascending=False)
+    #NB_df['state_accuracy_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['p_state_correct'].rank(ascending=False)
+    #NB_df['taste_accuracy_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['p_taste_correct'].rank(ascending=False)
+    #NB_df['valence_accuracy_rank'] = NB_df.groupby(['taste', 'rec_dir','taste_trial'])['p_valence_correct'].rank(ascending=False)
 
     NB_df['p(correct state)'] = NB_df['p_state_correct']
     NB_df['p(correct taste)'] = NB_df['p_taste_correct']
@@ -37,19 +37,16 @@ def preprocess_NB(NB_df):
     NB_df['t(median)'] = NB_df['t_med']
     NB_df['t(start)'] = NB_df['t_start']
     NB_df['t(end)'] = NB_df['t_end']
-    NB_df['change in t(end)'] = NB_df['t(end)'].sub(NB_df.groupby(['taste', 'rec_dir'])['t(end)'].transform('mean'))
-    NB_df['Δ t(early-late trans.)'] = NB_df['t(end)'].sub(NB_df.groupby(['taste', 'rec_dir'])['t(end)'].transform('mean'))
-    NB_df['|Δ t(early-late trans.)|'] = NB_df['Δ t(early-late trans.)'].abs()
     return NB_df
 
 def get_relevant_states(df, state_determinant, exclude_epoch=None):
     #remove all rows where Y == 'prestim'
-    df = df.loc[df['Y'] != 'prestim']
-    #remove all rows where duration is less than 100
-    df = df.loc[df['duration'] >= 100]
-    #remove all rows where t_start is greater than 2500
+    #df = df.loc[df['Y'] != 'prestim']
+    #remove all rows where duration is less than 50
+    df = df.loc[df['duration'] >= 50]
+    #remove all rows where t_start is greater than 2000
     df = df.loc[df['t_start'] <= 2000]
-    df = df.loc[df['t_end'] >= 100] #remove all rows where t_end is less than 100
+    df = df.loc[df['t_end'] >= 150] #remove all rows where t_end is less than 200
     epoch_idx = {1: 'early', 2: 'late'}
     #rerank early_df by state_determinant for each taste, rec_dir, and taste_trial
     #remove '_rank' from state_determinant
@@ -68,8 +65,13 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     #if it is, reassign 'epoch' to 'late'
     for nm, group in df.groupby(['taste', 'rec_dir', 'taste_trial']):
         if len(group) == 1:
-            if group['t(start)'].values[0] > 1000:
+            if group['t(start)'].values[0] > 750:
                 df.loc[(df['taste'] == nm[0]) & (df['rec_dir'] == nm[1]) & (df['taste_trial'] == nm[2]), 'epoch'] = 'late'
+
+    df['p(correct taste)-avg'] = df['p(correct taste)'].sub(df.groupby(['taste', 'rec_dir','epoch'])['p(correct taste)'].transform('mean'))
+    df['p(correct valence)-avg'] = df['p(correct valence)'].sub(df.groupby(['taste', 'rec_dir','epoch'])['p(correct valence)'].transform('mean'))
+    df['t(end)-avg'] = df['t(end)'].sub(df.groupby(['taste', 'rec_dir','epoch'])['t(end)'].transform('mean'))
+    df['t(start)-avg'] = df['t(start)'].sub(df.groupby(['taste', 'rec_dir','epoch'])['t(start)'].transform('mean'))
 
     if exclude_epoch is not None:
         if exclude_epoch == 'early':
@@ -89,7 +91,7 @@ def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    nIter = 100
+    nIter = 10000
     df = get_relevant_states(df, state_determinant, exclude_epoch=exclude_epoch)
 
     subject_col = 'exp_name'
@@ -105,7 +107,7 @@ def pipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None):
         save_flag = state_determinant + '_determine_' + epoch
 
         df3, shuff = ta.preprocess_nonlinear_regression(group, subject_cols=subject_col, group_cols=group_cols,
-                                                                 trial_col=trial_col, value_col=value_col, overwrite=True,
+                                                                 trial_col=trial_col, value_col=value_col, overwrite=False,
                                                                  nIter=nIter, save_dir=save_dir, flag=save_flag)
 
         ta.plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, [subject_col], nIter=nIter, save_dir=save_dir, flag=save_flag)
@@ -114,40 +116,31 @@ proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # direc
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
-###Process state coding
-HA = ana.HmmAnalysis(proj) #create a hmm analysis object
-ov = HA.get_hmm_overview(overwrite=True) #extract all the hmms into a dataframe and saves it
-HA.sort_hmms_by_AIC(overwrite=True) #label hmms in hmm_overview with lowest AIC for each recording, save to sorted hmms
-best_hmms = HA.get_best_hmms(sorting='best_AIC', overwrite=True) #get rows of hmm_overview where sorting column==sorting arugument
-
-NB_df = HA.analyze_NB_ID2(overwrite=True)
+NB_df = HA.analyze_NB_ID2(overwrite=False)
 NB_df = preprocess_NB(NB_df)
 
 trial_col = 'taste_trial'
 state_determinant = 'p(correct taste)'
-value_col = 'p(correct taste)'
-pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='early')
 
-trial_col = 'taste_trial'
-state_determinant = 'p(correct taste)'
-value_col = 't(start)'
-pipeline(NB_df, value_col, trial_col, state_determinant)
+# value_col = 'p(correct taste)-avg'
+# pipeline(NB_df, value_col, trial_col, state_determinant)
+#
+# value_col = 'p(correct valence)-avg'
+# pipeline(NB_df, value_col, trial_col, state_determinant)
 
-trial_col = 'taste_trial'
-state_determinant = 'p(correct taste)'
-value_col = 'p(correct valence)'
-pipeline(NB_df, value_col, trial_col, state_determinant)
+
+value_col = 't(start)-avg'
+pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch = 'early')
 plt.close('all')
 
-trial_col = 'taste_trial'
-state_determinant = 'p(correct taste)'
-value_col = 't(end)'
-pipeline(NB_df, value_col, trial_col, state_determinant)
+value_col = 't(end)-avg'
+pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch = 'late')
+plt.close('all')
 
 #
 # trial_col = 'taste_trial'
 # state_determinant = 'taste_accuracy_rank'
-# value_col = '|t(early:late)-x̄(t(early:late)|'
+# value_col = '|t(early:late)-x?(t(early:late)|'
 # pipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch='late')
 
 #
