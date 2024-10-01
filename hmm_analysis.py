@@ -393,6 +393,7 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
     n_trials = params['n_trials']
     t_start = params['time_start']
     t_end = params['time_end']
+
     dt = params['dt']
     unit_type = params['unit_type']
     area = params['area']
@@ -412,6 +413,7 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
         baseline = np.mean(prestim, axis=0)
     else:
         baseline = 0
+    zeroidx = np.where(s_time == 0)[0][0]
 
     #state must be present for at least 50ms each post-stimulus
     check_states = [state, other_state] if other_state is not None else [state]
@@ -445,7 +447,7 @@ def get_state_firing_rates(rec_dir, hmm_id, state, units=None, min_dur=50, max_d
 
         si = np.where((s_time >= t1) & (s_time < t2))[0]
         tmp = np.sum(spikes[:, si], axis=-1) / (dt*len(si))
-        if remove_baseline and s_time[0] < 0:
+        if remove_baseline: # and s_time[0] < 0:
             tmp = tmp - baseline
             
         # Skip trial if this particular state is shorter than min_dur
@@ -1133,13 +1135,10 @@ def NB_classify_rec(group, units, label_col='taste'):
 
         for j in range(hmm.n_states):
             label = row[label_col] + '_' + str(j)
-            tmp_r, tmp_trials , start, end = get_state_firing_rates(row['rec_dir'], row['hmm_id'], j, units=un, other_state=None,
+            tmp_r, tmp_trials, start, end = get_state_firing_rates(row['rec_dir'], row['hmm_id'], j, units=un, other_state=None,
                                                        remove_baseline=False)
             # calculate the average median time of the state
-            medians = []
-            for s, e in zip(start, end):
-                med = (s + e) / 2
-                medians.append(med)
+            medians = end - start
             avg_med = np.mean(medians)
 
             if avg_med <= 100:

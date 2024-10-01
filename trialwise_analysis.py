@@ -843,7 +843,6 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
             ax.xaxis.set_tick_params(labelsize=textsize * 0.85)
             if bound01:
                 ax.set_ylim(0, 1)
-            # ax.set_ylim(ymin, ymax)
         # make y label "avg" + dat_col
         ax = axes[0]
         ylab = "avg " + dat_col
@@ -1663,10 +1662,8 @@ def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_c
 
 def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, parallel=True, ymin=None, ymax=None, textsize=20):
     groups = [subject_cols] + group_cols
-
-    if ymin is None:
+    if ymin is None and ymax is None:
         ymin = min(df3[value_col])
-    if ymax is None:
         ymax = max(df3[value_col])
 
     plot_fits_summary_avg(df3, shuff_df=shuff, dat_col=value_col, trial_col=trial_col, save_dir=save_dir,

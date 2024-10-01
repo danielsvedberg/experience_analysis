@@ -40,28 +40,49 @@ def preprocess_NB(NB_df):
     return NB_df
 
 def get_relevant_states(df, state_determinant, exclude_epoch=None):
+    epoch_idx = {'early': 1, 'late': 2}
     #remove all rows where Y == 'prestim'
     df = df.loc[df['Y'] != 'prestim']
     #remove all rows where duration is less than 50
-    df = df.loc[df['duration'] >= 50]
+    df = df.loc[df['duration'] >= 100]
     #remove all rows where duration is greater than 3000
     df = df.loc[df['duration'] <= 3000]
     #remove all rows where t_start is greater than 2000
-    df = df.loc[df['t_start'] <= 2000]
-    df = df.loc[df['t_end'] >= 150] #remove all rows where t_end is less than 200
-    epoch_idx = {1: 'early', 2: 'late'}
+    #df = df.loc[df['t_start'] <= 2500]
+    df = df.loc[df['t_end'] >= 200] #remove all rows where t_end is less than 200
+    #round p(correct taste) and p(correct valence) 3 decimal places
+    df['p(correct taste)'] = df['p(correct taste)'].round(2)
+    df['p(correct valence)'] = df['p(correct valence)'].round(2)
+    df = df.sort_values(by=['rec_dir', 'session_trial', 't_start'])
+    early_df = df.loc[df['t_start'] <= 750]
+    early_df = early_df.sort_values(by=['rec_dir', 'session_trial', 't_start'])
     #rerank early_df by state_determinant for each taste, rec_dir, and taste_trial
     #remove '_rank' from state_determinant
     #det = state_determinant.split('_rank')[0]
     sd_rank = state_determinant + '_rank'
-    df[sd_rank] = df.groupby(['taste', 'rec_dir','taste_trial'])[state_determinant].rank(ascending=False)
+    early_df[sd_rank] = early_df.groupby(['taste', 'rec_dir','taste_trial'])[state_determinant].rank(ascending=False)
+    early_df['p(correct valence) rank'] = early_df.groupby(['taste', 'rec_dir','taste_trial'])['p(correct valence)'].rank(ascending=False)
+    early_df['order_rank'] = early_df.groupby(['taste', 'rec_dir','taste_trial'])['t_start'].rank(ascending=True, method='first')
+    early_df['order X correct rank'] = early_df['order_rank'] * (1-early_df['p(correct taste)'])
+    early_df['order X correct rank'] = early_df.groupby(['taste', 'rec_dir','taste_trial'])['order X correct rank'].rank(ascending=True, method='first')
 
-    df = df.loc[df[sd_rank] <= 2]
+    early_df = early_df.loc[early_df['order X correct rank'] == 1]
+    early_df['epoch'] = 'early'
+    #now, get the rows of df that are not contained in early_df
+    late_df = df.loc[~df.index.isin(early_df.index)]
+    late_df = late_df.loc[late_df['t_start'] >= 100]
+    #rerank late_df by state_determinant for each taste, rec_dir, and taste_trial
+    late_df['p(correct valence) rank'] = late_df.groupby(['taste', 'rec_dir','taste_trial'])['p(correct valence)'].rank(ascending=False)
+    late_df['order_rank'] = late_df.groupby(['taste', 'rec_dir','taste_trial'])['t_start'].rank(ascending=True, method='first')
+    late_df['order X correct rank'] = late_df['order_rank'] * (1-late_df['p(correct valence)'])
+    late_df['order X correct rank'] = late_df.groupby(['taste', 'rec_dir','taste_trial'])['order X correct rank'].rank(ascending=True, method='first')
+    late_df = late_df.loc[late_df['order X correct rank'] == 1]
+    late_df['epoch'] = 'late'
+    df = pd.concat([early_df, late_df])
+    df = df.sort_values(by=['rec_dir', 'session_trial', 't_start'])
 
-    df['order_in_seq'] = df.groupby(['taste', 'rec_dir','taste_trial'])['t_med'].rank(ascending=True, method='first')
-    df = df.loc[df['order_in_seq'] <= 2]
-    # apply epoch index according to order_in_seq
-    df['epoch'] = df['order_in_seq'].map(epoch_idx)
+    df['order_in_seq'] = df.groupby(['rec_dir','session_trial'])['t_med'].rank(ascending=True, method='first')
+
     #for each grouping of rec_dir, taste, and taste_trial, check if there is just one state
     #if the group just has one row, check if t_start is greater than 1000
     #if it is, reassign 'epoch' to 'late'
@@ -142,9 +163,9 @@ proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # direc
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
-NB_df = HA.analyze_NB_ID2(overwrite=False)
-NB_df = preprocess_NB(NB_df)
+NB_df = HA.analyze_NB_ID2(overwrite=True)
 
+NB_df = preprocess_NB(NB_df)
 
 trial_col = 'taste_trial'
 state_determinant = 'p(correct taste)'
