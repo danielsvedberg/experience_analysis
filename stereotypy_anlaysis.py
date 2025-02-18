@@ -92,8 +92,8 @@ final_df = pd.concat(final_dfs, ignore_index=True)
 final_df = pd.merge(final_df, rec_info, on='rec_dir')
 final_df['session'] = final_df['rec_num']
 
-subject_cols = ['exp_name']
-group_cols = ['exp_group', 'session', 'taste']
+sub_cols = ['exp_name']
+gr_cols = ['exp_group', 'session', 'taste']
 trial_col = 'taste_trial'
 value_col = 'euclidean_distance'
 folder = 'dist_to_avg_stereotypy'
@@ -104,10 +104,10 @@ if not os.path.exists(save_dir):
     print('Created directory:', save_dir)
 nIter = 10000
 #remove session 2
-final_df = final_df.loc[final_df['rec_num'] != 2]
-preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, subject_cols, group_cols, trial_col, value_col,
+#final_df = final_df.loc[final_df['rec_num'] != 2]
+preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, sub_cols, gr_cols, trial_col, value_col,
                                                        nIter=nIter, save_dir=save_dir, overwrite=False)
-ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, group_cols, subject_cols, nIter=nIter, save_dir=save_dir)
+ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, gr_cols, sub_cols, nIter=nIter, save_dir=save_dir)
 
 ta.plot_fits(preprodf, trial_col='taste_trial', dat_col='euclidean_distance', save_dir=save_dir,
              time_col='session')
@@ -131,8 +131,8 @@ group_cols = ['exp_group', 'session', 'taste']
 trial_col = 'taste_trial'
 value_col = 'euclidean_distance'
 nIter = 10000
-preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, subject_cols, group_cols, trial_col, value_col,
-                                                       nIter=nIter, save_dir=save_dir, overwrite=True)
+#preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, subject_cols, group_cols, trial_col, value_col,
+#                                                       nIter=nIter, save_dir=save_dir, overwrite=False)
 ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, group_cols, subject_cols, nIter=nIter, save_dir=save_dir)
 
 
@@ -219,8 +219,8 @@ parallel = True
 
 preprodf = preprodf.loc[preprodf['exp_name'] != 'DS33']
 shuffle = shuffle.loc[shuffle['exp_name'] != 'DS33']
-preprodf = preprodf.loc[preprodf['exp_name'] != 'DS41']
-shuffle = shuffle.loc[shuffle['exp_name'] != 'DS41']
+#preprodf = preprodf.loc[preprodf['exp_name'] != 'DS41']
+#shuffle = shuffle.loc[shuffle['exp_name'] != 'DS41']
 
 ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, group_cols, subject_col, nIter=nIter, save_dir=save_dir, flag=flag)
 
