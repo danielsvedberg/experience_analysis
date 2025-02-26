@@ -10,14 +10,158 @@ import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 import random
 import scipy.stats as stats
+import os
 from sklearn.utils import resample
+
 
 #for all matplotlib plots, set the default font to Arial
 plt.rcParams['font.family'] = 'Arial'
 #set font size to 8
 plt.rcParams.update({'font.size': 8})
-default_margins = {'left': 0.15, 'right': 0.95, 'top': 0.875, 'bottom': 0.175, 'wspace': 0.05, 'hspace': 0.05}
-summary_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.3, 'wspace': 0.05, 'hspace': 0.05}
+default_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.1, 'wspace': 0.05, 'hspace': 0.05}
+summary_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.3, 'wspace': 0.01, 'hspace': 0.01}
+
+import matplotlib.pyplot as plt
+import matplotlib
+
+
+def detect_subplot_grid_shape(fig):
+    """
+    Attempt to detect the number of rows and columns of 'main' subplots
+    in a figure by examining their positions in normalized figure coordinates.
+
+    This assumes a rectangular grid of subplots laid out by something
+    like plt.subplots(nrows, ncols) (i.e. uniform sized Axes).
+
+    Returns
+    -------
+    (nrows, ncols) : tuple of int
+    """
+    # Get all Axes
+    axes = fig.get_axes()
+
+    # Filter to only "real" subplot Axes. We skip things like colorbars or inset_axes
+    # A simple heuristic: check if it's an instance of SubplotBase.
+    # Alternatively, you could skip any axes that appear to be legends or colorbars.
+    real_subplots = []
+    for ax in axes:
+        # We also skip invisible or twin axes (to avoid duplicates).
+        if (ax.get_visible() and
+                isinstance(ax, matplotlib.axes.SubplotBase)):
+            real_subplots.append(ax)
+
+    if not real_subplots:
+        return 0, 0  # No valid subplots found
+
+    # Extract bounding boxes in normalized figure coords
+    # We'll look at the center or the lower-left corner.
+    # For consistent subplots, either approach works if they're arranged in a grid.
+    x_positions = []
+    y_positions = []
+    for ax in real_subplots:
+        bbox = ax.get_position()  # returns Bbox(x0, y0, x1, y1) in [0..1]
+        # Let's use the center to avoid minor floating offsets on edges
+        x_center = 0.5 * (bbox.x0 + bbox.x1)
+        y_center = 0.5 * (bbox.y0 + bbox.y1)
+        x_positions.append(x_center)
+        y_positions.append(y_center)
+
+    # Group unique centers for x and y, which correspond to columns and rows respectively
+    # We'll define a small tolerance to group subplots in the same row/column
+    # if their centers differ by less than some tiny threshold.
+    def unique_positions(vals, tol=1e-3):
+        # Sort them
+        vals_sorted = sorted(vals)
+        unique_vals = []
+        current_group = None
+        for v in vals_sorted:
+            if current_group is None:
+                current_group = v
+                unique_vals.append(v)
+            else:
+                # if difference is large enough, we treat as a new group
+                if abs(v - current_group) > tol:
+                    unique_vals.append(v)
+                    current_group = v
+        return unique_vals
+
+    unique_x = unique_positions(x_positions, tol=1e-3)
+    unique_y = unique_positions(y_positions, tol=1e-3)
+
+    ncols = len(unique_x)
+    nrows = len(unique_y)
+
+    return (nrows, ncols)
+
+
+def adjust_figure_for_panel_size_auto(fig, panel_width=1.2, panel_height=1.2, do_second_tight=True):
+    """
+    Adjust an existing figure so that after tight_layout() the full grid of subplots
+    has a total dimension of (ncols * panel_width) x (nrows * panel_height) inches,
+    where nrows and ncols are automatically detected.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        The figure object (already containing subplots).
+    panel_width : float
+        Desired width (in inches) of each subplot *panel*.
+    panel_height : float
+        Desired height (in inches) of each subplot *panel*.
+    do_second_tight : bool, optional
+        If True, applies tight_layout() again after resizing the figure.
+        This can slightly refine the result.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The same figure object, but resized so that the total subplot grid
+        matches the target dimension (ncols * panel_width x nrows * panel_height).
+    """
+    # 1. Apply tight_layout so that subplot bounding boxes are computed
+    fig.tight_layout()
+    fig.canvas.draw()  # force a draw so that layout info is up to date
+
+    # 2. Detect the grid shape from the Axes
+    nrows, ncols = detect_subplot_grid_shape(fig)
+    if nrows == 0 or ncols == 0:
+        # Could not detect a valid grid - return unchanged
+        return fig
+
+    # 3. Current figure size in inches
+    init_width, init_height = fig.get_size_inches()
+
+    # 4. Collect bounding boxes of all "real" subplots
+
+    ax = fig.get_axes()[0]
+    bb = ax.get_position()
+    xW = bb.x1 - bb.x0
+    yH = bb.y1 - bb.y0
+
+
+    subplot_width = xW * init_width
+    subplot_height = yH * init_height
+
+    panels_width = ncols * subplot_width
+    panels_height = nrows * subplot_height
+
+    padding_width = init_width - panels_width
+    padding_height = init_height - panels_height
+
+    new_panels_width = ncols * panel_width
+    new_panels_height = nrows * panel_height
+
+    new_fig_width = new_panels_width + padding_width
+    new_fig_height = new_panels_height + padding_height
+
+    fig.set_size_inches(new_fig_width, new_fig_height, forward=True)
+
+    # 8. Optionally do a second pass
+    if do_second_tight:
+        fig.tight_layout()
+
+    return fig
+
 # def model(x, a, b, c):
 #   return b/(1+np.exp(-a*(x-c)))
 # def model(x, a, b, c):
@@ -524,7 +668,7 @@ def plot_fits(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(mode sta
         # set x-axis labels for the bottommost x-axis
         for ax in axes[-1, :]:
             ax.set_xlabel(trial_col, size='large')
-        plt.subplots_adjust(**default_margins)
+        plt.tight_layout()
         # plt.suptitle("HMM stereotypy: " + exp_group)
 
 
@@ -602,7 +746,7 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
 
     plotwidth = 3*n_time_groups + 1
     def plot_ind_fit(df):
-        fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=True, figsize=(plotwidth, 10))
+        fig, axes = plt.subplots(n_tastes, n_time_groups, sharex=True, sharey=True)
         for i, taste in enumerate(unique_tastes):
             for j, time_group in enumerate(unique_time_groups):
                 ax = axes[i, j]
@@ -671,7 +815,7 @@ def plot_fits_summary(avg_gamma_mode_df, trial_col='session_trial', dat_col='pr(
             # set x-axis labels for the bottommost x-axis
             for ax in axes[-1, :]:
                 ax.set_xlabel(trial_col, size='large')
-            plt.subplots_adjust(**default_margins)
+            plt.tight_layout()
 
         return fig, axes
 
@@ -689,7 +833,7 @@ def mean_resample(col):
     s = resample(col)
     return np.nanmean(s)
 
-def calc_boot(group, trial_col, nIter=100, parallel=False):
+def calc_boot(group, trial_col, nIter=1000, parallel=False):
     unique_trials = np.sort(group[trial_col].unique())
     params = group[['alpha','beta', 'c', 'd']]
     params = params.drop_duplicates(ignore_index=True) #get each unique model
@@ -726,7 +870,7 @@ def calc_boot(group, trial_col, nIter=100, parallel=False):
     return boot_mean, boot_low, boot_high
 
 
-def plot_boot(ax, nm, group, color, trial_col='taste_trial', shade_alpha=0.2, nIter=100, parallel=False):
+def plot_boot(ax, nm, group, color, trial_col='taste_trial', shade_alpha=0.2, nIter=1000, parallel=False):
     unique_trials = np.sort(group[trial_col].unique())+1
     boot_mean, boot_low, boot_high = calc_boot(group, trial_col, nIter=nIter, parallel=parallel)
     ax.fill_between(unique_trials, boot_low, boot_high, alpha=shade_alpha, color=color)
@@ -759,7 +903,7 @@ def plot_shuff(ax, group, trials, color, linestyle):
 
 #plots the line graph of the average model for each session, with the data points overlaid, and the 95% confidence interval for the model
 def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(mode state)', time_col='session',
-                          save_dir=None, use_alpha_pos=False, dotalpha=0.1, textsize=20, flag=None, nIter=100,
+                          save_dir=None, use_alpha_pos=False, dotalpha=0.1, textsize=20, flag=None, nIter=1000,
                           parallel=True, r2df=None, ymin=None, ymax=None):
     bound01 = False
     if ymin is not None and ymax is not None:
@@ -811,7 +955,7 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
         plot_df = add_indices(plot_df)
         shuff_plot_df = add_indices(shuff_plot_df)
         plotwidth = 3*n_time_groups + 1
-        fig, axes = plt.subplots(1, n_time_groups, sharex=True, sharey=True, figsize=(plotwidth, 4))
+        fig, axes = plt.subplots(1, n_time_groups, sharex=True, sharey=True)
         legend_handles = []
         # plot shuffled data:
         for nm, group in shuff_plot_df.groupby([time_col, 'session_index', 'exp_group', 'exp_group_index']):
@@ -853,20 +997,16 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
         ylab = "avg " + dat_col
         ax.set_ylabel(ylab, rotation=90, size=textsize, labelpad=0)
         ax.yaxis.set_tick_params(labelsize=textsize)
-        #plt.subplots_adjust(**default_margins)
         plt.tight_layout()
+        #plt.tight_layout()
 
         #ax = axes[-1]
         #ax.legend(handles=legend_handles, loc='best', ncol=1, fontsize=textsize)
 
         return fig, axes
 
-    if flag is not None:
-        save_str = dat_col + '_' + trial_col + '_' + flag + '_' + 'summary.png'
-        save_str2 = dat_col + '_' + trial_col + '_' + flag + '_' + 'summary.svg'
-    else:
-        save_str = dat_col + '_' + trial_col + '_' + 'summary.png'
-        save_str2 = dat_col + '_' + trial_col + '_' + 'summary.svg'
+
+    save_str = dat_col + '_' + trial_col + '_' + 'summary'
 
     if use_alpha_pos:
         unique_alpha_pos = df['alpha_pos'].unique()
@@ -880,16 +1020,12 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
                     alpha_lab = 'neg'
 
                 savename = '/' + alpha_lab + '_' + save_str
-                plt.savefig(save_dir + savename)
-                savename2 = '/' + alpha_lab + '_' + save_str2
-                plt.savefig(save_dir + savename2)
+                save_fig(fig, save_dir, 'line_graphs', savename, flag)
     else:
         fig, axes = make_grid_plot(df, shuff_df)
-        if save_dir is not None:
-            savename = '/' + save_str
-            plt.savefig(save_dir + savename)
-            savename2 = '/' + save_str2
-            plt.savefig(save_dir + savename2)
+        fig = adjust_figure_for_panel_size_auto(fig)
+
+        save_fig(fig, save_dir, 'line_graphs', save_str, flag)
 
 
 def get_pval_stars(pval, adjustment=None):
@@ -931,7 +1067,7 @@ def bootstrap_mean_ci(data, n_bootstrap=100, ci=95):
     upper_bound = np.nanpercentile(bootstrap_means, high)
     return np.nanmean(bootstrap_means), lower_bound, upper_bound
 
-def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, n_comp=1, two_tailed=True, boot_data=True):
+def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, n_comp=1, two_tailed=True, boot_data=True):
     #get the lower 0.025 and upper 0.975 percentiles for the shuff_r2
     #these data will form the floating bars representing the null distribution
 
@@ -972,7 +1108,7 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
     ax.bar(bar_pos, upper_bound - lower_bound, bar_width, bottom=lower_bound, color='gray',
                 alpha=0.5,
                 label=label if all(idx == 0 for idx in indices) else "")
-
+    
     # Plot the mean r2 values
     ax.hlines(mean_r2, bar_pos - bar_width / 2, bar_pos + bar_width / 2,
                    color=color, lw=2)
@@ -986,9 +1122,9 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
     # print the actual p value rounded to 3 decimal places below the star
     ax.text(bar_pos + 0.1, ci_upper - 0.01, str(round(p_val, 3)),
             fontsize=8, ha='left', va='bottom', rotation='vertical')
-
+    #ax.set_aspect('equal', adjustable='box')
 #plots the bar graphs for the value col  
-def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=20, nIter=100, n_comp=1):
+def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=8, nIter=1000, n_comp=1):
     if stat_col is None:
         stat_col = 'r2'
     sessions = r2_df['session'].unique()
@@ -1005,6 +1141,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
     colmap = {'naive': 0, 'suc_preexp': 1, 'sucrose preexposed': 1, 'sucrose pre-exposed': 1}
 
     tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
+    n_tastes = len(tastes) + 1
 
     # bootstrap mean r2 value with replacement for nIter iterations
     groups = ['exp_group', 'session', 'taste']
@@ -1016,11 +1153,14 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
     # Iterate over each session and create a subplot
     exp_groups = r2_df['exp_group'].unique()
     # Width of each bar
+    figW = 5
+    figH = 1
+    print(figW, figH)
     bar_width = 0.75
-    plotwidth = 3*n_sessions + 1
     for k, exp_group in enumerate(exp_groups):
         # Set up the subplots
-        fig, axes = plt.subplots(1, n_sessions, figsize=(5, 2), sharey=True)
+        fig, axes = plt.subplots(1, n_sessions, sharey=True)
+        #fig.set_figwidth(figW)
         for i, session in enumerate(sessions):
             ax = axes[i]
             # Plot bars for each taste
@@ -1032,7 +1172,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
                 indices = [j]
                 color = pal[colmap[exp_group]]
                 label = exp_group
-                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=two_tailed, n_comp=n_comp)
+                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=two_tailed, n_comp=n_comp)
 
             # Plot overall percentile bars and mean r2 values
             r2_data = r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == session)]
@@ -1043,7 +1183,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, overall_r2, overall_shuff_r2, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=two_tailed, n_comp=n_comp)
+            plot_bars(ax, overall_r2, overall_shuff_r2, label, bar_pos, bar_width, nIter, indices, color, two_tailed=two_tailed, n_comp=n_comp)
 
             # Only set ylabel for the first subplot
             if i == 0:
@@ -1059,20 +1199,29 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
             #     ax.set_ylim(ymin, ymax)
             # Set the x-ticks
             ax.set_xticks(np.arange(len(tastes) + 1))
-            ax.set_xticklabels(tastes + ['Combined'], rotation=60, size=textsize)
+            ax.set_xticklabels(tastes + ['Combined'], rotation=80, size=textsize)
             ax.xaxis.set_tick_params(labelsize=textsize)
             ax.set_title('session ' + str(session), rotation=0, size=textsize)
 
         plt.tight_layout()
+        fig = adjust_figure_for_panel_size_auto(fig)
         savename = exp_group + '_' + stat_col + '_summary_bar_plot'
-        exts = ['.png', '.svg']
-        for ext in exts:
-            if save_dir is not None:
-                if save_flag is not None:
-                    filename = save_flag + '_' + savename
-                else:
-                    filename = savename
-                plt.savefig(save_dir + '/' + filename + ext)
+        foldername = 'day_avgs'
+        save_fig(fig, save_dir, foldername, savename, save_flag=save_flag)
+
+def save_fig(fig, save_dir, folder_name, savename, save_flag=None):
+    if save_flag is not None:
+        savename = save_flag + '_' + savename
+
+    exts = ['.png', '.svg']
+    for ext in exts:
+        new_save_dir = os.path.join(save_dir, ext)
+        new_save_dir = os.path.join(new_save_dir, folder_name)
+        if not os.path.exists(new_save_dir):
+            os.makedirs(new_save_dir)
+        filename = savename + ext
+        fig.savefig(os.path.join(new_save_dir, filename))
+
 
 #this function plots just the average value + tests across tastes
 def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=8, nIter=100, n_comp=1):
@@ -1102,10 +1251,10 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
     n_comp = n_sessions
     # Iterate over each session and create a subplot
     exp_groups = r2_df['exp_group'].unique()
-    # Width of each bar
     bar_width = 0.75
+    figW = (1.2/5) * n_sessions
     for k, exp_group in enumerate(exp_groups):
-        fig, ax = plt.subplots(1, 1, figsize=(2, 2), sharey=True)
+        fig, ax = plt.subplots(1, 1, sharey=True)
         for i, session in enumerate(sessions):
             r2_data = r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == session)][stat_col]
             shuff_r2_data = shuff_r2_df[(shuff_r2_df['exp_group'] == exp_group) & (shuff_r2_df['session'] == session)]
@@ -1114,7 +1263,7 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=two_tailed, n_comp=n_comp)
+            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=two_tailed, n_comp=n_comp)
 
         # Only set ylabel for the first subplot
         if stat_col == 'r2':
@@ -1139,24 +1288,19 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
         handles = [mlines.Line2D([], [], color='gray', marker='s', linestyle='None', label='trial-shuffle 95% CI')]
         handles.append(mlines.Line2D([], [], color=pal[colmap[exp_group]], marker='s', linestyle='None', label='avg. of models'))
         #apply tight layout
-        plt.tight_layout()
+        #plt.tight_layout()
+        fig = adjust_figure_for_panel_size_auto(fig, panel_width=figW)
         # Add the legend to the figure
         #ax.legend(handles=handles, loc='best', fontsize=textsize * 0.8)
         #plt.subplots_adjust(**summary_margins)
 
         savename = exp_group + '_' + stat_col + '_avg_bar_plot'
-        exts = ['.png', '.svg']
-        for ext in exts:
-            if save_dir is not None:
-                if save_flag is not None:
-                    filename = save_flag + '_' + savename
-                else:
-                    filename = savename
-                plt.savefig(save_dir + '/' + filename + ext)
+        save_fig(fig, save_dir, 'day_avgs', savename, save_flag=save_flag)
+
 
 difference_index = {'1-2': 0, '2-3': 1, '1-3': 2}
 #plots difference in value col (normally r2) across sessions
-def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=None, save_dir=None, textsize=8, nIter=100, n_comp=1, ymin=None, ymax=None):
+def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=None, save_dir=None, textsize=8, nIter=100, n_comp=None, ymin=None, ymax=None):
     if stat_col is None:
         stat_col = 'r2'
     diff_col = stat_col + ' difference'
@@ -1177,6 +1321,9 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
     sess_diffs = sorted(sess_diffs, key=lambda x: difference_index[x])
     n_diffs = len(sess_diffs)
 
+    if n_comp is None:
+        n_comp = n_diffs
+
     avg_shuff = shuff_r2_diffs.groupby(groups + ['iternum']).mean().reset_index()
     avg_r2 = r2_diffs.groupby(groups).mean().reset_index()
 
@@ -1194,9 +1341,11 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
     # Set up the subplots
     # Iterate over each session and create a subplot
     # Width of each bar
+    n_sessions = len(sess_diffs)
+    n_tastes = len(tastes) + 1
     bar_width = 0.75
     for k, exp_group in enumerate(exp_groups):
-        fig, axes = plt.subplots(1, n_diffs, figsize=(5, 2), sharey=True)
+        fig, axes = plt.subplots(1, n_diffs, sharey=True)
         for i, sess_diff in enumerate(sess_diffs):
             if n_diffs == 1:
                 ax = axes
@@ -1210,7 +1359,7 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
                 indices = [j]
                 color = pal[colmap[exp_group]]
                 label = exp_group
-                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=True, n_comp=n_comp)
+                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=True, n_comp=n_comp)
 
         # Plot overall percentile bars and mean r2 values
             r2_data = r2_diffs[(r2_diffs['exp_group'] == exp_group) & (r2_diffs['Session Difference'] == sess_diff)]
@@ -1223,12 +1372,10 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, overall_r2, overall_shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=True, n_comp=n_comp)
+            plot_bars(ax, overall_r2, overall_shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=True, n_comp=n_comp)
 
             # Only set ylabel for the first subplot
             if i == 0:
-                lab = '$ \Delta $ ' + stat_col
-                ax.set_ylabel(diff_col, size=textsize)
                 ax.yaxis.set_tick_params(labelsize=textsize)
 
             ax.set_ylim(ymin, ymax)
@@ -1255,21 +1402,17 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
         else:
             #axes.legend(handles=handles, loc='best', fontsize=textsize)
             axes.set_ylabel(lab, size=textsize)
-        plt.subplots_adjust(**default_margins)
+
+        fig = adjust_figure_for_panel_size_auto(fig)
+        #plt.tight_layout()
 
     ####################################################################################################
     # save the figure as png
         savename = exp_group + '_' + stat_col + '_day_diff_plot'
-        exts = ['.png', '.svg']
-        for ext in exts:
-            if save_dir is not None:
-                if save_flag is not None:
-                    filename = save_flag + '_' + savename
-                else:
-                    filename = savename
-                plt.savefig(save_dir + '/' + filename + ext)
+        save_fig(fig, save_dir, 'session_diffs', savename, save_flag=save_flag)
 
-def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=None, save_dir=None, textsize=8, nIter=100, n_comp=1, ymin=None, ymax=None):
+
+def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=None, save_dir=None, textsize=8, nIter=100, n_comp=None, ymin=None, ymax=None):
     if stat_col is None:
         stat_col = 'r2'
     diff_col = stat_col + ' difference'
@@ -1287,6 +1430,11 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
     #order sess_diffs according to difference_index
     sess_diffs = sorted(sess_diffs, key=lambda x: difference_index[x])
     n_diffs = len(sess_diffs)
+
+    if n_comp is None:
+        n_comp = n_diffs
+
+    figW = (1.2/5) * n_diffs
 
     avg_shuff = shuff_r2_diffs.groupby(groups + ['iternum']).mean().reset_index()
     avg_r2 = r2_diffs.groupby(groups).mean().reset_index()
@@ -1307,7 +1455,7 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
     # Width of each bar
     bar_width = 0.75
     for k, exp_group in enumerate(exp_groups):
-        fig, ax = plt.subplots(1, 1, figsize=(2, 2))
+        fig, ax = plt.subplots(1, 1)
         for i, sess_diff in enumerate(sess_diffs):
         # Plot overall percentile bars and mean r2 values
             r2_data = r2_diffs[(r2_diffs['exp_group'] == exp_group) & (r2_diffs['Session Difference'] == sess_diff)]
@@ -1319,7 +1467,7 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, overall_r2, overall_shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, two_tailed=True, n_comp=n_comp)
+            plot_bars(ax, overall_r2, overall_shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=True, n_comp=n_comp)
 
         ax.set_ylabel(diff_col, size=textsize)
         ax.yaxis.set_tick_params(labelsize=textsize)
@@ -1329,25 +1477,20 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
         ax.set_xticks(np.arange(len(sess_diffs)))
         ax.set_xticklabels(sess_diffs, size=textsize)
         ax.set_xlabel('session', size=textsize)
+        lab = '$\Delta $ ' + stat_col
+        ax.set_ylabel(lab, size=textsize)
 
-        plt.tight_layout()
+        fig = adjust_figure_for_panel_size_auto(fig, panel_width=figW)
 
     ####################################################################################################
     # save the figure as png
         savename = exp_group + '_' + stat_col + '_avg_day_diff_plot'
-        exts = ['.png', '.svg']
-        for ext in exts:
-            if save_dir is not None:
-                if save_flag is not None:
-                    filename = save_flag + '_' + savename
-                else:
-                    filename = savename
-                plt.savefig(save_dir + '/' + filename + ext)
+        save_fig(fig, save_dir, 'session_diffs', savename, save_flag=save_flag)
 
 
 #plots difference in value col (normally r2) between groups
 #shuff_r2_df should already be averaged across groups (no individual exp names)
-def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, textsize=8, nIter=100, n_comp=1, ymin=None, ymax=None):
+def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, textsize=8, nIter=100, n_comp=None, ymin=None, ymax=None):
     #shuff r2 df should be averaged across exp_names
     if stat_col is None:
         stat_col = 'r2'
@@ -1359,6 +1502,9 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
     sessions = r2_df['session'].unique()
     sessions.sort()
     n_sessions = len(sessions)
+    if n_comp is None:
+        n_comp = n_sessions
+
     session_idx = np.arange(n_sessions)
     # turn all session values into integers
     session_idx = session_idx.astype(int)
@@ -1464,10 +1610,12 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
     sessions = shuff_r2_df['session'].unique()
     sessions.sort()
     n_sessions = len(sessions)
+    n_tastes = len(tastes) + 1
 
     # Set up the subplots
-    plotwidth = 3*n_sessions + 1
-    fig, axes = plt.subplots(1, n_sessions, figsize=(5, 2), sharey=True)
+    figW = 1
+    figH = 1
+    fig, axes = plt.subplots(1, n_sessions, figsize=(figW, figH), sharey=True)
     # Iterate over each session and create a subplot
     exp_groups = r2_df['exp_group'].unique()
     # Width of each bar
@@ -1487,7 +1635,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
                 indices = [j, k]
                 color = pal[colmap[exp_group]]
                 label = exp_group
-                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, n_comp=n_comp, boot_data=False)
+                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, n_comp=n_comp, boot_data=False)
             # plot the data for difference between exp_groups
             r2_data = \
             boot_mean_r2_diff[(boot_mean_r2_diff['session'] == session) & (boot_mean_r2_diff['taste'] == taste)][
@@ -1497,7 +1645,7 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
             bar_pos = len(tastes)+1 #+ k * bar_width
             indices = [j, k + 1]
             label = '|$ \Delta $|'
-            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color='black', textsize=textsize, n_comp=n_comp, boot_data=False)
+            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color='black', n_comp=n_comp, boot_data=False)
 
         #plot the data for the average across tastes
         for k, exp_group in enumerate(exp_groups):
@@ -1508,14 +1656,14 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, textsize, n_comp=n_comp, boot_data=False)
+            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, n_comp=n_comp, boot_data=False)
         # plot the overall difference between exp_groups
         r2_data = overall_boot_mean_r2_diff[(overall_boot_mean_r2_diff['session'] == session)]['r2_diff']
         shuff_r2_data = overall_shuff_diff[(overall_shuff_diff['session'] == session)]['r2_diff']
         bar_pos = len(tastes) + (k + 1) * bar_width
         indices = [i]
         label = '|$\Delta$|'
-        plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color='black', textsize=textsize, boot_data=False, n_comp=n_comp)
+        plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color='black', boot_data=False, n_comp=n_comp)
 
         # Only set ylabel for the first subplot
         if i == 0:
@@ -1539,22 +1687,13 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
 
     # Add the legend to the figure
     #axes[-1].legend(handles=handles, loc='best', fontsize=textsize)
-    #plt.subplots_adjust(**default_margins)
+    #plt.tight_layout()
     plt.tight_layout()
 
     ####################################################################################################
     # save the figure as png
     savename = stat_col + '_diffs_summary_bar_plot'
-    exts = ['.png', '.svg']
-    for ext in exts:
-        if save_dir is not None:
-            if save_flag is not None:
-                filename = save_flag + '_' + savename
-            else:
-                filename = savename
-            plt.savefig(save_dir + '/' + filename + ext)
-
-
+    save_fig(fig, save_dir, 'group_diffs', savename, save_flag=save_flag)
 
 
 def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
@@ -1631,7 +1770,7 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
         ax.set_xlabel('r2', size='large')
 
     plt.tight_layout()
-    plt.subplots_adjust(**default_margins)
+    #plt.tight_layout()
     # save the figure as png
     if save_dir is not None:
         if save_flag is None:
@@ -1695,11 +1834,11 @@ def preprocess_nonlinear_regression(df, subject_cols, group_cols, trial_col, val
 
 def plot_nonlinear_regression_stats(df3, shuff, subject_cols, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=8, ymin=None, ymax=None, save_dir=None):
     if type(subject_cols) is list:
-        groups = subject_cols + group_cols
+        gr = subject_cols + group_cols
     elif type(subject_cols) is str:
-        groups = [subject_cols] + group_cols
-    avg_shuff = shuff.groupby(groups + ['iternum']).mean().reset_index() #average across exp_names
-    avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
+        gr = [subject_cols] + group_cols
+    avg_shuff = shuff.groupby(gr + ['iternum']).mean().reset_index() #average across exp_names
+    avg_df3 = df3.groupby(gr).mean().reset_index() #trial average df3
 
     for exp_group, group in avg_df3.groupby(['exp_group']):
         avg_group_shuff = avg_shuff.groupby('exp_group').get_group(exp_group)
@@ -1709,9 +1848,9 @@ def plot_nonlinear_regression_stats(df3, shuff, subject_cols, group_cols, trial_
         else:
             save_flag = trial_col + '_' + value_col + '_' + exp_group + '_only'
         #this plots the average, 95% CI, null dist and pval for each taste and average across tastes
-        plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2)
+        plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter)
         #this plots the average, 95% CI, null dist and pval the average across tastes
-        plot_r2_pval_avg(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2)
+        plot_r2_pval_avg(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter)
 
 #TODO: fix issus with this:
 def get_session_differences(df3, shuff, stat_col='r2', group_cols=['exp_group', 'taste'], subject_cols = ['exp_name'], parallel=False):
@@ -1780,8 +1919,8 @@ def plot_session_differences(df3, shuff, subject_cols, group_cols, trial_col, va
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2, ymin=ymin, ymax=ymax)
-    plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2, ymin=ymin, ymax=ymax)
+    plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, ymin=ymin, ymax=ymax)
+    plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, ymin=ymin, ymax=ymax)
 
 def get_pred_change(df3, shuff, subject_cols, group_cols, trial_col):
     groups = subject_cols + group_cols
@@ -1835,8 +1974,8 @@ def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_c
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    plot_r2_pval_summary(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, two_tailed=True, textsize=textsize, nIter=nIter, n_comp=2)
-    plot_r2_pval_avg(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, textsize=textsize, two_tailed=True, nIter=nIter, n_comp=2)
+    plot_r2_pval_summary(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, two_tailed=True, textsize=textsize, nIter=nIter)
+    plot_r2_pval_avg(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, textsize=textsize, two_tailed=True, nIter=nIter)
 
 def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, parallel=True, ymin=None, ymax=None, textsize=20):
     groups = [subject_cols] + group_cols
@@ -1857,7 +1996,7 @@ def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, 
                                  save_dir=save_dir, use_alpha_pos=False, textsize=textsize, dotalpha=0.15,
                                  flag=save_flag, nIter=nIter, parallel=parallel, ymin=ymin, ymax=ymax)
 
-        plot_fits_summary(group, trial_col=trial_col, dat_col=value_col, save_dir=save_dir, use_alpha_pos=False, time_col='session', flag=save_flag)
+        #plot_fits_summary(group, trial_col=trial_col, dat_col=value_col, save_dir=save_dir, use_alpha_pos=False, time_col='session', flag=save_flag)
 
 def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_cols, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, ymin=None, ymax=None, textsize=20):
     if type(subject_cols) is list:
@@ -1871,7 +2010,7 @@ def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_cols, gro
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    plot_r2_pval_diffs_summary(avg_shuff, avg_df3, stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, n_comp=2, ymin=ymin, ymax=ymax)#re-run and replot with nIter=nIter
+    plot_r2_pval_diffs_summary(avg_shuff, avg_df3, stat_col, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter, ymin=ymin, ymax=ymax)#re-run and replot with nIter=nIter
 
 
 def plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, subject_cols, ymin=None, ymax=None, nIter=10000, save_dir=None, flag=None):
@@ -1883,19 +2022,19 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, subject_cols
     args = {'subject_cols': subject_cols, 'group_cols': group_cols, 'trial_col': trial_col, 'value_col': value_col, 'nIter': nIter, 'save_dir':save_dir,
             'textsize':8, 'flag': flag, 'ymin':ymin, 'ymax':ymax}
     
-    #plot_nonlinear_line_graphs(df3, shuff, **args)
+    plot_nonlinear_line_graphs(df3, shuff, **args)
     #plot the stats quantificaiton of the r2 values
     plot_nonlinear_regression_stats(df3, shuff, **args)
     #plot the stats quantification of the r2 values with head to head of naive vs sucrose preexposed
     #plot_nonlinear_regression_comparison(df3, shuff, stat_col='r2', **args)
     #plot the sessionwise differences in the r2 values
     plot_session_differences(df3, shuff, **args)
-
+    plt.close('all')
     r2_pred_change, shuff_r2_pred_change = get_pred_change(df3, shuff, subject_cols=subject_cols, group_cols=group_cols, trial_col=trial_col)
 
     # plot the within session difference between naive and preexp for pred. change
-    #ymin = min(r2_pred_change['pred. change'].min(), shuff_r2_pred_change['pred. change'].min())
-    #ymax = max(r2_pred_change['pred. change'].max(), shuff_r2_pred_change['pred. change'].max())
+    ymin = min(r2_pred_change['pred. change'].min(), shuff_r2_pred_change['pred. change'].min())
+    ymax = max(r2_pred_change['pred. change'].max(), shuff_r2_pred_change['pred. change'].max())
 
     args2 = args
     #remove 'subject cols' from args2
@@ -1907,4 +2046,4 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, subject_cols
     args3 = {'subject_cols':subject_cols, 'group_cols':group_cols, 'trial_col':trial_col, 'value_col':value_col,
             'nIter':nIter, 'save_dir':save_dir, 'textsize':8, 'flag':flag}
     plot_session_differences(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', **args3)
-
+    plt.close('all')

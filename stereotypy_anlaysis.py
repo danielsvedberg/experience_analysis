@@ -103,14 +103,17 @@ if not os.path.exists(save_dir):
     os.makedirs(save_dir)
     print('Created directory:', save_dir)
 nIter = 10000
-#remove session 2
-#final_df = final_df.loc[final_df['rec_num'] != 2]
+
 preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, sub_cols, gr_cols, trial_col, value_col,
                                                        nIter=nIter, save_dir=save_dir, overwrite=False)
-ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, gr_cols, sub_cols, nIter=nIter, save_dir=save_dir)
+#ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, gr_cols, sub_cols, nIter=nIter, save_dir=save_dir)
 
-ta.plot_fits(preprodf, trial_col='taste_trial', dat_col='euclidean_distance', save_dir=save_dir,
-             time_col='session')
+#ta.plot_fits(preprodf, trial_col='taste_trial', dat_col='euclidean_distance', save_dir=save_dir,
+#             time_col='session')
+
+preproD13 = preprodf.loc[preprodf['session'] != 2]
+shufflD13 = shuffle.loc[shuffle['session'] != 2]
+ta.plotting_pipeline(preproD13, shufflD13, trial_col, value_col, gr_cols, sub_cols, nIter=nIter, save_dir=save_dir, flag = '_D_1_3_')
 
 ###baseline sub version
 folder = 'dist_to_avg_stereotypy_bsln_sub'
