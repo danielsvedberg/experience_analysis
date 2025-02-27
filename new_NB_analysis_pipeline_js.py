@@ -144,7 +144,7 @@ def prepipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None,
                                            trial_col=trial_col, value_col=value_col, overwrite=True,
                                            nIter=nIter, save_dir=save_dir, flag=save_flag)
 
-def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None, nIter=10000, exclude_d2=False):
+def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None, nIter=10000, exclude_d2=True):
     print('plotting pipeline for ' + value_col + ' and ' + trial_col + ' and ' + state_determinant)
     analysis_folder = value_col + '_' + trial_col + '_' + state_determinant + '_nonlinear_regression'
     #check if dir exists, if not, make it

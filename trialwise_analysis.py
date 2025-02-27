@@ -6,12 +6,14 @@ import pandas as pd
 from scipy.stats import sem
 from itertools import product
 import seaborn as sns
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 import random
 import scipy.stats as stats
 import os
 from sklearn.utils import resample
+matplotlib.use('Agg')
 
 
 #for all matplotlib plots, set the default font to Arial
