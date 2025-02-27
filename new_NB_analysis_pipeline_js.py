@@ -2,7 +2,6 @@ import analysis as ana
 import blechpy
 import new_plotting as nplt
 import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
 import os
 import numpy as np
@@ -182,7 +181,7 @@ def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None
         if exclude_d2:
             df3 = df3.loc[df3['session'] != 2]
             shuff = shuff.loc[shuff['session'] != 2]
-            save_flag = '_d1_d3_' + save_flag
+            save_flag = 'd1_d3' + save_flag
 
 
         ta.plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, [subject_col], nIter=nIter, save_dir=save_dir, flag=save_flag)
@@ -217,8 +216,8 @@ exclude_epochs= ['late', 'late', 'early', 'late', 'early', 'late']
 #value_cols = ['p(correct state)', 'p(correct state)']
 #exclude_epochs=['late','early']
 
-#for value_col, exclude_epoch in zip(value_cols, exclude_epochs):
-#    prepipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch)
+for value_col, exclude_epoch in zip(value_cols, exclude_epochs):
+    prepipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch)
 
 #run plotting pipeline in parallel using joblib
 Parallel(n_jobs=-1)(delayed(plottingpipe)(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch) for value_col, exclude_epoch in zip(value_cols, exclude_epochs))

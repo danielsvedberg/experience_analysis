@@ -121,7 +121,7 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=1.2, panel_height=1.2, do
         matches the target dimension (ncols * panel_width x nrows * panel_height).
     """
     # 1. Apply tight_layout so that subplot bounding boxes are computed
-    fig.tight_layout()
+    fig.tight_layout(h_pad=0.5, w_pad=0.5)
     fig.canvas.draw()  # force a draw so that layout info is up to date
 
     # 2. Detect the grid shape from the Axes
@@ -160,7 +160,7 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=1.2, panel_height=1.2, do
 
     # 8. Optionally do a second pass
     if do_second_tight:
-        fig.tight_layout()
+        fig.tight_layout(h_pad=0.5, w_pad=0.5)
 
     return fig
 
@@ -996,7 +996,7 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
             ax.set_xlim(1,30)
         # make y label "avg" + dat_col
         ax = axes[0]
-        ylab = "avg " + dat_col
+        ylab = dat_col
         ax.set_ylabel(ylab, rotation=90, size=textsize, labelpad=0)
         ax.yaxis.set_tick_params(labelsize=textsize)
         plt.tight_layout()

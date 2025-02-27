@@ -8,6 +8,8 @@ import trialwise_analysis as ta
 import analysis as ana
 import numpy as np
 import os
+import matplotlib
+matplotlib.use('Agg')
 
 
 def get_trial_info(dat):
@@ -69,7 +71,7 @@ def process_rec_dir(rec_dir, bsln_sub=False):
     df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
     # remove all rows where taste == 'Spont'
     df = df.loc[df['taste'] != 'Spont']
-    df['euclidean_distance'] = df['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
+    df['Z(Euclidean distance)'] = df['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
     # subtract the min of 'session_trial' from 'session_trial' to get the session_trial relative to the start of the recording
     df['session_trial'] = df['session_trial'] - df['session_trial'].min()
     return df
@@ -95,7 +97,7 @@ final_df['session'] = final_df['rec_num']
 sub_cols = ['exp_name']
 gr_cols = ['exp_group', 'session', 'taste']
 trial_col = 'taste_trial'
-value_col = 'euclidean_distance'
+value_col = 'Z(Euclidean distance)'
 folder = 'dist_to_avg_stereotypy'
 proj_save_dir = PA.save_dir
 save_dir = proj_save_dir + os.sep + folder
@@ -139,36 +141,6 @@ nIter = 10000
 ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, group_cols, subject_cols, nIter=nIter, save_dir=save_dir)
 
 
-
-# ta.plot_fits_summary_avg(preprodf, shuff_df=shuffle, dat_col=value_col, trial_col=trial_col, save_dir=PA.save_dir,
-#                          use_alpha_pos=False, textsize=textsize, dotalpha=0.15, flag=flag, nIter=nIter,
-#                          parallel=parallel, ymin=yMin, ymax=yMax)
-#
-# for exp_group, group in preprodf.groupby(['exp_group']):
-#     group_shuff = shuffle.groupby('exp_group').get_group(exp_group)
-#     if flag is not None:
-#         save_flag = exp_group + '_' + flag
-#     else:
-#         save_flag = exp_group
-#     ta.plot_fits_summary_avg(group, shuff_df=group_shuff, dat_col=value_col, trial_col=trial_col,
-#                              save_dir=PA.save_dir, use_alpha_pos=False, textsize=textsize, dotalpha=0.15,
-#                              flag=save_flag, nIter=nIter, parallel=parallel, ymin=yMin, ymax=yMax)
-#
-# ta.plot_fits_summary(preprodf, dat_col=value_col, trial_col=trial_col, save_dir=PA.save_dir, time_col='session',
-#                      use_alpha_pos=False, dotalpha=0.15, flag=flag)
-#
-# ta.plot_nonlinear_regression_stats(preprodf, shuffle, subject_col=subject_col, group_cols=group_cols,
-#                                    trial_col=trial_col, value_col=value_col, save_dir=PA.save_dir, flag=flag,
-#                                    textsize=textsize, nIter=nIter)
-#
-# pred_change_df, pred_change_shuff = ta.get_pred_change(preprodf, shuffle, subject_col=subject_col,
-#                                                        group_cols=group_cols, trial_col=trial_col)
-# ta.plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, value_col=value_col, trial_col=trial_col,
-#                          save_dir=PA.save_dir, flag=flag, textsize=textsize, nIter=nIter)
-#
-# ta.plot_session_differences(pred_change_df, pred_change_shuff, subject_col, group_cols,
-#                             trial_col=trial_col, value_col=value_col, stat_col='pred. change', save_dir=PA.save_dir,
-#                             flag=flag, textsize=textsize, nIter=nIter)
 
 #%% calculate and model the average inter-trial distances for each taste trial
 import blechpy
@@ -262,48 +234,3 @@ preprodf = preprodf.loc[preprodf['exp_name'] != 'DS41']
 shuffle = shuffle.loc[shuffle['exp_name'] != 'DS41']
 
 ta.plotting_pipeline(preprodf, shuffle, trial_col, value_col, group_cols, subject_col, nIter=nIter, save_dir=save_dir, flag=flag)
-
-
-
-
-
-
-
-
-
-
-ta.plot_fits(preprodf, trial_col='taste_trial', dat_col='euclidean_distance', save_dir=save_dir, flag=flag,
-             time_col='session')
-
-
-
-ta.plot_fits_summary_avg(preprodf, shuff_df=shuffle, dat_col=value_col, trial_col=trial_col, save_dir=save_dir,
-                         use_alpha_pos=False, textsize=textsize, dotalpha=0.15, flag=flag, nIter=nIter,
-                         parallel=parallel, ymin=yMin, ymax=yMax)
-
-for exp_group, group in preprodf.groupby(['exp_group']):
-    group_shuff = shuffle.groupby('exp_group').get_group(exp_group)
-    if flag is not None:
-        save_flag = exp_group + '_' + flag
-    else:
-        save_flag = exp_group
-    ta.plot_fits_summary_avg(group, shuff_df=group_shuff, dat_col=value_col, trial_col=trial_col,
-                             save_dir=save_dir, use_alpha_pos=False, textsize=textsize, dotalpha=0.15,
-                             flag=save_flag, nIter=nIter, parallel=parallel, ymin=yMin, ymax=yMax)
-
-ta.plot_fits_summary(preprodf, dat_col=value_col, trial_col=trial_col, save_dir=save_dir, time_col='session',
-                     use_alpha_pos=False, dotalpha=0.15, flag=flag)
-
-ta.plot_nonlinear_regression_stats(preprodf, shuffle, subject_col=subject_col, group_cols=group_cols,
-                                   trial_col=trial_col, value_col=value_col, save_dir=save_dir, flag=flag,
-                                   textsize=textsize, nIter=nIter)
-
-pred_change_df, pred_change_shuff = ta.get_pred_change(preprodf, shuffle, subject_col=subject_col,
-                                                       group_cols=group_cols, trial_col=trial_col)
-ta.plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, value_col=value_col, trial_col=trial_col,
-                         save_dir=save_dir, flag=flag, textsize=textsize, nIter=nIter)
-
-ta.plot_session_differences(pred_change_df, pred_change_shuff, subject_col, group_cols,
-                            trial_col=trial_col, value_col=value_col, stat_col='pred. change', save_dir=save_dir,
-                            flag=flag, textsize=textsize, nIter=nIter)
-
