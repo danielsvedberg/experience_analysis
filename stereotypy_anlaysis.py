@@ -115,7 +115,7 @@ preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, sub_cols, gr_co
 
 preproD13 = preprodf.loc[preprodf['session'] != 2]
 shufflD13 = shuffle.loc[shuffle['session'] != 2]
-ta.plotting_pipeline(preproD13, shufflD13, trial_col, value_col, gr_cols, sub_cols, nIter=nIter, save_dir=save_dir, flag = '_D_1_3_')
+ta.plotting_pipeline(preproD13, shufflD13, trial_col, value_col, gr_cols, sub_cols, nIter=nIter, save_dir=save_dir, flag = 'D_1_3')
 
 ###baseline sub version
 folder = 'dist_to_avg_stereotypy_bsln_sub'

@@ -93,6 +93,30 @@ def detect_subplot_grid_shape(fig):
 
     return (nrows, ncols)
 
+# get the size of a single panel in inches
+def get_panel_frac(fig):
+    # 4. Collect bounding boxes of all "real" subplots
+    ax = fig.get_axes()[0]
+    bb = ax.get_position()
+    xW = bb.x1 - bb.x0
+    yH = bb.y1 - bb.y0
+
+    return xW, yH
+
+def check_panel_size(fig, panel_width, panel_height):
+    init_width, init_height = fig.get_size_inches()
+    xW, yH = get_panel_frac(fig)
+    subplot_width = xW * init_width
+    subplot_height = yH * init_height
+    panel_width_error = abs(panel_width - subplot_width)
+    panel_height_error = abs(panel_height - subplot_height)
+
+    if panel_width_error > 0.01 or panel_height_error > 0.01:
+        print('Panel width error: ' + str(panel_width_error))
+        print('Panel height error: ' + str(panel_height_error))
+        return False
+    else:
+        return True
 
 def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH, do_second_tight=True):
     """
@@ -119,7 +143,7 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH
         matches the target dimension (ncols * panel_width x nrows * panel_height).
     """
     # 1. Apply tight_layout so that subplot bounding boxes are computed
-    fig.tight_layout(h_pad=0.2, w_pad=0.2)
+    fig.tight_layout(h_pad=0.1, w_pad=0.1)
     fig.canvas.draw()  # force a draw so that layout info is up to date
 
     # 2. Detect the grid shape from the Axes
@@ -132,12 +156,7 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH
     init_width, init_height = fig.get_size_inches()
 
     # 4. Collect bounding boxes of all "real" subplots
-
-    ax = fig.get_axes()[0]
-    bb = ax.get_position()
-    xW = bb.x1 - bb.x0
-    yH = bb.y1 - bb.y0
-
+    xW, yH = get_panel_frac(fig)
 
     subplot_width = xW * init_width
     subplot_height = yH * init_height
@@ -157,10 +176,17 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH
     fig.set_size_inches(new_fig_width, new_fig_height, forward=True)
 
     # 8. Optionally do a second pass
-    if do_second_tight:
-        fig.tight_layout(h_pad=0.2, w_pad=0.2)
+    #if do_second_tight:
+    #    fig.tight_layout(h_pad=0.1, w_pad=0.1)
 
-    return fig
+    check = check_panel_size(fig, panel_width, panel_height)
+    if check:
+        return fig
+    else:
+        fig = adjust_figure_for_panel_size_auto(fig, panel_width=panel_width, panel_height=panel_height, do_second_tight=True)
+        return fig
+
+
 
 # def model(x, a, b, c):
 #   return b/(1+np.exp(-a*(x-c)))
@@ -874,7 +900,7 @@ def plot_boot(ax, nm, group, color, trial_col='taste_trial', shade_alpha=0.2, nI
     unique_trials = np.sort(group[trial_col].unique())+1
     boot_mean, boot_low, boot_high = calc_boot(group, trial_col, nIter=nIter, parallel=parallel)
     ax.fill_between(unique_trials, boot_low, boot_high, alpha=shade_alpha, color=color)
-    ax.plot(unique_trials, boot_mean, alpha=1, color=color, linewidth=2)
+    ax.plot(unique_trials, boot_mean, alpha=1, color=color, linewidth=0.5)#, plot_boot=2)
 
 
 def plot_scatter(ax, group, color, dat_col, trial_col='taste_trial', dotalpha=0.2):
@@ -898,12 +924,12 @@ def plot_shuff(ax, group, trials, color, linestyle):
     models = models.flatten()
     trials = trs.flatten()+1
     #model_mean = np.nanmean(models, axis=0)
-    sns.lineplot(trials, models, alpha=0.5, color=color, linestyle=linestyle, ax=ax)
-    #ax.plot(trials, model_mean, alpha=1, color=color, linestyle=linestyle, linewidth=1.5)
+    sns.lineplot(x=trials, y=models, alpha=0.5, color=color, linestyle=linestyle, ax=ax, size=0.5, legend=False)
+    #ax.plot(trials, model_mean, alpha=1, color=color, linestyle=linestyle, plot_boot=1.5)
 
 #plots the line graph of the average model for each session, with the data points overlaid, and the 95% confidence interval for the model
 def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(mode state)', time_col='session',
-                          save_dir=None, use_alpha_pos=False, dotalpha=0.1, textsize=20, flag=None, nIter=1000,
+                          save_dir=None, use_alpha_pos=False, dotalpha=0.1, textsize=8, flag=None, nIter=1000,
                           parallel=True, r2df=None, ymin=None, ymax=None):
     bound01 = False
     if ymin is not None and ymax is not None:
@@ -954,7 +980,6 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
     def make_grid_plot(plot_df, shuff_plot_df, textsize=textsize):
         plot_df = add_indices(plot_df)
         shuff_plot_df = add_indices(shuff_plot_df)
-        plotwidth = 3*n_time_groups + 1
         fig, axes = plt.subplots(1, n_time_groups, sharex=True, sharey=True)
         legend_handles = []
         # plot shuffled data:
@@ -1111,22 +1136,24 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
     
     # Plot the mean r2 values
     ax.hlines(mean_r2, bar_pos - bar_width / 2, bar_pos + bar_width / 2,
-                   color=color, lw=2)
+                   color=color, lw=1)
     # Plot error bars for the confidence interval of the mean r2 values
     ax.errorbar(bar_pos, mean_r2, yerr=[[mean_r2 - ci_lower], [ci_upper - mean_r2]],
-                     fmt='none', color=color, capsize=5)
+                     fmt='none', color=color, capsize=2)
 
-    # print the p-value above the bar
-    ax.text(bar_pos + 0.1, ci_upper + 0.01, p_val_str, ha='center', va='bottom',
-                 color=color, fontsize=16, rotation='vertical')
+    # print the p-value stars above the bar
+    ax.text(bar_pos-0.15, ci_upper + 0.05, p_val_str, ha='left', va='bottom',
+                 color=color, fontsize=8, rotation='vertical')
     # print the actual p value rounded to 3 decimal places below the star
-    ax.text(bar_pos + 0.1, ci_upper - 0.01, str(round(p_val, 3)),
-            fontsize=8, ha='left', va='bottom', rotation='vertical')
+    #ax.text(bar_pos + 0.1, ci_upper - 0.01, str(round(p_val, 3)),
+    #        fontsize=8, ha='left', va='bottom', rotation='vertical')
+    return p_val
     #ax.set_aspect('equal', adjustable='box')
 #plots the bar graphs for the value col  
 def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=8, nIter=1000, n_comp=1):
     if stat_col is None:
         stat_col = 'r2'
+        two_tailed = False
     sessions = r2_df['session'].unique()
     sessions.sort()
     n_sessions = len(sessions)
@@ -1209,13 +1236,13 @@ def save_fig(fig, save_dir, folder_name, savename, save_flag=None):
     if save_flag is not None:
         savename = save_flag + '_' + savename
 
-    exts = ['.png', '.svg']
+    exts = ['png', 'svg']
     for ext in exts:
         new_save_dir = os.path.join(save_dir, ext)
         new_save_dir = os.path.join(new_save_dir, folder_name)
         if not os.path.exists(new_save_dir):
             os.makedirs(new_save_dir)
-        filename = savename + ext
+        filename = savename + '.' + ext
         fig.savefig(os.path.join(new_save_dir, filename))
 
 
@@ -1905,7 +1932,7 @@ def get_session_differences(df3, shuff, stat_col='r2', group_cols=['exp_group', 
     shuff_r2_diffs = shuff_r2_diffs.groupby(mean_groups).mean().reset_index()
     return r2_diffs, shuff_r2_diffs
 
-def plot_session_differences(df3, shuff, subject_cols, group_cols, trial_col, value_col, stat_col=None, flag=None, nIter=100, textsize=20, ymin=None, ymax=None, save_dir=None):
+def plot_session_differences(df3, shuff, subject_cols, group_cols, trial_col, value_col, stat_col=None, flag=None, nIter=100, textsize=8, ymin=None, ymax=None, save_dir=None):
     if stat_col is None:
         stat_col = 'r2'
 
@@ -1962,7 +1989,7 @@ def get_params_df(df3, shuff, subject_cols, group_cols, trial_col):
     shuff['pred. change'] = pred_change_shuff
     return pred_change_df, shuff
 
-def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=20, ymin=None, ymax=None, save_dir=None):
+def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_col, value_col, flag=None, nIter=100, textsize=8, ymin=None, ymax=None, save_dir=None):
 
     avg_shuff = pred_change_shuff.groupby(group_cols + ['iternum']).mean().reset_index()
 
@@ -1973,7 +2000,7 @@ def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_c
     plot_r2_pval_summary(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, two_tailed=True, textsize=textsize, nIter=nIter)
     plot_r2_pval_avg(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir, textsize=textsize, two_tailed=True, nIter=nIter)
 
-def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, parallel=True, ymin=None, ymax=None, textsize=20):
+def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, parallel=True, ymin=None, ymax=None, textsize=8):
     groups = [subject_cols] + group_cols
     if ymin is None and ymax is None:
         ymin = min(df3[value_col])
@@ -1994,7 +2021,7 @@ def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, 
 
         #plot_fits_summary(group, trial_col=trial_col, dat_col=value_col, save_dir=save_dir, use_alpha_pos=False, time_col='session', flag=save_flag)
 
-def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_cols, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, ymin=None, ymax=None, textsize=20):
+def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_cols, group_cols, trial_col, value_col, save_dir=None, flag=None, nIter=100, ymin=None, ymax=None, textsize=8):
     if type(subject_cols) is list:
         groups = subject_cols + group_cols
     elif type(subject_cols) is str:
