@@ -96,7 +96,7 @@ def detect_subplot_grid_shape(fig):
     return (nrows, ncols)
 
 
-def adjust_figure_for_panel_size_auto(fig, panel_width=1.2, panel_height=1.2, do_second_tight=True):
+def adjust_figure_for_panel_size_auto(fig, panel_width=1, panel_height=1, do_second_tight=True):
     """
     Adjust an existing figure so that after tight_layout() the full grid of subplots
     has a total dimension of (ncols * panel_width) x (nrows * panel_height) inches,
@@ -121,7 +121,7 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=1.2, panel_height=1.2, do
         matches the target dimension (ncols * panel_width x nrows * panel_height).
     """
     # 1. Apply tight_layout so that subplot bounding boxes are computed
-    fig.tight_layout(h_pad=0.5, w_pad=0.5)
+    fig.tight_layout(h_pad=0.2, w_pad=0.2)
     fig.canvas.draw()  # force a draw so that layout info is up to date
 
     # 2. Detect the grid shape from the Axes
@@ -160,7 +160,7 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=1.2, panel_height=1.2, do
 
     # 8. Optionally do a second pass
     if do_second_tight:
-        fig.tight_layout(h_pad=0.5, w_pad=0.5)
+        fig.tight_layout(h_pad=0.2, w_pad=0.2)
 
     return fig
 
@@ -1154,15 +1154,11 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
 
     # Iterate over each session and create a subplot
     exp_groups = r2_df['exp_group'].unique()
-    # Width of each bar
-    figW = 5
-    figH = 1
-    print(figW, figH)
+
     bar_width = 0.75
     for k, exp_group in enumerate(exp_groups):
         # Set up the subplots
         fig, axes = plt.subplots(1, n_sessions, sharey=True)
-        #fig.set_figwidth(figW)
         for i, session in enumerate(sessions):
             ax = axes[i]
             # Plot bars for each taste
@@ -1254,7 +1250,7 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
     # Iterate over each session and create a subplot
     exp_groups = r2_df['exp_group'].unique()
     bar_width = 0.75
-    figW = (1.2/5) * n_sessions
+    figW = (1/5) * n_sessions
     for k, exp_group in enumerate(exp_groups):
         fig, ax = plt.subplots(1, 1, sharey=True)
         for i, session in enumerate(sessions):
@@ -1436,7 +1432,7 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
     if n_comp is None:
         n_comp = n_diffs
 
-    figW = (1.2/5) * n_diffs
+    figW = (1/5) * n_diffs
 
     avg_shuff = shuff_r2_diffs.groupby(groups + ['iternum']).mean().reset_index()
     avg_r2 = r2_diffs.groupby(groups).mean().reset_index()
