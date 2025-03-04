@@ -22,10 +22,8 @@ plt.rcParams['font.family'] = 'Arial'
 plt.rcParams.update({'font.size': 8})
 default_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.1, 'wspace': 0.05, 'hspace': 0.05}
 summary_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.3, 'wspace': 0.01, 'hspace': 0.01}
-
-import matplotlib.pyplot as plt
-import matplotlib
-
+dPanW = 0.6
+dPanH = 0.6
 
 def detect_subplot_grid_shape(fig):
     """
@@ -96,7 +94,7 @@ def detect_subplot_grid_shape(fig):
     return (nrows, ncols)
 
 
-def adjust_figure_for_panel_size_auto(fig, panel_width=1, panel_height=1, do_second_tight=True):
+def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH, do_second_tight=True):
     """
     Adjust an existing figure so that after tight_layout() the full grid of subplots
     has a total dimension of (ncols * panel_width) x (nrows * panel_height) inches,
@@ -1250,7 +1248,7 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
     # Iterate over each session and create a subplot
     exp_groups = r2_df['exp_group'].unique()
     bar_width = 0.75
-    figW = (1/5) * n_sessions
+    figW = (dPanW/5) * n_sessions
     for k, exp_group in enumerate(exp_groups):
         fig, ax = plt.subplots(1, 1, sharey=True)
         for i, session in enumerate(sessions):
@@ -1432,7 +1430,7 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
     if n_comp is None:
         n_comp = n_diffs
 
-    figW = (1/5) * n_diffs
+    figW = (dPanW/5) * n_diffs
 
     avg_shuff = shuff_r2_diffs.groupby(groups + ['iternum']).mean().reset_index()
     avg_r2 = r2_diffs.groupby(groups).mean().reset_index()
@@ -1611,8 +1609,8 @@ def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None
     n_tastes = len(tastes) + 1
 
     # Set up the subplots
-    figW = 1
-    figH = 1
+    figW = dPanW
+    figH = dPanH
     fig, axes = plt.subplots(1, n_sessions, figsize=(figW, figH), sharey=True)
     # Iterate over each session and create a subplot
     exp_groups = r2_df['exp_group'].unique()
