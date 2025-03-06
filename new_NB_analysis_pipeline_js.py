@@ -184,7 +184,8 @@ def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None
             save_flag = 'd1_d3' + save_flag
 
 
-        ta.plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, [subject_col], nIter=nIter, save_dir=save_dir, flag=save_flag)
+        ta.plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, [subject_col], nIter=nIter,
+                             save_dir=save_dir, flag=save_flag, xticklabs=False)
         plt.close('all')
 
 

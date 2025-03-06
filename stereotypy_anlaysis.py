@@ -71,7 +71,7 @@ def process_rec_dir(rec_dir, bsln_sub=False):
     df = pd.merge(df, dintrials, on=['taste_trial', 'channel'])
     # remove all rows where taste == 'Spont'
     df = df.loc[df['taste'] != 'Spont']
-    df['Z(Euclidean distance)'] = df['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
+    df['Z(distance)'] = df['euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
     # subtract the min of 'session_trial' from 'session_trial' to get the session_trial relative to the start of the recording
     df['session_trial'] = df['session_trial'] - df['session_trial'].min()
     return df
@@ -97,7 +97,7 @@ final_df['session'] = final_df['rec_num']
 sub_cols = ['exp_name']
 gr_cols = ['exp_group', 'session', 'taste']
 trial_col = 'taste_trial'
-value_col = 'Z(Euclidean distance)'
+value_col = 'Z(distance)'
 folder = 'dist_to_avg_stereotypy'
 proj_save_dir = PA.save_dir
 save_dir = proj_save_dir + os.sep + folder
@@ -115,7 +115,8 @@ preprodf, shuffle = ta.preprocess_nonlinear_regression(final_df, sub_cols, gr_co
 
 preproD13 = preprodf.loc[preprodf['session'] != 2]
 shufflD13 = shuffle.loc[shuffle['session'] != 2]
-ta.plotting_pipeline(preproD13, shufflD13, trial_col, value_col, gr_cols, sub_cols, nIter=nIter, save_dir=save_dir, flag = 'D_1_3')
+ta.plotting_pipeline(preproD13, shufflD13, trial_col, value_col, gr_cols, sub_cols, nIter=nIter, save_dir=save_dir,
+                     flag = 'D_1_3', xticklabs=False)
 
 ###baseline sub version
 folder = 'dist_to_avg_stereotypy_bsln_sub'
