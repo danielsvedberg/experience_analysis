@@ -4,6 +4,7 @@ from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
 import pandas as pd
 from scipy.stats import sem
+import math
 from itertools import product
 import seaborn as sns
 import matplotlib
@@ -125,6 +126,9 @@ def check_panel_size(fig, panel_width, panel_height):
     else:
         return True
 
+def round_up_1d(num):
+    return math.ceil(num * 10) / 10
+
 def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH, do_second_tight=True):
     """
     Adjust an existing figure so that after tight_layout() the full grid of subplots
@@ -149,9 +153,10 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH
         The same figure object, but resized so that the total subplot grid
         matches the target dimension (ncols * panel_width x nrows * panel_height).
     """
-    # 1. Apply tight_layout so that subplot bounding boxes are computed
-    #fig.tight_layout(pad=dPad, h_pad=dh_pad, w_pad=dh_pad)
-    #fig.canvas.draw()  # force a draw so that layout info is up to date
+    # 1. round up panel width and height to 1 decimal place
+    panel_width = round_up_1d(panel_width)
+    panel_height = round_up_1d(panel_height)
+
 
     # 2. Detect the grid shape from the Axes
     nrows, ncols = detect_subplot_grid_shape(fig)
