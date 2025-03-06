@@ -150,8 +150,8 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH
         matches the target dimension (ncols * panel_width x nrows * panel_height).
     """
     # 1. Apply tight_layout so that subplot bounding boxes are computed
-    fig.tight_layout(pad=dPad, h_pad=dh_pad, w_pad=dh_pad)
-    fig.canvas.draw()  # force a draw so that layout info is up to date
+    #fig.tight_layout(pad=dPad, h_pad=dh_pad, w_pad=dh_pad)
+    #fig.canvas.draw()  # force a draw so that layout info is up to date
 
     # 2. Detect the grid shape from the Axes
     nrows, ncols = detect_subplot_grid_shape(fig)
@@ -159,6 +159,42 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH
         # Could not detect a valid grid - return unchanged
         return fig
 
+    #desired margins in inches:
+    left = 0.6
+    right = 0.1
+    bottom = 0.1
+    top = 0.1
+    wspace = 0.1
+    hspace = 0.1
+
+    h_padding = top + bottom + (hspace * (nrows - 1))
+    v_padding = left + right + (wspace * (ncols - 1))
+
+    target_fig_size = (ncols * panel_width + v_padding, nrows * panel_height + h_padding)
+
+    #now get the fraction of the figure that will be each padding
+    left_frac = left / target_fig_size[0]
+    right_frac = right / target_fig_size[0]
+    bottom_frac = bottom / target_fig_size[1]
+    top_frac = top / target_fig_size[1]
+    wspace_frac = wspace/panel_width
+    hspace_frac = hspace/panel_height
+
+    #now, set the figure size to the target size
+    fig.set_size_inches(target_fig_size)
+
+    #and adjust the margins to the desired values
+    fig.subplots_adjust(left=left_frac, right=1-right_frac, top=1-top_frac, bottom=bottom_frac, wspace=wspace_frac, hspace=hspace_frac)
+
+    check = check_panel_size(fig, panel_width, panel_height)
+    if check:
+        return fig
+    else:
+        raise ValueError('Panel size not correct after adjustment')
+
+
+    '''
+    
     # 3. Current figure size in inches
     init_width, init_height = fig.get_size_inches()
 
@@ -192,7 +228,7 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH
     else:
         fig = adjust_figure_for_panel_size_auto(fig, panel_width=panel_width, panel_height=panel_height, do_second_tight=True)
         return fig
-
+'''
 
 
 # def model(x, a, b, c):
@@ -1911,8 +1947,8 @@ def plot_nonlinear_regression_stats(df3, shuff, subject_cols, group_cols, trial_
         else:
             save_flag = trial_col + '_' + value_col + '_' + exp_group + '_only'
         #this plots the average, 95% CI, null dist and pval for each taste and average across tastes
-        plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize,
-                             nIter=nIter, xticklabs=xticklabs)
+        #plot_r2_pval_summary(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize,
+        #                     nIter=nIter, xticklabs=xticklabs)
         #this plots the average, 95% CI, null dist and pval the average across tastes
         plot_r2_pval_avg(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter,
                          xticklabs=xticklabs)
@@ -1985,8 +2021,8 @@ def plot_session_differences(df3, shuff, subject_cols, group_cols, trial_col, va
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=stat_col, save_flag=save_flag, save_dir=save_dir,
-                               textsize=textsize, nIter=nIter, ymin=ymin, ymax=ymax, xticklabs=xticklabs)
+    #plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=stat_col, save_flag=save_flag, save_dir=save_dir,
+    #                           textsize=textsize, nIter=nIter, ymin=ymin, ymax=ymax, xticklabs=xticklabs)
     plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=stat_col, save_flag=save_flag, save_dir=save_dir,
                            textsize=textsize, nIter=nIter, ymin=ymin, ymax=ymax, xticklabs=xticklabs)
 
@@ -2043,8 +2079,8 @@ def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_c
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
         save_flag = trial_col + '_' + value_col
-    plot_r2_pval_summary(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir,
-                         two_tailed=True, textsize=textsize, nIter=nIter, xticklabs=xticklabs)
+    #plot_r2_pval_summary(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir,
+    #                     two_tailed=True, textsize=textsize, nIter=nIter, xticklabs=xticklabs)
     plot_r2_pval_avg(avg_shuff, pred_change_df, stat_col='pred. change', save_flag=save_flag, save_dir=save_dir,
                      textsize=textsize, two_tailed=True, nIter=nIter, xticklabs=xticklabs)
 
@@ -2055,9 +2091,9 @@ def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, 
         ymin = min(df3[value_col])
         ymax = max(df3[value_col])
 
-    plot_fits_summary_avg(df3, shuff_df=shuff, dat_col=value_col, trial_col=trial_col, save_dir=save_dir,
-                             use_alpha_pos=False, textsize=textsize, dotalpha=0.15, flag=flag, nIter=nIter,
-                             parallel=parallel, ymin=ymin, ymax=ymax, xticklabs=xticklabs)
+    #plot_fits_summary_avg(df3, shuff_df=shuff, dat_col=value_col, trial_col=trial_col, save_dir=save_dir,
+    #                         use_alpha_pos=False, textsize=textsize, dotalpha=0.15, flag=flag, nIter=nIter,
+    #                         parallel=parallel, ymin=ymin, ymax=ymax, xticklabs=xticklabs)
     for exp_group, group in df3.groupby(['exp_group']):
         group_shuff = shuff.groupby('exp_group').get_group(exp_group)
         if flag is not None:
