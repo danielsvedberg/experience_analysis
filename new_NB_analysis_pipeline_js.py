@@ -107,6 +107,11 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     df['|t(start)-avg|'] = df['t(start)-avg'].abs()
     df['|t(end)-avg|'] = df['t(end)-avg'].abs()
 
+    #convert columns with time from ms to s, and round to 2 decimal places
+    column_names = ['t(start)', 't(end)', 't(start)-avg', 't(end)-avg', 't_med',
+                    '|t(start)-avg|', '|t(end)-avg|', 'duration', 'duration-avg']
+    df[column_names] = df[column_names].div(1000).round(2)
+
     if exclude_epoch is not None:
         if exclude_epoch == 'early':
             df = df.loc[df['epoch'] != 'early']
@@ -212,13 +217,16 @@ state_determinant = 'p(correct taste)'
 #value_cols = ['|t(start)-avg|', '|t(end)-avg|']
 #exclude_epochs= ['early', 'late']
 
-value_cols = ['t(end)', '|t(end)-avg|','p(correct taste)', 'p(correct taste)', 'p(correct valence)', 'p(correct valence)']
-exclude_epochs= ['late', 'late', 'early', 'late', 'early', 'late']
+#value_cols = ['t(end)', '|t(end)-avg|','p(correct taste)', 'p(correct taste)', 'p(correct valence)', 'p(correct valence)']
+#exclude_epochs= ['late', 'late', 'early', 'late', 'early', 'late']
 #value_cols = ['p(correct state)', 'p(correct state)']
 #exclude_epochs=['late','early']
+value_cols = ['t(end)', '|t(end)-avg|']
+exclude_epochs = ['late', 'late']
 
-#for value_col, exclude_epoch in zip(value_cols, exclude_epochs):
-#    prepipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch)
+
+for value_col, exclude_epoch in zip(value_cols, exclude_epochs):
+    prepipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch)
 
 #run plotting pipeline in parallel using joblib
 Parallel(n_jobs=-1)(delayed(plottingpipe)(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch) for value_col, exclude_epoch in zip(value_cols, exclude_epochs))
