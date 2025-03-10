@@ -110,7 +110,7 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     #convert columns with time from ms to s, and round to 2 decimal places
     column_names = ['t(start)', 't(end)', 't(start)-avg', 't(end)-avg', 't_med',
                     '|t(start)-avg|', '|t(end)-avg|', 'duration', 'duration-avg']
-    df[column_names] = df[column_names].div(1000).round(2)
+    df[column_names] = df[column_names].div(1000)
 
     if exclude_epoch is not None:
         if exclude_epoch == 'early':
@@ -195,6 +195,7 @@ def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None
 
 
 proj_dir = '/media/volume/sdb/taste_experience_resorts_copy_forward_hmms'  # directory where the project is
+#proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 HA.sort_hmms_by_AIC(overwrite=False) #label hmms in hmm_overview with lowest AIC for each recording, save to sorted hmms

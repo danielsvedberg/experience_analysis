@@ -243,50 +243,6 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH
 def model(x,a,b,c,d):
     return a + (b-a)/(1+np.exp(-c*(x-d)))
 
-
-def generate_synthetic_data(time_steps=30, subjects=3, jitter_strength=0.1):
-    """
-    Generates synthetic data in a pandas DataFrame in long-form format.
-
-    Args:
-    time_steps (int): Number of time steps in the series.
-    subjects (int): Number of different subjects/replicates.
-    jitter_strength (float): Strength of the random jitter added to each subject's data.
-
-    Returns:
-    pandas.DataFrame: A DataFrame containing the synthetic data in long-form.
-    """
-    # Time points
-    t = np.linspace(0, 1, time_steps)
-    # Sigmoid function for the base curve
-    a = 1
-    b = 5
-    c = 0.5
-    base_curve = model(t, a, b, c)
-
-    # Create an empty list to store data
-    data = []
-
-    # Generate data for each subject
-    for subject in range(subjects):
-        # Add random jitter
-        jitter = np.random.normal(0, jitter_strength, time_steps)
-        subject_data = np.clip(base_curve + jitter, 0, 1)  # Ensure data is bounded between 0 and 1
-
-        # Append to data list
-        for time_step in range(time_steps):
-            data.append({
-                'Time': time_step,
-                'Subject': f'Subject_{subject + 1}',
-                'Value': subject_data[time_step]
-            })
-
-    # Convert to DataFrame
-    longform_data = pd.DataFrame(data)
-
-    return longform_data
-
-
 def shuffle_time(df, subject_cols='Subject', trial_col='session trial'):
     newdf = []
     for name, group in df.groupby(subject_cols):
@@ -1085,8 +1041,8 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
         ax.yaxis.set_tick_params(labelsize=textsize)
         #get the y axis tick labels and round to 1 decimal place
         yticks = ax.get_yticks()
-        yticks = [round(y, 1) for y in yticks]
-        ax.set_yticklabels(yticks)
+        yticks = round_yticks(yticks)
+        ax.set_yticks(yticks)
         #ax = axes[-1]
         #ax.legend(handles=legend_handles, loc='best', ncol=1, fontsize=textsize)
 
@@ -1127,6 +1083,20 @@ def get_pval_stars(pval, adjustment=None):
     else:
         return ''
 
+def round_yticks(yticks):
+    # check range of yticks
+    ytr = max(yticks) - min(yticks)
+    if ytr > 2:
+        rd = 0
+    elif ytr > 0.2:
+        rd = 1
+    elif ytr > 0.02:
+        rd = 2
+    else:
+        rd = 3
+
+    return [round(y, rd) for y in yticks]
+
 def pval_from_null(null_dist, test_stat):
     #check if test_stat or null dist contain nans or inf
     if np.isnan(test_stat) or np.isinf(test_stat):
@@ -1144,12 +1114,14 @@ def pval_from_null(null_dist, test_stat):
         pval = np.nanmean(null_dist <= test_stat)
     return pval
 
-def bootstrap_mean_ci(data, n_bootstrap=100, ci=95):
+def bootstrap_mean_ci(data, n_bootstrap=10000, ci=95):
     low = (100 - ci) / 2
     high = 100 - low
 
-    bootstrap_means = np.array(
-        [np.nanmean(np.random.choice(data, size=len(data), replace=True)) for _ in range(n_bootstrap)])
+    #bootstrap_means = np.array(
+    #    [np.nanmean(np.random.choice(data, size=len(data), replace=True)) for _ in range(n_bootstrap)])
+    bootstrap_means = np.random.choice(data, size=(n_bootstrap, len(data)), replace=True)
+    bootstrap_means = np.nanmean(bootstrap_means, axis=1)
     lower_bound = np.nanpercentile(bootstrap_means, low)
     upper_bound = np.nanpercentile(bootstrap_means, high)
     return np.nanmean(bootstrap_means), lower_bound, upper_bound
@@ -1369,8 +1341,8 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
         # Set the x-ticks
         #get the y axis tick labels and round to 1 decimal place
         yticks = ax.get_yticks()
-        yticks = [round(y, 1) for y in yticks]
-        ax.set_yticklabels(yticks)
+        yticks = round_yticks(yticks)
+        ax.set_yticks(yticks)
 
         ax.set_xticks(np.arange(len(sessions)))
         if xticklabs:
@@ -1577,8 +1549,8 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
         ax.set_ylim(ymin, ymax)
         #get the y axis tick labels and round to 1 decimal place
         yticks = ax.get_yticks()
-        yticks = [round(y, 1) for y in yticks]
-        ax.set_yticklabels(yticks)
+        yticks = round_yticks(yticks)
+        ax.set_yticks(yticks)
         # Set the x-tick labels
         ax.set_xticks(np.arange(len(sess_diffs)))
         if xticklabs:
@@ -1967,7 +1939,7 @@ def plot_nonlinear_regression_stats(df3, shuff, subject_cols, group_cols, trial_
         plot_r2_pval_avg(avg_group_shuff, group, save_flag=save_flag, save_dir=save_dir, textsize=textsize, nIter=nIter,
                          xticklabs=xticklabs)
 
-#TODO: fix issus with this:
+
 def get_session_differences(df3, shuff, stat_col='r2', group_cols=['exp_group', 'taste'], subject_cols = ['exp_name'], parallel=False):
     diff_col = stat_col + ' difference'
     relevant_cols = [stat_col] + group_cols + subject_cols
@@ -2127,9 +2099,12 @@ def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_cols, gro
         groups = subject_cols + group_cols
     elif type(subject_cols) is str:
         groups = [subject_cols] + group_cols
+    else:
+        raise ValueError('subject_cols must be a string or a list of strings')
+
     avg_shuff = shuff.groupby(group_cols + ['iternum']).mean().reset_index()
     avg_df3 = df3.groupby(groups).mean().reset_index() #trial average df3
-    # plot the r2 values for each session with the null distribution
+    # plot the r2 values for each session with the null distributiondayw
     if flag is not None:
         save_flag = trial_col + '_' + value_col + '_' + flag
     else:
