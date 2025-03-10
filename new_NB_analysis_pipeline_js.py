@@ -226,8 +226,8 @@ value_cols = ['t(end)', '|t(end)-avg|']
 exclude_epochs = ['late', 'late']
 
 
-#for value_col, exclude_epoch in zip(value_cols, exclude_epochs):
-#    prepipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch)
+for value_col, exclude_epoch in zip(value_cols, exclude_epochs):
+    prepipeline(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch)
 
 #run plotting pipeline in parallel using joblib
 Parallel(n_jobs=-1)(delayed(plottingpipe)(NB_df, value_col, trial_col, state_determinant, exclude_epoch=exclude_epoch) for value_col, exclude_epoch in zip(value_cols, exclude_epochs))
