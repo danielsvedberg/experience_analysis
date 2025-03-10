@@ -1040,9 +1040,9 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
         ax.set_ylabel(ylab, rotation=90, size=textsize, labelpad=0)
         ax.yaxis.set_tick_params(labelsize=textsize)
         #get the y axis tick labels and round to 1 decimal place
-        yticks = ax.get_yticks()
-        yticks = round_yticks(yticks)
-        ax.set_yticks(yticks)
+        #yticks = ax.get_yticks()
+        #yticks = round_yticks(yticks)
+        #ax.set_yticks(yticks)
         #ax = axes[-1]
         #ax.legend(handles=legend_handles, loc='best', ncol=1, fontsize=textsize)
 
@@ -1340,9 +1340,9 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
         #     ax.set_ylim(ymin, ymax)
         # Set the x-ticks
         #get the y axis tick labels and round to 1 decimal place
-        yticks = ax.get_yticks()
-        yticks = round_yticks(yticks)
-        ax.set_yticks(yticks)
+        #yticks = ax.get_yticks()
+        #yticks = round_yticks(yticks)
+        #ax.set_yticks(yticks)
 
         ax.set_xticks(np.arange(len(sessions)))
         if xticklabs:
@@ -1548,9 +1548,9 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
         ax.yaxis.set_tick_params(labelsize=textsize)
         ax.set_ylim(ymin, ymax)
         #get the y axis tick labels and round to 1 decimal place
-        yticks = ax.get_yticks()
-        yticks = round_yticks(yticks)
-        ax.set_yticks(yticks)
+        #yticks = ax.get_yticks()
+        #yticks = round_yticks(yticks)
+        #ax.set_yticks(yticks)
         # Set the x-tick labels
         ax.set_xticks(np.arange(len(sess_diffs)))
         if xticklabs:
