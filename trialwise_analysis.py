@@ -1181,7 +1181,7 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
     # print the actual p value rounded to 3 decimal places below the star
     #ax.text(bar_pos + 0.1, ci_upper - 0.01, str(round(p_val, 3)),
     #        fontsize=8, ha='left', va='bottom', rotation='vertical')
-    return p_val
+    return mean_r2, p_val
     #ax.set_aspect('equal', adjustable='box')
 #plots the bar graphs for the value col  
 def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=8,
@@ -1216,6 +1216,11 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
     exp_groups = r2_df['exp_group'].unique()
 
     bar_width = 0.75
+    egs = []
+    ses = []
+    tastes = []
+    means = []
+    pvals = []
     for k, exp_group in enumerate(exp_groups):
         # Set up the subplots
         fig, axes = plt.subplots(1, n_sessions, sharey=True)
@@ -1230,8 +1235,12 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
                 indices = [j]
                 color = pal[colmap[exp_group]]
                 label = exp_group
-                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=two_tailed, n_comp=n_comp)
-
+                mean, pval = plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=two_tailed, n_comp=n_comp)
+                egs.append(exp_group)
+                ses.append(session)
+                tastes.append(taste)
+                means.append(mean)
+                pvals.append(pval)
             # Plot overall percentile bars and mean r2 values
             r2_data = r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == session)]
             overall_r2 = r2_data.groupby(['exp_name']).mean().reset_index()[stat_col] #average across tastes
@@ -1241,7 +1250,12 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, overall_r2, overall_shuff_r2, label, bar_pos, bar_width, nIter, indices, color, two_tailed=two_tailed, n_comp=n_comp)
+            mean, pval = plot_bars(ax, overall_r2, overall_shuff_r2, label, bar_pos, bar_width, nIter, indices, color, two_tailed=two_tailed, n_comp=n_comp)
+            egs.append(exp_group)
+            ses.append(session)
+            tastes.append('Combined')
+            means.append(mean)
+            pvals.append(pval)
 
             # Only set ylabel for the first subplot
             if i == 0:
@@ -1266,9 +1280,27 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
 
         plt.tight_layout()
         fig = adjust_figure_for_panel_size_auto(fig)
+
         savename = exp_group + '_' + stat_col + '_summary_bar_plot'
         foldername = 'day_avgs'
         save_fig(fig, save_dir, foldername, savename, save_flag=save_flag)
+
+        #take the lists and make a dataframe
+        summary_df = pd.DataFrame({'exp_group': egs, 'session': ses, 'taste': tastes, 'mean': means, 'pval': pvals})
+        #save the dataframe
+        savename = exp_group + '_' + stat_col + '_summary_stats.csv'
+        save_csv(summary_df, save_dir, foldername, savename, save_flag=save_flag)
+
+
+def save_csv(df, save_dir, folder_name, savename, save_flag=None):
+    if save_flag is not None:
+        savename = save_flag + '_' + savename
+    new_save_dir = os.path.join(save_dir, 'csv')
+    new_save_dir = os.path.join(new_save_dir, folder_name)
+    if not os.path.exists(new_save_dir):
+        os.makedirs(new_save_dir)
+    filename = savename + '.csv'
+    df.to_csv(os.path.join(new_save_dir, filename))
 
 def save_fig(fig, save_dir, folder_name, savename, save_flag=None):
     if save_flag is not None:
@@ -1315,6 +1347,13 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
     exp_groups = r2_df['exp_group'].unique()
     bar_width = 0.75
     figW = (dPanW/5) * n_sessions
+
+    egs = []
+    ses = []
+    tastes = []
+    means = []
+    pvals = []
+
     for k, exp_group in enumerate(exp_groups):
         fig, ax = plt.subplots(1, 1, sharey=True)
         for i, session in enumerate(sessions):
@@ -1325,7 +1364,12 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=two_tailed, n_comp=n_comp)
+            mean, pval = plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=two_tailed, n_comp=n_comp)
+            egs.append(exp_group)
+            ses.append(session)
+            tastes.append('Combined')
+            means.append(mean)
+            pvals.append(pval)
 
         # Only set ylabel for the first subplot
         if stat_col == 'r2':
@@ -1336,13 +1380,6 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
 
         if stat_col == 'r2':
             ax.set_ylim(0, 1)
-        # else:
-        #     ax.set_ylim(ymin, ymax)
-        # Set the x-ticks
-        #get the y axis tick labels and round to 1 decimal place
-        #yticks = ax.get_yticks()
-        #yticks = round_yticks(yticks)
-        #ax.set_yticks(yticks)
 
         ax.set_xticks(np.arange(len(sessions)))
         if xticklabs:
@@ -1366,6 +1403,13 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
 
         savename = exp_group + '_' + stat_col + '_avg_bar_plot'
         save_fig(fig, save_dir, 'day_avgs', savename, save_flag=save_flag)
+
+        #take the lists and make a dataframe
+        summary_df = pd.DataFrame({'exp_group': egs, 'session': ses, 'taste': tastes, 'mean': means, 'pval': pvals})
+        #save the dataframe
+        savename = exp_group + '_' + stat_col + '_avg_stats.csv'
+        save_csv(summary_df, save_dir, 'day_avgs', savename, save_flag=save_flag)
+
 
 
 difference_index = {'1-2': 0, '2-3': 1, '1-3': 2}
@@ -1415,6 +1459,13 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
     n_sessions = len(sess_diffs)
     n_tastes = len(tastes) + 1
     bar_width = 0.75
+
+    egs = []
+    sds = []
+    tastes = []
+    means = []
+    pvals = []
+
     for k, exp_group in enumerate(exp_groups):
         fig, axes = plt.subplots(1, n_diffs, sharey=True)
         for i, sess_diff in enumerate(sess_diffs):
@@ -1430,7 +1481,13 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
                 indices = [j]
                 color = pal[colmap[exp_group]]
                 label = exp_group
-                plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=True, n_comp=n_comp)
+                mean, pval = plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=True, n_comp=n_comp)
+                egs.append(exp_group)
+                sds.append(sess_diff)
+                tastes.append(taste)
+                means.append(mean)
+                pvals.append(pval)
+
 
         # Plot overall percentile bars and mean r2 values
             r2_data = r2_diffs[(r2_diffs['exp_group'] == exp_group) & (r2_diffs['Session Difference'] == sess_diff)]
@@ -1443,7 +1500,12 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, overall_r2, overall_shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=True, n_comp=n_comp)
+            mean, pval = plot_bars(ax, overall_r2, overall_shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=True, n_comp=n_comp)
+            egs.append(exp_group)
+            sds.append(sess_diff)
+            tastes.append('Combined')
+            means.append(mean)
+            pvals.append(pval)
 
             # Only set ylabel for the first subplot
             if i == 0:
@@ -1480,10 +1542,14 @@ def plot_daywise_r2_pval_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_fla
         fig = adjust_figure_for_panel_size_auto(fig)
         #plt.tight_layout()
 
-    ####################################################################################################
-    # save the figure as png
         savename = exp_group + '_' + stat_col + '_day_diff_plot'
         save_fig(fig, save_dir, 'session_diffs', savename, save_flag=save_flag)
+
+        #take the lists and make a dataframe
+        summary_df = pd.DataFrame({'exp_group': egs, 'session_diff': sds, 'taste': tastes, 'mean': means, 'pval': pvals})
+        #save the dataframe
+        savename = exp_group + '_' + stat_col + '_day_diff_stats.csv'
+        save_csv(summary_df, save_dir, 'session_diffs', savename, save_flag=save_flag)
 
 
 def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=None, save_dir=None, textsize=8, nIter=100,
@@ -1529,6 +1595,12 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
     # Iterate over each session and create a subplot
     # Width of each bar
     bar_width = 0.75
+    egs = []
+    sds = []
+    tastes = []
+    means = []
+    pvals = []
+
     for k, exp_group in enumerate(exp_groups):
         fig, ax = plt.subplots(1, 1)
         for i, sess_diff in enumerate(sess_diffs):
@@ -1542,7 +1614,12 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
             indices = [i]
             color = pal[colmap[exp_group]]
             label = exp_group
-            plot_bars(ax, overall_r2, overall_shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=True, n_comp=n_comp)
+            mean, pval = plot_bars(ax, overall_r2, overall_shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=True, n_comp=n_comp)
+            egs.append(exp_group)
+            sds.append(sess_diff)
+            tastes.append('Combined')
+            means.append(mean)
+            pvals.append(pval)
 
         ax.set_ylabel(diff_col, size=textsize)
         ax.yaxis.set_tick_params(labelsize=textsize)
@@ -1567,6 +1644,12 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
     # save the figure as png
         savename = exp_group + '_' + stat_col + '_avg_day_diff_plot'
         save_fig(fig, save_dir, 'session_diffs', savename, save_flag=save_flag)
+
+        #take the lists and make a dataframe
+        summary_df = pd.DataFrame({'exp_group': egs, 'session_diff': sds, 'taste': tastes, 'mean': means, 'pval': pvals})
+        #save the dataframe
+        savename = exp_group + '_' + stat_col + '_day_diff_avg_stats.csv'
+        save_csv(summary_df, save_dir, 'session_diffs', savename, save_flag=save_flag)
 
 
 #plots difference in value col (normally r2) between groups
