@@ -108,9 +108,9 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     df['|t(end)-avg|'] = df['t(end)-avg'].abs()
 
     #convert columns with time from ms to s, and round to 2 decimal places
-    column_names = ['t(start)', 't(end)', 't(start)-avg', 't(end)-avg', 't_med',
-                    '|t(start)-avg|', '|t(end)-avg|', 'duration', 'duration-avg']
-    df[column_names] = df[column_names].div(1000)
+    #column_names = ['t(start)', 't(end)', 't(start)-avg', 't(end)-avg', 't_med',
+    #                '|t(start)-avg|', '|t(end)-avg|', 'duration', 'duration-avg']
+    #df[column_names] = df[column_names].div(1000)
 
     if exclude_epoch is not None:
         if exclude_epoch == 'early':
