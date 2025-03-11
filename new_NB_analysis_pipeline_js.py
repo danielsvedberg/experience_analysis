@@ -218,12 +218,12 @@ state_determinant = 'p(correct taste)'
 #value_cols = ['|t(start)-avg|', '|t(end)-avg|']
 #exclude_epochs= ['early', 'late']
 
-#value_cols = ['t(end)', '|t(end)-avg|','p(correct taste)', 'p(correct taste)', 'p(correct valence)', 'p(correct valence)']
-#exclude_epochs= ['late', 'late', 'early', 'late', 'early', 'late']
+value_cols = ['t(end)', '|t(end)-avg|','p(correct taste)', 'p(correct taste)', 'p(correct valence)', 'p(correct valence)']
+exclude_epochs= ['late', 'late', 'early', 'late', 'early', 'late']
 #value_cols = ['p(correct state)', 'p(correct state)']
 #exclude_epochs=['late','early']
-value_cols = ['t(end)', '|t(end)-avg|']
-exclude_epochs = ['late', 'late']
+#value_cols = ['t(end)', '|t(end)-avg|']
+#exclude_epochs = ['late', 'late']
 
 
 #for value_col, exclude_epoch in zip(value_cols, exclude_epochs):
