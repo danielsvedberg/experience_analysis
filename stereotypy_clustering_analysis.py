@@ -16,7 +16,7 @@ rec_dirs = rec_info['rec_dir']
 
 PA = ana.ProjectAnalysis(proj)
 
-all_units, held_df = PA.get_unit_info(overwrite=True)
+all_units, held_df = PA.get_unit_info(overwrite=False)
 
 #%% consensus clustering (second attempt) with averaging distances for each trial and then performing consensus clustering
 
@@ -26,7 +26,7 @@ if not os.path.exists(save_dir):
 matrices, names, df = scf.make_consensus_matrix2(rec_info)
 
 shuff_dir = PA.save_dir + os.sep + 'clustering_analysis/shuffles'
-shuff_matrices,shuff_names_df,shuff_dfs = scf.make_consensus_matrix_shuffle(rec_info, n_iter=1000, overwrite=True, save_dir=shuff_dir)
+shuff_matrices,shuff_names_df,shuff_dfs = scf.make_consensus_matrix_shuffle(rec_info, n_iter=1000, overwrite=False, save_dir=shuff_dir)
 
 scf.plot_correlation_matrices(matrices, names, save=True, save_dir=save_dir)
 scf.plot_heirarchical_clustering(matrices, names, save=True, save_dir=save_dir)
@@ -70,7 +70,7 @@ df_AB_long = scf.longform_AB_clustering(df)
 shuff_AB_long = scf.longform_AB_clustering(shuff_df, shuffle=True)
 
 scf.plot_cluster_sizes_w_shuff(df_AB_long, shuff_AB_long, save_dir=save_dir)
-
+scf.plot_cluster_sizes_w_shuff_single(df_AB_long, shuff_AB_long, save_dir=save_dir)
 #%% plot the average trial of the two largest clusters
 import pingouin as pg
 
@@ -82,7 +82,6 @@ shuff_df_AB_labels = scf.get_AB_cluster_labels(shuff_df, shuffle=True)
 shuff_df_AB_labs_naive = shuff_df_AB_labels[shuff_df_AB_labels['exp_group'] == 'naive']
 
 aov = scf.plot_cluster_avg_trial_naive_w_shuff(newdf_naive, shuff_df_AB_labs_naive, save_dir=save_dir, flag='with_shuffle')
-
 #%% plot the intra inter and null cluster distances
 #compute intra and inter-cluster distances
 intra_inter_df = scf.get_intra_inter_distances(df)

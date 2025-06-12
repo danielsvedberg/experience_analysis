@@ -3,12 +3,8 @@ import numpy as np
 import blechpy.dio.h5io as h5io
 import pandas as pd
 from joblib import Parallel, delayed
-import trialwise_analysis as ta
-import analysis as ana
 import matplotlib.pyplot as plt
-import feather
 import seaborn as sns
-import numpy as np
 import scipy.stats as stats
 from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
@@ -16,6 +12,189 @@ from sklearn.metrics import silhouette_score
 import os
 import matplotlib.gridspec as gridspec
 import pingouin as pg
+import matplotlib
+import math
+matplotlib.use('Agg')
+
+#for all matplotlib plots, set the default font to Arial
+plt.rcParams['font.family'] = 'Arial'
+plt.rcParams['xtick.major.width'] = 0.72
+plt.rcParams['ytick.major.width'] = 0.72
+plt.rcParams['xtick.minor.width'] = 0.72
+plt.rcParams['ytick.minor.width'] = 0.72
+#set font size to 8
+dfontsize = 8
+plt.rcParams.update({'font.size': dfontsize})
+default_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.1, 'wspace': 0.05, 'hspace': 0.05}
+summary_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.3, 'wspace': 0.01, 'hspace': 0.01}
+dPanW = 0.8
+dPanH = 0.8
+dPad = round(0.2/(8*(1/72)), 2)
+dh_pad = round(0.09/(8*(1/72)), 2)
+
+def detect_subplot_grid_shape(fig):
+    """
+    Attempt to detect the number of rows and columns of 'main' subplots
+    in a figure by examining their positions in normalized figure coordinates.
+
+    This assumes a rectangular grid of subplots laid out by something
+    like plt.subplots(nrows, ncols) (i.e. uniform sized Axes).
+
+    Returns
+    -------
+    (nrows, ncols) : tuple of int
+    """
+    # Get all Axes
+    axes = fig.get_axes()
+
+    # Filter to only "real" subplot Axes. We skip things like colorbars or inset_axes
+    # A simple heuristic: check if it's an instance of SubplotBase.
+    # Alternatively, you could skip any axes that appear to be legends or colorbars.
+    real_subplots = []
+    for ax in axes:
+        # We also skip invisible or twin axes (to avoid duplicates).
+        if (ax.get_visible() and
+                isinstance(ax, matplotlib.axes.SubplotBase)):
+            real_subplots.append(ax)
+
+    if not real_subplots:
+        return 0, 0  # No valid subplots found
+
+    # Extract bounding boxes in normalized figure coords
+    # We'll look at the center or the lower-left corner.
+    # For consistent subplots, either approach works if they're arranged in a grid.
+    x_positions = []
+    y_positions = []
+    for ax in real_subplots:
+        bbox = ax.get_position()  # returns Bbox(x0, y0, x1, y1) in [0..1]
+        # Let's use the center to avoid minor floating offsets on edges
+        x_center = 0.5 * (bbox.x0 + bbox.x1)
+        y_center = 0.5 * (bbox.y0 + bbox.y1)
+        x_positions.append(x_center)
+        y_positions.append(y_center)
+
+    # Group unique centers for x and y, which correspond to columns and rows respectively
+    # We'll define a small tolerance to group subplots in the same row/column
+    # if their centers differ by less than some tiny threshold.
+    def unique_positions(vals, tol=1e-3):
+        # Sort them
+        vals_sorted = sorted(vals)
+        unique_vals = []
+        current_group = None
+        for v in vals_sorted:
+            if current_group is None:
+                current_group = v
+                unique_vals.append(v)
+            else:
+                # if difference is large enough, we treat as a new group
+                if abs(v - current_group) > tol:
+                    unique_vals.append(v)
+                    current_group = v
+        return unique_vals
+
+    unique_x = unique_positions(x_positions, tol=1e-3)
+    unique_y = unique_positions(y_positions, tol=1e-3)
+
+    ncols = len(unique_x)
+    nrows = len(unique_y)
+
+    return (nrows, ncols)
+
+# get the size of a single panel in inches
+def get_panel_frac(fig):
+    # 4. Collect bounding boxes of all "real" subplots
+    ax = fig.get_axes()[0]
+    bb = ax.get_position()
+    xW = bb.x1 - bb.x0
+    yH = bb.y1 - bb.y0
+
+    return xW, yH
+
+def check_panel_size(fig, panel_width, panel_height):
+    init_width, init_height = fig.get_size_inches()
+    xW, yH = get_panel_frac(fig)
+    subplot_width = xW * init_width
+    subplot_height = yH * init_height
+    panel_width_error = abs(panel_width - subplot_width)
+    panel_height_error = abs(panel_height - subplot_height)
+
+    if panel_width_error > 0.01 or panel_height_error > 0.01:
+        print('Panel width error: ' + str(panel_width_error))
+        print('Panel height error: ' + str(panel_height_error))
+        return False
+    else:
+        return True
+
+def round_up_1d(num):
+    return math.ceil(num * 10) / 10
+
+def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH, do_second_tight=True):
+    """
+    Adjust an existing figure so that after tight_layout() the full grid of subplots
+    has a total dimension of (ncols * panel_width) x (nrows * panel_height) inches,
+    where nrows and ncols are automatically detected.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        The figure object (already containing subplots).
+    panel_width : float
+        Desired width (in inches) of each subplot *panel*.
+    panel_height : float
+        Desired height (in inches) of each subplot *panel*.
+    do_second_tight : bool, optional
+        If True, applies tight_layout() again after resizing the figure.
+        This can slightly refine the result.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The same figure object, but resized so that the total subplot grid
+        matches the target dimension (ncols * panel_width x nrows * panel_height).
+    """
+    # 1. round up panel width and height to 1 decimal place
+    panel_width = round_up_1d(panel_width)
+    panel_height = round_up_1d(panel_height)
+
+
+    # 2. Detect the grid shape from the Axes
+    nrows, ncols = detect_subplot_grid_shape(fig)
+    if nrows == 0 or ncols == 0:
+        # Could not detect a valid grid - return unchanged
+        return fig
+
+    #desired margins in inches:
+    left = 0.6
+    right = 0.1
+    bottom = 0.3
+    top = 0.2
+    wspace = 0.1
+    hspace = 0.1
+
+    h_padding = top + bottom + (hspace * (nrows - 1))
+    v_padding = left + right + (wspace * (ncols - 1))
+
+    target_fig_size = (ncols * panel_width + v_padding, nrows * panel_height + h_padding)
+
+    #now get the fraction of the figure that will be each padding
+    left_frac = left / target_fig_size[0]
+    right_frac = right / target_fig_size[0]
+    bottom_frac = bottom / target_fig_size[1]
+    top_frac = top / target_fig_size[1]
+    wspace_frac = wspace/panel_width
+    hspace_frac = hspace/panel_height
+
+    #now, set the figure size to the target size
+    fig.set_size_inches(target_fig_size)
+
+    #and adjust the margins to the desired values
+    fig.subplots_adjust(left=left_frac, right=1-right_frac, top=1-top_frac, bottom=bottom_frac, wspace=wspace_frac, hspace=hspace_frac)
+
+    check = check_panel_size(fig, panel_width, panel_height)
+    if check:
+        return fig
+    else:
+        raise ValueError('Panel size not correct after adjustment')
 
 
 def average_difference(u, v):
@@ -219,7 +398,6 @@ def get_neuron_intertrialgroup_correlations(rec_dir, bsln_sub=False, chunk_size 
     return df
 
 
-
 def make_consensus_matrix2(rec_info, shuffle=False):
     #bins = np.arange(210, 500)
     tmin = 100
@@ -227,15 +405,17 @@ def make_consensus_matrix2(rec_info, shuffle=False):
     df_list = []
     matrices = []
     names = []
+    df = None
     for name, group in rec_info.groupby(['exp_group', 'rec_num']):
+        group = group.reset_index(drop=True)
         top_branch_dist = []
         dinnums = []
         cluster_arrays = []
         rec_dirs = []
+        trial_counts = []
         names.append(name)
         consensus_matrix = np.empty((30, 30, len(group), 4))
-        consensus_matrix[:] = 1
-        #group = group.reset_index(drop=True)
+        consensus_matrix[:] = np.nan
 
         for exp_num, row in group.iterrows():
             rec_dir = row['rec_dir']
@@ -254,6 +434,7 @@ def make_consensus_matrix2(rec_info, shuffle=False):
                     # downsample rate from 7000 bins to 700 by averaging every 10 bins
                     #rate = rate.reshape(rate.shape[0], rate.shape[1], -1, 10).mean(axis=3)
                     n_trials = rate.shape[1]
+                    trial_counts.append(n_trials)
 
                     if shuffle:
                         # create a trial index that is resampled with replacement
@@ -305,6 +486,14 @@ def make_consensus_matrix2(rec_info, shuffle=False):
                             elif j == i:
                                 consensus_matrix[i, j, exp_num, dinnum] = 0
 
+                    #check whether the diagonal is 0
+                    dia = np.diag(consensus_matrix[:, :, exp_num, dinnum])
+                    checksum = np.nansum(dia)
+                    if checksum != 0:
+                        raise ValueError('Diagonal is not 0 for exp_num: ', exp_num, 'dinnum: ', dinnum)
+
+
+
                     #make a df with the cluster labels and top branch distance and dinnum
         cluster_dict = {'channel': dinnums, 'top_branch_dist': top_branch_dist}
         cluster_df = pd.DataFrame(cluster_dict)
@@ -313,6 +502,7 @@ def make_consensus_matrix2(rec_info, shuffle=False):
         cluster_df['exp_group'] = name[0]
         cluster_df['session'] = name[1]
         cluster_df['rec_dir'] = rec_dirs
+        cluster_df['n_trials'] = trial_counts
         df_list.append(cluster_df)
         df = pd.concat(df_list, ignore_index=True)
         consensus_matrix = np.nanmean(consensus_matrix, axis=(2, 3))
@@ -320,7 +510,9 @@ def make_consensus_matrix2(rec_info, shuffle=False):
         consensus_matrix = np.nan_to_num(consensus_matrix)
         # fold the consensus matrix to make it symmetrical
         consensus_matrix = (consensus_matrix + consensus_matrix.T) / 2
+
         matrices.append(consensus_matrix)
+
     return matrices, names, df
 
 def make_consensus_matrix_shuffle(rec_info, n_iter=10, parallel=True, overwrite=False, save_dir=None):
@@ -615,6 +807,7 @@ session_order = {1: 0, 2: 1, 3: 2}
 exp_group_names = ['Naive', 'Suc. Pre-exposed']
 exp_group_colors = ['Blues', 'Oranges']
 exp_group_color_map = {'naive':'Blues', 'suc_preexp': 'Oranges'}
+
 def plot_correlation_matrices(matrices, names, save=False, save_dir=None, flag=None):
     # get the maximum and minimum for every 3 entries of matrices
     max_vals = []
@@ -635,7 +828,7 @@ def plot_correlation_matrices(matrices, names, save=False, save_dir=None, flag=N
         min_vals.append(min_val)
 
     # Adjust the figure layout
-    fig = plt.figure(figsize=(10.5, 6))
+    fig = plt.figure()#figsize=(10.5, 6))
     gs = gridspec.GridSpec(2, 4, width_ratios=[0.1, 1, 1, 1],
                            hspace=0.05)  # Extra column for the color bars on the left
 
@@ -657,28 +850,28 @@ def plot_correlation_matrices(matrices, names, save=False, save_dir=None, flag=N
         if k != 0:
             ax.set_yticks([])
         else:
-            # ax.set_ylabel('Trial', fontsize=20)
+            # ax.set_ylabel('Trial', fontsize=8)
             ax.set_yticks([0, 9, 19, 29])
-            ax.set_yticklabels(ax.get_yticks(), fontsize=14)
+            ax.set_yticklabels(ax.get_yticks(), fontsize=8)
         if j != 1:
             ax.set_xticks([])
         else:
-            ax.set_xlabel('Trial', fontsize=20)
+            ax.set_xlabel('Trial', fontsize=8)
             ax.set_xticks([0, 9, 19, 29])
-            ax.set_xticklabels(ax.get_xticks(), fontsize=14)
+            ax.set_xticklabels(ax.get_xticks(), fontsize=8)
             ax.xaxis.set_ticks_position('bottom')
         if j == 0:
-            ax.set_title('Session ' + str(session), pad=-6, fontsize=20)
+            ax.set_title('Session ' + str(session), pad=-6, fontsize=8)
         # Set the ylabel on the right side of the last column of the data plots
         if k == 2:  # Corrected condition to match the last column of the data plots
             ax.yaxis.set_label_position("right")
-            ax.set_ylabel(exp_group_names[j], rotation=270, labelpad=20, fontsize=20)
+            ax.set_ylabel(exp_group_names[j], rotation=270, labelpad=20, fontsize=8)
 
         # Add one color bar per row in the first column
         if k == 1:  # This ensures color bars are added once per row
             cb = fig.colorbar(cax, cax=cbar_axes[j], orientation='vertical')
             cbar_axes[j].yaxis.set_ticks_position('left')
-            cbar_axes[j].set_ylabel('distance index', fontsize=20, rotation=90, labelpad=-80)
+            cbar_axes[j].set_ylabel('distance index', fontsize=8, rotation=90, labelpad=-80)
 
     plt.tight_layout()
     plt.show()
@@ -729,28 +922,28 @@ def plot_correlation_matrices_single(matrices, names, save=False, save_dir=None,
         if k != 0:
             ax.set_yticks([])
         else:
-            # ax.set_ylabel('Trial', fontsize=20)
+            # ax.set_ylabel('Trial', fontsize=8)
             ax.set_yticks([0, 9, 19, 29])
-            ax.set_yticklabels(ax.get_yticks(), fontsize=18)
-            ax.set_ylabel('Trial', fontsize=20)
+            ax.set_yticklabels(ax.get_yticks(), fontsize=8)
+            ax.set_ylabel('Trial', fontsize=8)
 
 
-        ax.set_xlabel('Trial', fontsize=20)
+        ax.set_xlabel('Trial', fontsize=8)
         ax.set_xticks([0, 9, 19, 29])
-        ax.set_xticklabels(ax.get_xticks(), fontsize=18)
+        ax.set_xticklabels(ax.get_xticks(), fontsize=8)
         ax.xaxis.set_ticks_position('bottom')
 
-        ax.set_title('Session ' + str(session), pad=-6, fontsize=20)
+        ax.set_title('Session ' + str(session), pad=-6, fontsize=8)
         # Set the ylabel on the right side of the last column of the data plots
         if k == 2:  # Corrected condition to match the last column of the data plots
             ax.yaxis.set_label_position("right")
-            ax.set_ylabel(exp_group_name, rotation=270, labelpad=20, fontsize=20)
+            ax.set_ylabel(exp_group_name, rotation=270, labelpad=20, fontsize=8)
 
         # Add one color bar per row in the first column
         if k == 1:  # This ensures color bars are added once per row
             cb = fig.colorbar(cax, cax=cbar_axes, orientation='horizontal')
             cbar_axes.yaxis.set_ticks_position('left')
-            cbar_axes.set_xlabel('distance index', fontsize=20)#, labelpad=-80)
+            cbar_axes.set_xlabel('distance index', fontsize=8)#, labelpad=-80)
 
     plt.tight_layout()
     plt.show()
@@ -804,18 +997,18 @@ def plot_heirarchical_clustering(matrices, names, threshold=None, save=False, sa
             ax.set_title('Session ' + str(session))
         # for the last column, set the ylabel to the exp_group on the right axis
         if k == 2:
-            ax.set_ylabel(exp_group_names[j], rotation=-90, labelpad=20, fontsize=20)
+            ax.set_ylabel(exp_group_names[j], rotation=-90, labelpad=20, fontsize=8)
             ax.yaxis.set_label_position("right")
 
         # for the first column, set the ylabel to 'Cluster distan"
         if k == 0:
-            ax.set_ylabel('Cluster distance', fontsize=20)
+            ax.set_ylabel('Cluster distance', fontsize=8)
         else:
             ax.set_yticks([])
 
         # for the last row, set the xlabel to 'Trial'
         if j == 1:
-            ax.set_xlabel('Trial', fontsize=20)
+            ax.set_xlabel('Trial', fontsize=8)
     plt.subplots_adjust(wspace=0.05, hspace=0.2)
     plt.show()
     # save the figure
@@ -844,7 +1037,7 @@ def plot_heirarchical_clustering_single(matrices, names, threshold=None, save=Fa
     max_vals = max(max_vals)
     # now plot the dendograms =
     # make a 2x3 grid of subplots
-    fig, axs = plt.subplots(1, 3, figsize=(10, 4))
+    fig, axs = plt.subplots(1, 3, figsize=(8, 4), sharey=False)
     # iterate over the matrices and names
     leaves = []
     for i, link in enumerate(linkages):
@@ -859,33 +1052,35 @@ def plot_heirarchical_clustering_single(matrices, names, threshold=None, save=Fa
 
         ax = axs[k]
         if threshold is not None:
-            leaf = dendrogram(link, ax=ax, leaf_rotation=90, leaf_font_size=8, get_leaves=True, color_threshold=threshold[i])
+            leaf = dendrogram(link, ax=ax, leaf_rotation=90, leaf_font_size=7, get_leaves=True, color_threshold=threshold[i])
         else:
-            leaf = dendrogram(link, ax=ax, leaf_rotation=90, leaf_font_size=8, get_leaves=True)
+            leaf = dendrogram(link, ax=ax, leaf_rotation=90, leaf_font_size=7, get_leaves=True)
         leaves.append(leaf)
         # set max of y-axis to max_y
         ax.set_ylim(0, max_y)
 
-        # for the first row, set the title to the session number
-        ax.set_title('Session ' + str(session))
+        ax.set_title('Session ' + str(session), fontsize=8)
         # for the last column, set the ylabel to the exp_group on the right axis
-        if k == 2:
-            ax.set_ylabel(exp_group, rotation=-90, labelpad=20, fontsize=20)
-            ax.yaxis.set_label_position("right")
+        #if k == 2:
+        #ax.set_ylabel(exp_group, rotation=-90, labelpad=20, fontsize=8)
+        #ax.yaxis.set_label_position("right")
 
         # for the first column, set the ylabel to 'Cluster distan"
         if k == 0:
-            ax.set_ylabel('Cluster distance', fontsize=20)
+            ax.set_ylabel('cluster\ndistance', fontsize=8)
+            #set the y axis tick labels to a fontsize of 8
+            ax.yaxis.set_tick_params(labelsize=8)
         else:
             ax.set_yticks([])
 
         # for the last row, set the xlabel to 'Trial'
-        ax.set_xlabel('Trial', fontsize=20)
-    plt.tight_layout()
+        ax.set_xlabel('Trial', fontsize=8)
+    #plt.tight_layout()
+    fig = adjust_figure_for_panel_size_auto(fig, panel_width=2.4)
     #plt.subplots_adjust(wspace=0.05, hspace=0.2)
-    plt.show()
+    #plt.show()
     # save the figure
-    plot_name = save_dir + os.sep + exp_group + '_dendograms'
+    plot_name = save_dir + os.sep + 'naive' + '_dendograms'
     if flag is not None:
         plot_name = plot_name + '_' + flag
     if save:
@@ -930,43 +1125,80 @@ def plot_cluster_sizes_w_shuff(df_AB_long, shuff_AB_long, save_dir=None):
 
 def plot_cluster_sizes_w_shuff_single(df_AB_long, shuff_AB_long, save_dir=None):
     # make a bar plot of the size of the two largest clusters for each channel
-    cluster_x_map = {'early': 0, 'late': 1, 'total': 2}
-    bonf_corr = 6 # 2 comparisons across 3 days 6 total comparisons
-    conf = 0.05 / bonf_corr
+    cluster_x_map = {'early': 1, 'late': 2, 'total': 0, 'diff': 3}
+    bonf_corr = 4 # 2 comparisons across 3 days 6 total comparisons
+    conf = (0.05 / bonf_corr)/2
     ntiles = [conf, 1 - conf]
+
+    #prepare to make a pvalue table
+    vals = []
+    pvals = []
+    sessions = []
+    clusters = []
+    exp_groups = []
 
     fig, axs = plt.subplots(1, 3, figsize=(10, 4), sharey=True)
     for session in [1,2,3]:
         ax = axs[session - 1]
         session_df = df_AB_long[df_AB_long['session'] == session]
         session_shuff = shuff_AB_long[shuff_AB_long['session'] == session]
-        session_df['size'] = session_df['size']/30 * 100
-        session_shuff['size'] = session_shuff['size']/30 * 100
 
+        #session_df['size'] = session_df['size']/30 * 100
+        #session_shuff['size'] = session_shuff['size']/30 * 100
 
+        grp_cols = ['exp_group', 'session', 'channel', 'exp_name', 'n_trials']
         #make a 'total' cluster that is the sum of the early and late clusters
-        total_df = session_df.groupby(['exp_group', 'session', 'channel','exp_name']).sum().reset_index()
+        total_df = session_df.groupby(grp_cols).sum().reset_index()
         total_df['cluster'] = 'total'
-        session_df = pd.concat([session_df, total_df], ignore_index=True)
 
-        total_shuff = session_shuff.groupby(['exp_group', 'session', 'channel','exp_name', 'iter']).sum().reset_index()
+        #get the difference between the early and late clusters
+        out = session_df.set_index(grp_cols+['cluster']).unstack('cluster').swaplevel(axis=1).sort_index(axis=1)
+        diff_df = out['late'] - out['early']
+        diff_df = diff_df.reset_index()
+        diff_df['cluster'] = 'diff'
+
+        session_df = pd.concat([session_df, total_df, diff_df], ignore_index=True)
+        session_df['size'] = session_df['size']/session_df['n_trials']*100
+        session_df = session_df.groupby(['exp_group', 'session', 'cluster'])['size'].mean().reset_index()
+
+        #do the same for shuffles
+        grp_cols = ['exp_group', 'session', 'channel', 'exp_name', 'n_trials', 'iter']
+        total_shuff = session_shuff.groupby(grp_cols).mean().reset_index()
         total_shuff['cluster'] = 'total'
-        session_shuff = pd.concat([session_shuff, total_shuff], ignore_index=True)
 
-        session_shuff = session_shuff.groupby(['exp_group', 'session', 'channel', 'cluster', 'iter'])['size'].mean().reset_index()
+        #get the difference between the early and late clusters
+        out = session_shuff.set_index(grp_cols+['cluster']).unstack('cluster').swaplevel(axis=1).sort_index(axis=1)
+        diff_shuff = out['late'] - out['early']
+        diff_shuff = diff_shuff.reset_index()
+        diff_shuff['cluster'] = 'diff'
 
-        shuff_quantiles = session_shuff.groupby('cluster')['size'].quantile(ntiles).unstack().reset_index()
+        session_shuff = pd.concat([session_shuff, total_shuff, diff_shuff], ignore_index=True)
+        session_shuff['size'] = session_shuff['size']/session_shuff['n_trials']*100
+
+        session_shuff = session_shuff.groupby(['exp_group', 'session', 'cluster', 'iter'])['size'].mean().reset_index()
+
+        shuff_quantiles = session_shuff.groupby(['cluster'])['size'].quantile(ntiles).unstack().reset_index()
         # rename the columns of shuff_quantiles to 'lower' and 'upper'
         shuff_quantiles.columns = ['cluster', 'lower', 'upper']
+        #if lower is negative, set it to 0, and set height to upper for that row
+        #shuff_quantiles.loc[shuff_quantiles['lower'] < 0, 'lower'] = 0
         shuff_quantiles['height'] = shuff_quantiles['upper'] - shuff_quantiles['lower']
+        print(shuff_quantiles)
+        #reorder rows of shuff quantiles so that cluster order is 'early', 'late', 'total', 'diff'
+        shuff_quantiles = shuff_quantiles.set_index('cluster').reindex(['total', 'early', 'late', 'diff']).reset_index()
+        # set the height of the bars to be the difference between the upper and lower quantiles
+        print(shuff_quantiles)
 
         # make a floating barplot with cluster on the x-axis, 0.025 the bottom of each bar, and 0.975 the top of each bar
         ax.bar(x=shuff_quantiles['cluster'], height=shuff_quantiles['height'], bottom=shuff_quantiles['lower'],
                color='gray', alpha=0.5)
         sns.barplot(data=session_df, x='cluster', y='size', ax=ax, capsize=0.1, errwidth=2, edgecolor='black',
-                    order=['early', 'late', 'total'], facecolor=(0, 0, 0, 0))
+                    order=['total','early', 'late', 'diff'], facecolor=(0, 0, 0, 0))
 
-        for cluster, group in session_df.groupby('cluster'):
+        #reorder session_df so that order of clusters is 'total', 'early', 'late', 'diff'
+
+        for cluster in ['total', 'early', 'late', 'diff']:
+            group = session_df[session_df['cluster'] == cluster]
             shuff_group = session_shuff[session_shuff['cluster'] == cluster]
             mean_shuff = shuff_group['size'].mean()
             mean = group['size'].mean()
@@ -980,24 +1212,39 @@ def plot_cluster_sizes_w_shuff_single(df_AB_long, shuff_AB_long, save_dir=None):
             if pval < 0.05:
                 xpos = cluster_x_map[cluster]
                 #plot a text from stars above the bar in bold
-                ax.text(xpos, 75, stars, fontsize=20, ha='center', fontweight='bold')
+                ax.text(xpos, 75, stars, fontsize=8, ha='center', fontweight='bold')
+            #make the pval table
+            vals.append(mean)
+            pvals.append(pval)
+            sessions.append(session)
+            clusters.append(cluster)
+            exp_groups.append('naive')
+
+
         #set y lim
-        ax.set_ylim(0, 100)
+        ax.set_ylim(-20, 100)
         if session == 1:
-            ax.set_ylabel('% of trials', fontsize=20)
-            yticks = [0,20,40,60,80,100]
+            ax.set_ylabel('% of trials', fontsize=8)
+            yticks = [-20, 0,20,40,60,80,100]
             ax.set_yticks(yticks)
-            ax.set_yticklabels(ax.get_yticks(), fontsize=17)
+            ax.set_yticklabels(ax.get_yticks(), fontsize=8)
         else:
             ax.set_ylabel('')
-        ax.set_title('Session ' + str(session))
-        ax.set_xticklabels(ax.get_xticklabels(), fontsize=17)
+        ax.set_title('Session ' + str(session), fontsize=8)
+        ax.set_xticklabels(['2\nlargest', 'early', 'late', 'late\n-early'], fontsize=8, rotation=80, ha='right', rotation_mode='anchor')
+        ax.set_xlabel('Cluster', fontsize=8)
 
-    plt.tight_layout()
+    fig = adjust_figure_for_panel_size_auto(fig)
     plt.show()
     # save the plot
     plt.savefig(save_dir + '/cluster_size_barplot_naive.png')
     plt.savefig(save_dir + '/cluster_size_barplot_naive.svg')
+
+    #save the pval table as csv
+    pval_df = pd.DataFrame({'exp_group': exp_groups, 'session': sessions, 'cluster': clusters, 'mean': vals, 'pval': pvals})
+    savename = save_dir + '/cluster_size_barplot_naive_pval_table.csv'
+    pval_df.to_csv(savename, index=False)
+
 
 
 def get_pval_stars(pval, bonf_corr=None):
@@ -1035,7 +1282,7 @@ def plot_cluster_avg_trial_naive(newdf, save_dir=None, flag=None):
             stars = get_pval_stars(pval)
             #put a horizontal line from 0 to 1 at 25
             ax.plot([0, 1], [25, 25], lw=2, c='black')
-            ax.text(0.5, 26, stars, fontsize=20, ha='center')
+            ax.text(0.5, 26, stars, fontsize=8, ha='center')
 
         ax.set_title('Session ' + str(session))
         if session == 1:
@@ -1045,9 +1292,9 @@ def plot_cluster_avg_trial_naive(newdf, save_dir=None, flag=None):
         ax.set_xlabel('Cluster')
         ax.set_ylim(-1, 30)
         ax.set_yticks([0, 10, 20, 30])
-        ax.set_yticklabels(ax.get_yticks(), fontsize=17)
-        ax.set_xticklabels(ax.get_xticklabels(), fontsize=17)
-        ax.set_xlabel('Cluster', fontsize=20)
+        ax.set_yticklabels(ax.get_yticks(), fontsize=8)
+        ax.set_xticklabels(ax.get_xticklabels(), fontsize=8)
+        ax.set_xlabel('Cluster', fontsize=8)
     plt.tight_layout()
     plt.show()
     # save the plot
@@ -1061,33 +1308,64 @@ def plot_cluster_avg_trial_naive_w_shuff(newdf, shuff_df, save_dir=None, flag=No
     #relabel cluster column so 'early shuffle' is 'early\nshuffle' and 'late shuffle' is 'late\nshuffle'
     #make a new column called 'half which is the 'cluster' column with ' shuffle' removed
     newdf = newdf.copy()
-    cluster_x_map = {'early': 0, 'late': 1}
+    cluster_x_map = {'early': 0, 'late': 1, 'diff': 2}
     shuff_df['cluster'] = shuff_df['cluster'].str.replace('early shuffle', 'early')
     shuff_df['cluster'] = shuff_df['cluster'].str.replace('late shuffle', 'late')
-    #group shuff_df by cluster, channel, exp_name, and iter, get the mean of clust_idx
-    shuff_df = shuff_df.groupby(['session','channel', 'cluster', 'iter']).agg({'clust_idx': 'mean'}).reset_index()
 
-    bonf_corr = 6 # 2 comparisons across 3 days 6 total comparisons
-    conf = 0.05 / bonf_corr
+    meandf = newdf.groupby(['session', 'channel', 'cluster', 'exp_name']).agg({'clust_idx': 'mean'}).reset_index()
+    newdf = newdf.groupby(['session', 'channel', 'cluster', 'exp_name']).agg({'clust_idx': 'mean'}).reset_index()
+    #group shuff_df by cluster, channel, exp_name, and iter, get the mean of clust_idx
+    mean_shuff_df = shuff_df.groupby(['session','cluster', 'iter']).agg({'clust_idx': 'mean'}).reset_index()
+
+    bonf_corr = 3 # 2 comparisons across 3 days 6 total comparisons
+    conf = (0.05 / bonf_corr)/2 #two-sided comparison
     ntiles = [conf, 1 - conf]
+
+    #set up lists to make a pvalue and grouping table
+    vals = []
+    pvals = []
+    sessions = []
+    clusters = []
+    exp_groups = []
 
     fig, axs = plt.subplots(1, 3, figsize=(10, 4), sharey=True)
     for session in [1, 2, 3]:
         ax = axs[session - 1]
         session_df = newdf[newdf['session'] == session]
-        session_shuff = shuff_df[shuff_df['session'] == session]
+        mean_session_df = meandf[meandf['session'] == session]
+        session_shuff = mean_shuff_df[mean_shuff_df['session'] == session]
         #for each grouping of cluster in session_shuff, get the 97.5% and 2.5% quantiles of clust_idx
+
+        grp_cols = ['session', 'cluster', 'channel', 'exp_name']
+        out = mean_session_df.set_index(grp_cols).unstack('cluster').swaplevel(axis=1).sort_index(axis=1)
+        diff_df = out['late'] - out['early']
+        diff_df = diff_df.reset_index()
+        diff_df['cluster'] = 'diff'
+        session_df = pd.concat([session_df, diff_df], ignore_index=True)
+
+        shuff_grp_cols = ['session', 'cluster', 'iter']
+        out = session_shuff.set_index(shuff_grp_cols).unstack('cluster').swaplevel(axis=1).sort_index(axis=1)
+        diff_shuff = out['late'] - out['early']
+        diff_shuff = diff_shuff.reset_index()
+        diff_shuff['cluster'] = 'diff'
+
+        session_shuff = pd.concat([session_shuff, diff_shuff], ignore_index=True)
 
         shuff_quantiles = session_shuff.groupby('cluster')['clust_idx'].quantile(ntiles).unstack().reset_index()
         #rename the columns of shuff_quantiles to 'lower' and 'upper'
         shuff_quantiles.columns = ['cluster', 'lower', 'upper']
         shuff_quantiles['height'] = shuff_quantiles['upper'] - shuff_quantiles['lower']
+        print(shuff_quantiles)
+
+        #set the order of cluster to cluster_x_map
+        shuff_quantiles = shuff_quantiles.set_index('cluster').reindex(['early', 'late', 'diff']).reset_index()
+
         #make a floating barplot with cluster on the x-axis, 0.025 the bottom of each bar, and 0.975 the top of each bar
         ax.bar(x=shuff_quantiles['cluster'], height=shuff_quantiles['height'], bottom=shuff_quantiles['lower'], color='gray', alpha=0.5)
         sns.barplot(data=session_df, x='cluster', y='clust_idx', ax=ax, capsize=0.1, errwidth=2, edgecolor='black',
-                    order=['early','late'], facecolor=(0, 0, 0, 0))
+                    order=['early','late', 'diff'], facecolor=(0, 0, 0, 0))
         sns.swarmplot(data=session_df, x='cluster', y='clust_idx', ax=ax, color='tab:blue', alpha=0.5, size=2,
-                      order=['early', 'late'])
+                      order=['early', 'late', 'diff'])
 
         for cluster, group in session_df.groupby('cluster'):
             shuff_group = session_shuff[session_shuff['cluster'] == cluster]
@@ -1103,20 +1381,27 @@ def plot_cluster_avg_trial_naive_w_shuff(newdf, shuff_df, save_dir=None, flag=No
             if pval < 0.05:
                 xpos = cluster_x_map[cluster]
                 #plot a text from stars above the bar in bold
-                ax.text(xpos, 20, stars, fontsize=20, ha='center', fontweight='bold')
+                ax.text(xpos, 20, stars, fontsize=8, ha='center', fontweight='bold')
 
-        ax.set_title('Session ' + str(session))
+            #record the pval, session, cluster, and exp_group
+            vals.append(mean)
+            pvals.append(pval)
+            sessions.append(session)
+            clusters.append(cluster)
+            exp_groups.append('naive')
+
+        ax.set_title('Session ' + str(session), fontsize=8)
         if session == 1:
-            ax.set_ylabel('Trial')
+            ax.set_ylabel('Trial', fontsize=8)
         else:
             ax.set_ylabel('')
-        ax.set_xlabel('Cluster')
+        ax.set_xlabel('Cluster', fontsize=8)
         ax.set_ylim(-1, 30)
         ax.set_yticks([0, 10, 20, 30])
-        ax.set_yticklabels(ax.get_yticks(), fontsize=17)
-        ax.set_xticklabels(ax.get_xticklabels(), fontsize=17)
-        ax.set_xlabel('Cluster', fontsize=20)
-    plt.tight_layout()
+        ax.set_yticklabels(ax.get_yticks(), fontsize=8)
+        ax.set_xticklabels(['early', 'late', 'late\n- early'], fontsize=8, rotation=45)
+        ax.set_xlabel('Cluster', fontsize=8)
+    fig = adjust_figure_for_panel_size_auto(fig)
     plt.show()
 
     # save the plot
@@ -1125,6 +1410,18 @@ def plot_cluster_avg_trial_naive_w_shuff(newdf, shuff_df, save_dir=None, flag=No
         savename = savename + '_' + flag
     plt.savefig(savename + '.png')
     plt.savefig(savename + '.svg')
+
+    #create and save the pval table
+    pval_df = pd.DataFrame({'mean': vals, 'pval': pvals, 'session': sessions, 'cluster': clusters, 'exp_group': exp_groups})
+    pval_df['pval'] = pval_df['pval'].astype(float)
+    pval_df['session'] = pval_df['session'].astype(int)
+    pval_df['cluster'] = pval_df['cluster'].astype(str)
+    pval_df['exp_group'] = pval_df['exp_group'].astype(str)
+    save_name = save_dir + '/cluster_avg_trial_naive_w_shuff_pvals'
+    if flag is not None:
+        save_name = save_name + '_' + flag
+    pval_df.to_csv(save_name + '.csv', index=False)
+
 
 def plot_cluster_distances(intra_inter_df, save_dir=None):
     # plot a bar plot of the distances
