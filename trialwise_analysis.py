@@ -243,6 +243,10 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH
 def model(x,a,b,c,d):
     return a + (b-a)/(1+np.exp(-c*(x-d)))
 
+def step_model(x, a, b, c):
+    #for each y = f(x, a, b, c), if x < c, y = a, else y = b
+    return np.where(x < c, a, b)
+
 def shuffle_time(df, subject_cols='Subject', trial_col='session trial'):
     newdf = []
     for name, group in df.groupby(subject_cols):
@@ -280,6 +284,126 @@ def calc_cmax(dy, dx, nTrials):
         print('maxDeltaY: ' + str(maxDeltaY))
         raise Exception('cmax is nan')
     return cmax
+
+def step_regression(data, subject_cols=['Subject'], trial_col='Trial', value_col='Value', ymin=None, ymax=None,
+                         parallel=True):
+    def parse_bounds(paramMax, paramMin):
+        buffer = 1e-10
+        if paramMax == paramMin:
+            print('bound collision detected, adjusting max/min values')
+            if ymax is None and ymin is None:
+                paramMin = paramMin - buffer
+                paramMax = paramMax + buffer
+                print('new bounds: ' + str(paramMin) + ' ' + str(paramMax))
+            else:
+                if ymax is not None:
+                    if paramMin == ymax:
+                        paramMin = paramMin - buffer
+                if ymin is not None:
+                    if paramMax == ymin:
+                        paramMax = paramMax + buffer
+                print('new bounds: ' + str(paramMin) + ' ' + str(paramMax))
+        if paramMax == paramMin:
+            raise Exception('bounds still equal after adjustment')
+        #if either paramMin or paramMax is nan, raise exception
+        if np.isnan(paramMin) or np.isnan(paramMax):
+            raise Exception('paramMin or paramMax is nan')
+        return paramMin, paramMax
+
+    def fit_for_subject(subject, subject_data):
+        # sort subject data by trial_col
+        subject_data = subject_data.copy().sort_values(by=[trial_col]).reset_index(drop=True)
+        trials = subject_data[trial_col].to_numpy()
+        values = subject_data[value_col].to_numpy()
+
+        #if there are nans in values, remove them and the corresponding indices of trials
+        nan_indices = np.argwhere(np.isnan(values))
+        if len(nan_indices) > 0:
+            trials = np.delete(trials, nan_indices)
+            values = np.delete(values, nan_indices)
+
+        nTrials = len(trials)
+        if nTrials < 4:
+            print('Not enough data points to fit model for subject ' + str(subject))
+            return subject, (np.nan, np.nan, np.nan, np.nan), np.nan, np.nan
+
+        valMax = np.max(values)
+        valMin = np.min(values)
+        if valMin == valMax:
+            a0 = valMin
+            b0 = valMax
+            c0 = np.median(trials)
+            params = [a0, b0, c0]
+            y_pr = step_model(trials, *params)
+            r2 = r2_score(values, y_pr)
+            return subject, params, r2, y_pr
+
+        trialMax = np.max(trials)
+        trialMin = np.min(trials)
+
+        aMin = valMin
+        aMax = valMax
+        bMax = valMax
+        bMin = valMin
+        cMin = trials[1]
+        cMax = trials[-2]
+        c0 = np.median(trials)
+
+        cy = abs(valMax - valMin)
+        cx = abs(trialMax - trialMin)
+        #if dy, dx, or nTrials are nan, raise exception
+        if np.isnan(cy) or np.isnan(cx) or np.isnan(nTrials):
+            print('valmax: ' + str(valMax))
+            print('valmin: ' + str(valMin))
+            print('values: ' + str(values))
+            raise Exception('dy, dx, or nTrials is nan')
+
+        #get the average of the first and last halves of the data to set y0 and y1
+        y0 = np.mean(values[:int(c0)])
+        y1 = np.mean(values[int(c0):])
+
+        if aMin <= y0 <= aMax:
+            a0 = y0
+        elif aMin <= values[0] <= aMax:
+            a0 = values[0]
+        else:
+            #figure out if a0 is closer to aMin or aMax
+            if abs(aMin - y0) < abs(aMax - y0):
+                a0 = aMin
+            else:
+                a0 = aMax
+
+        if bMin <= y1 <= bMax:
+            b0 = y1
+        elif bMin <= values[-1] <= bMax:
+            b0 = values[-1]
+        else:
+            #figure out if b0 is closer to bMin or bMax
+            if abs(bMin - y1) < abs(bMax - y1):
+                b0 = bMin
+            else:
+                b0 = bMax
+
+        params, _ = curve_fit(step_model, trials, values, p0=[a0, b0, c0], bounds=[[aMin, bMin, cMin], [aMax, bMax, cMax]],
+                              maxfev=10000000)
+        y_pred = step_model(trials, *params)
+        r2 = r2_score(values, y_pred)
+
+        return subject, params, r2, y_pred
+
+    if parallel:
+        results = Parallel(n_jobs=-1)(
+            delayed(fit_for_subject)(subject, subject_data) for subject, subject_data in data.groupby(subject_cols))
+    else:
+        results = []
+        for subject, subject_data in data.groupby(subject_cols):
+            results.append(fit_for_subject(subject, subject_data))
+
+    fitted_params = {result[0]: result[1] for result in results}
+    r2_scores = {result[0]: result[2] for result in results}
+    y_pred = {result[0]: result[3] for result in results}
+
+    return fitted_params, r2_scores, y_pred
 
 
 def nonlinear_regression(data, subject_cols=['Subject'], trial_col='Trial', value_col='Value', ymin=None, ymax=None,
@@ -1184,7 +1308,7 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
     return mean_r2, p_val
     #ax.set_aspect('equal', adjustable='box')
 #plots the bar graphs for the value col  
-def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=8,
+def plot_r2_pval_summary(shuff_r2_df, r2_df, x_col=None, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=8,
                          nIter=1000, n_comp=1, xticklabs=True):
     if stat_col is None:
         stat_col = 'r2'
@@ -1202,7 +1326,11 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
     pal = sns.color_palette()
     colmap = {'naive': 0, 'suc_preexp': 1, 'sucrose preexposed': 1, 'sucrose pre-exposed': 1}
 
-    tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
+    if x_col is None:
+        tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
+    else:
+        tastes = r2_df[x_col].unique()
+        tastes = list(tastes)
     n_tastes = len(tastes) + 1
 
     # bootstrap mean r2 value with replacement for nIter iterations
@@ -1218,7 +1346,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
     bar_width = 0.75
     egs = []
     ses = []
-    tastes = []
+    x_counter = []
     means = []
     pvals = []
     for k, exp_group in enumerate(exp_groups):
@@ -1238,7 +1366,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save
                 mean, pval = plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, two_tailed=two_tailed, n_comp=n_comp)
                 egs.append(exp_group)
                 ses.append(session)
-                tastes.append(taste)
+                x_counter.append(taste)
                 means.append(mean)
                 pvals.append(pval)
             # Plot overall percentile bars and mean r2 values
@@ -1946,40 +2074,41 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
             savename = '/' + save_flag + '_r2_perm_test.png'
         plt.savefig(save_dir + savename)
 
-def preprocess_nonlinear_regression(df, subject_cols, group_cols, trial_col, value_col, ymin=None, ymax=None, parallel=True, overwrite=False, nIter=10000, save_dir=None, flag=None):
+def preprocess_nonlinear_regression(df, subject_cols, group_cols, trial_col, value_col, ymin=None, ymax=None, step=False, parallel=True, overwrite=False, shuffle=True, nIter=10000, save_dir=None, flag=None):
     if type(subject_cols) is list:
         groupings = subject_cols + group_cols
     elif type(subject_cols) is str:
         groupings = [subject_cols] + group_cols
     else:
         raise ValueError('subject_cols must be a string or a list of strings')
-    params, r2, y_pred = nonlinear_regression(df, subject_cols=groupings, trial_col=trial_col, value_col=value_col,
-                                                 parallel=parallel, ymin=ymin, ymax=ymax)
+    if not step:
+        params, r2, y_pred = nonlinear_regression(df, subject_cols=groupings, trial_col=trial_col, value_col=value_col,
+                                                     parallel=parallel, ymin=ymin, ymax=ymax)
+    else:
+        params, r2, y_pred = step_regression(df, subject_cols=groupings, trial_col=trial_col, value_col=value_col,
+                                                     parallel=parallel, ymin=ymin, ymax=ymax)
+
     r2_df = pd.Series(r2).reset_index()  # turn dict into a series with multi-index
     r2_df = r2_df.reset_index(drop=True)  # reset the index so it becomes a dataframe
     colnames = groupings + ['r2']
     column_mapping = dict(zip(r2_df.columns, colnames))
     r2_df = r2_df.rename(columns=column_mapping)
 
+    paramnms = ['alpha', 'beta', 'c']
+    if not step:
+        paramnms.append('d')
+
     identifiers = []
-    alpha = []
-    beta = []
-    c = []
-    d = []
+    prs = []
+
     for i, group in df.groupby(groupings):
         pr = params[i]
         identifiers.append(i)
-        alpha.append(pr[0])
-        beta.append(pr[1])
-        c.append(pr[2])
-        d.append(pr[3])
+        prs.append(pr)
 
     ids_df = pd.DataFrame(identifiers, columns=groupings)
     params_df = ids_df.copy()
-    params_df['alpha'] = alpha
-    params_df['beta'] = beta
-    params_df['c'] = c
-    params_df['d'] = d
+    params_df[paramnms] = prs
 
     # merge the params with df
     df2 = df.merge(params_df, on=groupings)
@@ -1987,17 +2116,20 @@ def preprocess_nonlinear_regression(df, subject_cols, group_cols, trial_col, val
     # for each row of df3, get the modeled value for that row, by passing the trial number and alpha, beta, c values to the model function
     modeled = []
     for i, row in df3.iterrows():
-        pr = row[['alpha', 'beta', 'c', 'd']]
+        pr = row[paramnms]
         mod = model(row[trial_col], *pr)
         modeled.append(mod)
     df3['modeled'] = modeled
     # get the null distribution of r2 values
-    shuffle = iter_shuffle(df3, nIter=nIter, subject_cols=groupings, trial_col=trial_col, value_col=value_col,
-                            ymin=ymin, ymax=ymax, save_dir=save_dir, overwrite=overwrite, parallel=parallel, flag=flag)
 
-    if shuffle is [] or shuffle is None:
-        raise ValueError('shuffle is None')
-    return df3, shuffle
+    if shuffle:
+        shuff = iter_shuffle(df3, nIter=nIter, subject_cols=groupings, trial_col=trial_col, value_col=value_col,
+                                ymin=ymin, ymax=ymax, save_dir=save_dir, overwrite=overwrite, parallel=parallel, flag=flag)
+        if shuff is [] or shuff is None:
+            raise ValueError('shuffle is None')
+        return df3, shuff
+    else:
+        return df3, None
 
 def plot_nonlinear_regression_stats(df3, shuff, subject_cols, group_cols, trial_col, value_col, flag=None, nIter=100,
                                     textsize=8, ymin=None, ymax=None, save_dir=None, xticklabs=True):
@@ -2205,7 +2337,7 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, subject_cols
 
     args = {'subject_cols': subject_cols, 'group_cols': group_cols, 'trial_col': trial_col, 'value_col': value_col, 'nIter': nIter, 'save_dir':save_dir,
             'textsize':8, 'flag': flag, 'ymin':ymin, 'ymax':ymax, 'xticklabs':xticklabs}
-    
+
     plot_nonlinear_line_graphs(df3, shuff, **args)
     #plot the stats quantificaiton of the r2 values
     plot_nonlinear_regression_stats(df3, shuff, **args)
