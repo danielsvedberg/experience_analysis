@@ -122,7 +122,7 @@ shufflD13 = shuffle.loc[shuffle['session'] != 2]
 #loop and take away trials 0 through i
 ppdfs = []
 sdfs = []
-for i in range(1, 30):
+for i in range(0, 25):
     folder = f'dist_to_avg_stereotypy_D_minus_0-{i}'
     save_dir = proj_save_dir + os.sep + folder
     if not os.path.exists(save_dir):
@@ -212,13 +212,14 @@ for i in range(len(pval_table)):
         plt.text(trials_removed+0.35, upper + 0.1, star, fontsize=8, ha='center', va = 'center', color='black', rotation=90)
 #get the max of avglesionupper r2
 max_r2 = avglesionupper['r2'].max()
+plt.xticks([0,5,10,15,20,25])
 plt.ylim(0, max_r2 + 0.15)
 plt.ylabel('Mean R²', fontsize=8)
 plt.xlabel('Trials Removed', fontsize=8)
 #set x tick label size to 8
 plt.xticks(fontsize=8)
 plt.yticks(fontsize=8)
-psu.adjust_figure_for_panel_size_auto(fig, panel_width=3, panel_height=1)
+psu.adjust_figure_for_panel_size_auto(fig, panel_width=2.5, panel_height=1)
 
 #save plot to save_dir
 plt.savefig(save_dir + os.sep + 'lesion_preprodf_boxplot.png')
