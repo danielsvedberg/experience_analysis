@@ -158,8 +158,6 @@ final_df = final_df.loc[final_df['max_trial'] - final_df['split'] > 1]
 final_df = final_df.loc[final_df['split'] != 2]
 final_df['Z(Euc dist)'] = final_df.groupby(['rec_dir', 'channel'])['euclidean_distance'].transform(
     lambda x: (x - x.mean()) / x.std())
-final_df['Var Scaled Euc Dist'] = final_df.groupby(['rec_dir', 'channel'])['euclidean_distance'].transform(
-    lambda x: x / x.std())
 
 
 # preprocess the shuffle ################################################################################################
@@ -178,8 +176,6 @@ final_shuff_df = final_shuff_df.loc[final_shuff_df['max_trial'] - final_shuff_df
 final_shuff_df = final_shuff_df.loc[final_shuff_df['split'] != 2]
 final_shuff_df['Z(Euc dist)'] = final_shuff_df.groupby(['rec_dir', 'channel', 'iternum'])[
     'euclidean_distance'].transform(lambda x: (x - x.mean()) / x.std())
-final_shuff_df['Var Scaled Euc Dist'] = final_shuff_df.groupby(['rec_dir', 'channel', 'iternum'])[
-    'euclidean_distance'].transform(lambda x: x / x.std())
 
 # first, get the average shuffled euclidean distance for each split:
 iteravgshuff = final_shuff_df.groupby(
@@ -193,11 +189,7 @@ final_shuff_df = pd.merge(final_shuff_df, iteravgshuff,
 
 
 final_df['euc_dist_shuffnorm'] = final_df['euclidean_distance']/final_df['euclidean_distance_shuff']
-final_df['varscale_euc_dist_shuffnorm'] = final_df['Var Scaled Euc Dist']/final_df['Var Scaled Euc Dist_shuff']
-final_df['Z(euc_dist)_shuffnorm)'] = final_df['Z(Euc dist)']/final_df['Z(Euc dist)_shuff']
 final_shuff_df['euc_dist_shuffnorm'] = final_shuff_df['euclidean_distance']/final_shuff_df['euclidean_distance_shuff']
-final_shuff_df['varscale_euc_dist_shuffnorm'] = final_shuff_df['Var Scaled Euc Dist'] / final_shuff_df['Var Scaled Euc Dist_shuff']
-final_shuff_df['Z(euc_dist)_shuffnorm)'] = final_shuff_df['Z(Euc dist)'] / final_shuff_df['Z(Euc dist)_shuff']
 
 unsplit = final_df.loc[final_df['split'] == 0]
 final_df = final_df.loc[final_df['split'] != 0]
@@ -246,6 +238,10 @@ def get_best_splits(yvar='euc_dist_shuffnorm'):
 
     return best_splits_df, best_shuff
 
+import matplotlib as mpl
+
+# Set the default font size for all text elements to 14
+mpl.rcParams["font.size"] = 8
 sbcolors = sns.color_palette()
 fontsize = 8
 axticksize = 8
@@ -327,9 +323,9 @@ def plot_each_split(yvar = 'euc_dist_shuffnorm', ylab = 'Euc. dist. - shuff'):
     plt.savefig(save_dir + fn + '.png')
     plt.savefig(save_dir + fn + '.svg')
 
-plot_each_split(yvar = 'euc_dist_shuffnorm', ylab = 'Euc. dist. / shuff')
+#plot_each_split(yvar = 'euc_dist_shuffnorm', ylab = 'Euc. dist. / shuff')
 #plot_each_split(yvar = 'Z(euc_dist)_shuffnorm)', ylab = 'Z(Euc. dist. / shuff)')
-plot_each_split(yvar = 'Z(Euc dist)', ylab = 'Z(Euc. dist.)')
+#plot_each_split(yvar = 'Z(Euc dist)', ylab = 'Z(Euc. dist.)')
 #plot_each_split(yvar = 'euc_dist_zeronorm', ylab = 'unsplit/split\nEuc. dist.')
 #plot_each_split(yvar = 'Var Scaled Euc Dist', ylab = 'Var. scaled\nEuc. dist.')
 #plot_each_split(yvar = 'varscale_euc_dist_shuffnorm', ylab = 'Var. scaled\nEuc. dist. / shuff')
@@ -394,8 +390,8 @@ def plot_split_hist(yvar, sessions=None):
     plt.savefig(filename + '.png')
     plt.savefig(filename + '.svg')
 
-plot_split_hist(yvar='euc_dist_shuffnorm', sessions = [1])
-plot_split_hist(yvar='Z(Euc dist)', sessions = [1])
+#plot_split_hist(yvar='euc_dist_shuffnorm', sessions = [1])
+#plot_split_hist(yvar='Z(Euc dist)', sessions = [1])
 
 #unsplit still good here
 
@@ -546,8 +542,8 @@ def plot_split_bars(unsplit_df, save_dir, yvar, ylab=None):
 
 #plot_split_bars(final_df, best_split_df, save_dir, 'Z(euc_dist_zeronorm)')
 #plot_split_bars(final_df, best_split_df, save_dir, 'Z(euc_dist_shuffnorm)')
-plot_split_bars(final_df, save_dir, 'euc_dist_shuffnorm', ylab='Euc. dist. / shuffle') #just fucking trust me this is the right variable
-plot_split_bars(final_df, save_dir, 'Z(Euc dist)', ylab='Z(Euc. dist.)')
+#plot_split_bars(final_df, save_dir, 'euc_dist_shuffnorm', ylab='Euc. dist. / shuffle') #just fucking trust me this is the right variable
+#plot_split_bars(final_df, save_dir, 'Z(Euc dist)', ylab='Z(Euc. dist.)')
 
 
 #unsplit still good here
@@ -577,8 +573,8 @@ def plot_boxen_trialwise(unsplit_df, save_dir, ref_val = 0, yvar=None, ylab=None
     unsplit_ttest['pval'] = unsplit_ttest['pval'] * 30
 
     sbcolors = sns.color_palette()
-    fontsize = 14
-    axticksize = 14
+    fontsize = 8
+    axticksize = 8
     sessions = [1]
     max_euc_dist = unsplit_df[yvar].max()
     min_euc_dist = unsplit_df[yvar].min()
@@ -606,13 +602,12 @@ def plot_boxen_trialwise(unsplit_df, save_dir, ref_val = 0, yvar=None, ylab=None
                     # get the maximum value of df at the trial number
                     med = df.loc[df['trial'] == row['trial'], yvar].max()
                     # print the stars turned 90 degrees
-                    ax.text(row['trial'] + 0.5, max_euc_dist, stars, fontsize=fontsize, ha='right', va='bottom',
+                    ax.text(row['trial']-0.5, max_euc_dist, stars, fontsize=fontsize, ha='center', va='bottom',
                             rotation=90)
                     #TODO print table w pvalues
                     # print the p value below
                     #ax.text(row['trial'] - 0.7, max_euc_dist, 'p = ' + str(round(row['pval'], 4)), fontsize=9,
                     #        ha='center', va='top', rotation=-90)
-
 
 
             ax.set_title('Session ' + str(session), fontsize=fontsize)
@@ -622,9 +617,9 @@ def plot_boxen_trialwise(unsplit_df, save_dir, ref_val = 0, yvar=None, ylab=None
             xlabs = ax.get_xticklabels()
             # set every other label to ''
             for label in xlabs:
-                label.set_visible(False)
-            for label in xlabs[::3]:
-                label.set_visible(True)
+                tex = label.get_text()
+                if tex not in ['5', '10', '15', '20', '25','30']:
+                    label.set_visible(False)
 
             if i == 0:
                 ax.set_ylabel(ylab, fontsize=fontsize)
@@ -632,15 +627,15 @@ def plot_boxen_trialwise(unsplit_df, save_dir, ref_val = 0, yvar=None, ylab=None
                 ax.set_ylabel('')
     plt.tight_layout()
 
-    fig = psu.adjust_figure_for_panel_size_auto(fig, panel_width=3, panel_height=1)
+    fig = psu.adjust_figure_for_panel_size_auto(fig, panel_width=2.5, panel_height=1, r=0.01,t=0.01, l=0.49)
     filename = save_dir + '/trialwise_boxenplot_' + yvar
-    plt.savefig(filename + '.png')
-    plt.savefig(filename + '.svg')
+    plt.savefig(filename + '.png', transparent=True)
+    plt.savefig(filename + '.svg', transparent=True)
 
     #make a table of pvalues for each trial
     unsplit_ttest.to_csv(save_dir + '/trialwise_boxenplot_' + yvar + '_pvalues.csv')
 
     #adjust panel size
 
-plot_boxen_trialwise(unsplit, save_dir, ref_val=1, yvar='euc_dist_shuffnorm', ylab='Euc. dist. / shuffle')
+#plot_boxen_trialwise(unsplit, save_dir, ref_val=1, yvar='euc_dist_shuffnorm', ylab='Euc. dist. / shuffle')
 plot_boxen_trialwise(unsplit, save_dir, ref_val=0, yvar='Z(Euc dist)', ylab='Z(Euc. dist.)')

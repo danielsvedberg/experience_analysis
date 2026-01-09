@@ -25,7 +25,7 @@ rec_dirs = rec_info['rec_dir']
 PA = ana.ProjectAnalysis(proj)
 all_units, held_df = PA.get_unit_info(overwrite=True)
 
-save_dir = PA.save_dir + '/double_mode_stereotypy_analysis'
+save_dir = PA.save_dir + '/double_mode_stereotypy_analysis_single_neuron'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
     print('save dir' + save_dir + ' created')
@@ -43,11 +43,11 @@ def get_trial_info(dat):
     return dintrials
 
 
-def euc_dist_trials(rates):
-    avg_firing_rate = np.mean(rates, axis=1)  # Neurons x Bins
-    euc_dist = np.linalg.norm(rates - avg_firing_rate[:, np.newaxis, :], axis=0)
-    euc_dist = euc_dist.mean(axis=1)
-    return euc_dist
+def avg_diff_trials(rates):
+    avg_firing_rate = np.mean(rates, axis=1)  # Neurons x Bins (average across trials)
+    diff = rates - avg_firing_rate[:, np.newaxis, :]
+    diff = diff.mean(axis=2) #average across bins within each neuron x trial
+    return diff
 
 
 def process_split(rec_dir, split=10, shuffle=False):
@@ -69,9 +69,9 @@ def process_split(rec_dir, split=10, shuffle=False):
             pre_rate = rate[:, :split, :]
             post_rate = rate[:, split:, :]
 
-            pre_euc_dist = euc_dist_trials(pre_rate)
+            pre_euc_dist = avg_diff_trials(pre_rate)
 
-            post_euc_dist = euc_dist_trials(post_rate)
+            post_euc_dist = avg_diff_trials(post_rate)
 
             # bind pre and post euc_dist_mat
             if len(pre_euc_dist) == 0:
@@ -79,7 +79,7 @@ def process_split(rec_dir, split=10, shuffle=False):
             elif len(post_euc_dist) == 0:
                 euc_dist = pre_euc_dist
             else:  # concantenate pre_euc_dist_mat and post_euc_dist_mat along axis 1
-                euc_dist = np.concatenate((pre_euc_dist, post_euc_dist))
+                euc_dist = np.concatenate((pre_euc_dist, post_euc_dist), axis=1)
 
             df = pd.DataFrame({
                 'euclidean_distance': euc_dist,

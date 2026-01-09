@@ -115,7 +115,7 @@ def check_panel_size(fig, panel_width, panel_height):
 def round_up_1d(num):
     return math.ceil(num * 10) / 10
 
-def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH, do_second_tight=True):
+def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH, l=None, r=None, t=None, b=None, ws=None, hs=None):
     """
     Adjust an existing figure so that after tight_layout() the full grid of subplots
     has a total dimension of (ncols * panel_width) x (nrows * panel_height) inches,
@@ -151,12 +151,31 @@ def adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH
         return fig
 
     #desired margins in inches:
-    left = 0.6
-    right = 0.1
-    bottom = 0.3
-    top = 0.2
-    wspace = 0.1
-    hspace = 0.1
+    if l is None:
+        left = 0.6
+    else:
+        left = l
+    if r is None:
+        right = 0.1
+    else:
+        right = r
+    if t is None:
+        top = 0.2
+    else:
+        top = t
+    if b is None:
+        bottom = 0.3
+    else:
+        bottom = b
+    if ws is None:
+        wspace = 0.1
+    else:
+        wspace = ws
+
+    if hs is None:
+        hspace = 0.1
+    else:
+        hspace = hs
 
     h_padding = top + bottom + (hspace * (nrows - 1))
     v_padding = left + right + (wspace * (ncols - 1))
