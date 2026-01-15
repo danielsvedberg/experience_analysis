@@ -63,9 +63,10 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     df['order_pctile'] = df.groupby(['taste', 'rec_dir','taste_trial'])['t_start'].rank(ascending=True, pct=True) #sooner = lower pctile
     df['order X correct pctile'] = df['order_pctile'] * df[sd_pctile] #calculate composite score of timing and accuracy, sooner x more accurate = lower score
     df['avg_t_start'] = df.groupby(['taste', 'rec_dir','state'])['t_start'].transform('mean') #sooner = lower rank
+    df['med_t_start'] = df.groupby(['taste', 'rec_dir','state'])['t_start'].transform('median') #sooner = lower rank
     df['avg_t_start'] = df['avg_t_start'] > -249
     
-    early_df = df.loc[df['avg_t_start'] <= 1000]
+    early_df = df.loc[df['med_t_start'] <= 500]
     #rank early_df by state_determinant for each taste, rec_dir, and taste_trial
     #early_df['order X correct rank'] = early_df.groupby(['taste', 'rec_dir','taste_trial'])['order X correct pctile'].rank(ascending=True, method='first') #lower score = better/smaller rank
     early_df[sd_rank] = early_df.groupby(['taste', 'rec_dir','taste_trial'])[state_determinant].rank(ascending=False, method='first') #higher accuracy = lower rank
@@ -76,7 +77,7 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     #now, get the rows of df that are not contained in early_df
     late_df = df.loc[~df.index.isin(early_df.index)]
     late_df = late_df.loc[late_df['t_start'] >= 100] 
-    late_df = late_df.loc[late_df['avg_t_start'] <= 2500]
+    late_df = late_df.loc[late_df['med_t_start'] <= 1500]
     #rank late_df by state_determinant for each taste, rec_dir, and taste_trial
     #late_df['order X correct rank'] = late_df.groupby(['taste', 'rec_dir','taste_trial'])['order X correct pctile'].rank(ascending=True, method='first')
     #late_df = late_df.loc[late_df['order X correct rank'] == 1]
@@ -106,6 +107,11 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     df['duration-avg'] = df['duration'].sub(df.groupby(['taste', 'rec_dir','epoch'])['duration'].transform('mean'))
     df['|t(start)-avg|'] = df['t(start)-avg'].abs()
     df['|t(end)-avg|'] = df['t(end)-avg'].abs()
+
+    #convert all time columns from ms to s and round to 2 decimal places
+    time_columns = ['t(start)', 't(end)', 't(start)-avg', 't(end)-avg', 't_med',
+                    '|t(start)-avg|', '|t(end)-avg|', 'duration', 'duration-avg']
+    df[time_columns] = df[time_columns].div(1000).round(2)
 
     #convert columns with time from ms to s, and round to 2 decimal places
     #column_names = ['t(start)', 't(end)', 't(start)-avg', 't(end)-avg', 't_med',
@@ -168,7 +174,7 @@ def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None
         save_flag = state_determinant + '_determine_' + epoch
 
         df3, shuff = ta.preprocess_nonlinear_regression(group, subject_cols=subject_col, group_cols=group_cols,
-                                                                 trial_col=trial_col, value_col=value_col, overwrite=False,
+                                                                 trial_col=trial_col, value_col=value_col, overwrite=True,
                                                                  nIter=nIter, save_dir=save_dir, flag=save_flag)
         df3list = []
         for n, g in shuff.groupby(['exp_name', 'session','taste']):
@@ -190,13 +196,16 @@ def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None
 
 
         ta.plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, [subject_col], nIter=nIter,
-                             save_dir=save_dir, flag=save_flag, xticklabs=False)
+                             save_dir=save_dir, flag=save_flag, xticklabs=True)
         plt.close('all')
 
 
 proj_dir = '/media/volume/sdb/taste_experience_resorts_copy_forward_hmms'  # directory where the project is
+#proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_backup_w_fwd_hmm/taste_experience_resorts_copy_forward_hmms'
 #proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'
 proj = blechpy.load_project(proj_dir)  # load the project
+#proj._change_root(proj_dir)  # change the root directory of the project to the current location
+#proj.save()
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 HA.sort_hmms_by_AIC(overwrite=False) #label hmms in hmm_overview with lowest AIC for each recording, save to sorted hmms
 best_hmms = HA.get_best_hmms(sorting='best_AIC', overwrite=False) #get rows of hmm_overview where sorting column==sorting arugument

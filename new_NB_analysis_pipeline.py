@@ -129,7 +129,7 @@ def prepipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None,
         save_flag = state_determinant + '_determine_' + epoch
 
         ta.preprocess_nonlinear_regression(group, subject_cols=subject_col, group_cols=group_cols,
-                                           trial_col=trial_col, value_col=value_col, overwrite=True,
+                                           trial_col=trial_col, value_col=value_col, overwrite=False,
                                            nIter=nIter, save_dir=save_dir, flag=save_flag)
 
 def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None, nIter=10000):
@@ -171,6 +171,7 @@ trial_col = 'taste_trial'
 state_determinant = 'p(correct taste)'
 
 value_cols = ['p(correct taste)-avg', 'p(correct valence)-avg', 't(end)-avg', 't(start)-avg']
+value_cols = ['p(correct taste)', 'p(correct valence)', 't(end)', 't(start)']
 exclude_epochs = [None, None, 'late', 'early']
 
 for value_col, exclude_epoch in zip(value_cols, exclude_epochs):

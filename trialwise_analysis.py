@@ -1075,6 +1075,7 @@ def plot_shuff(ax, group, trials, color, linestyle):
                                                  model_mean=lambda x: np.nanmean(x)).reset_index()
 
     #fill between lower_bound and upper_bound for each trial
+    summary_df['trial'] = adjust_trials(summary_df['trial'])
     ax.fill_between(summary_df['trial'], summary_df['lower_bound'], summary_df['upper_bound'], alpha=0.3, color=color)
     ax.plot(summary_df['trial'], summary_df['model_mean'], alpha=1, color=color, linestyle=linestyle, linewidth=1)
 
@@ -1100,7 +1101,7 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
     session_index = dict(zip(sessions, session_idx))
 
     # get the 97.5 and 2.5 percentile of df[dat_col], assign them to ymax and ymin
-    ntiles = df[dat_col].quantile([0.01, 0.99])
+    ntiles = df[dat_col].quantile([0.025, 0.975])
     # ymin = ntiles[0.01]
     # ymax = ntiles[0.99]
 
@@ -1166,7 +1167,7 @@ def plot_fits_summary_avg(df, shuff_df, trial_col='session_trial', dat_col='pr(m
             if bound01:
                 ax.set_ylim(0, 1)
             ax.set_xlim(1,30)
-            ax.set_xticks([1, 10, 20])
+            ax.set_xticks([10, 20])
             if xticklabs:
                 label = 'session ' + str(col)
                 ax.set_title(label, rotation=0, size=textsize)
