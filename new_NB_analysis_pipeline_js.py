@@ -50,8 +50,8 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     #df = df.loc[df['t_start'] <= 2500]
     df = df.loc[df['t_end'] >= 150] #remove all rows where t_end is less than 200
     #round p(correct taste) and p(correct valence) 3 decimal places
-    df['p(correct taste)'] = df['p(correct taste)'].round(2)
-    df['p(correct valence)'] = df['p(correct valence)'].round(2)
+    df['p(correct taste)'] = df['p(correct taste)'].round(3)
+    df['p(correct valence)'] = df['p(correct valence)'].round(3)
     df = df.sort_values(by=['rec_dir', 'session_trial', 't_start'])
     sd_rank = state_determinant + '_rank'
     sd_pctile = state_determinant + '_pctile'
@@ -66,7 +66,7 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     df['med_t_start'] = df.groupby(['taste', 'rec_dir','state'])['t_start'].transform('median') #sooner = lower rank
     df['avg_t_start'] = df['avg_t_start'] > -249
     
-    early_df = df.loc[df['med_t_start'] <= 500]
+    early_df = df.loc[df['avg_t_start'] <= 1000]
     #rank early_df by state_determinant for each taste, rec_dir, and taste_trial
     #early_df['order X correct rank'] = early_df.groupby(['taste', 'rec_dir','taste_trial'])['order X correct pctile'].rank(ascending=True, method='first') #lower score = better/smaller rank
     early_df[sd_rank] = early_df.groupby(['taste', 'rec_dir','taste_trial'])[state_determinant].rank(ascending=False, method='first') #higher accuracy = lower rank
@@ -77,7 +77,7 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
     #now, get the rows of df that are not contained in early_df
     late_df = df.loc[~df.index.isin(early_df.index)]
     late_df = late_df.loc[late_df['t_start'] >= 100] 
-    late_df = late_df.loc[late_df['med_t_start'] <= 1500]
+    late_df = late_df.loc[late_df['avg_t_start'] <= 2500]
     #rank late_df by state_determinant for each taste, rec_dir, and taste_trial
     #late_df['order X correct rank'] = late_df.groupby(['taste', 'rec_dir','taste_trial'])['order X correct pctile'].rank(ascending=True, method='first')
     #late_df = late_df.loc[late_df['order X correct rank'] == 1]
@@ -113,11 +113,6 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
                     '|t(start)-avg|', '|t(end)-avg|', 'duration', 'duration-avg']
     df[time_columns] = df[time_columns].div(1000).round(2)
 
-    #convert columns with time from ms to s, and round to 2 decimal places
-    #column_names = ['t(start)', 't(end)', 't(start)-avg', 't(end)-avg', 't_med',
-    #                '|t(start)-avg|', '|t(end)-avg|', 'duration', 'duration-avg']
-    #df[column_names] = df[column_names].div(1000)
-
     if exclude_epoch is not None:
         if exclude_epoch == 'early':
             df = df.loc[df['epoch'] != 'early']
@@ -127,6 +122,26 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
             raise ValueError('exclude_epoch must be either "early" or "late"')
 
     return df
+
+TIME_COLUMNS = ['t(start)', 't(end)', 't(start)-avg', 't(end)-avg', 't_med',
+                '|t(start)-avg|', '|t(end)-avg|', 'duration', 'duration-avg']
+
+def convert_shuff_params_ms_to_s(shuff):
+    """Convert the a and b parameters in cached shuffle data from ms to s.
+
+    The model is: model(x, a, b, c, d) = a + (b-a)/(1+np.exp(-c*(x-d)))
+    where a and b are asymptotic values in the units of the value column.
+    The cached shuffle was computed before the ms->s conversion was added to
+    get_relevant_states, so a and b are in ms. This converts them to s to
+    match df3.
+    """
+    def convert_params(params):
+        a, b, c, d = params
+        return (round(a / 1000.0, 2), round(b / 1000.0, 2), c, d)
+
+    shuff = shuff.copy()
+    shuff['params'] = shuff['params'].apply(convert_params)
+    return shuff
 
 def prepipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None, nIter=10000):
     print('running pipeline for ' + value_col + ' and ' + trial_col + ' and ' + state_determinant)
@@ -151,7 +166,7 @@ def prepipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None,
         save_flag = state_determinant + '_determine_' + epoch
 
         ta.preprocess_nonlinear_regression(group, subject_cols=subject_col, group_cols=group_cols,
-                                           trial_col=trial_col, value_col=value_col, overwrite=True,
+                                           trial_col=trial_col, value_col=value_col, overwrite=False,
                                            nIter=nIter, save_dir=save_dir, flag=save_flag)
 
 def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None, nIter=10000, exclude_d2=True):
@@ -174,8 +189,15 @@ def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None
         save_flag = state_determinant + '_determine_' + epoch
 
         df3, shuff = ta.preprocess_nonlinear_regression(group, subject_cols=subject_col, group_cols=group_cols,
-                                                                 trial_col=trial_col, value_col=value_col, overwrite=True,
+                                                                 trial_col=trial_col, value_col=value_col, overwrite=False,
                                                                  nIter=nIter, save_dir=save_dir, flag=save_flag)
+
+        # Fix unit mismatch: cached shuffle params are in ms, but df3 data is
+        # now in seconds (converted in get_relevant_states). Convert shuffle
+        # params a and b from ms to s for time-based value columns.
+        if value_col in TIME_COLUMNS:
+            shuff = convert_shuff_params_ms_to_s(shuff)
+
         df3list = []
         for n, g in shuff.groupby(['exp_name', 'session','taste']):
             exp_name = n[0]
@@ -189,6 +211,10 @@ def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None
             df3list.append(df3row)
 
         df3 = pd.concat(df3list)
+        #check if there are nas in value_col of df3, raise warning if there are
+        if df3[value_col].isna().any():
+            print('Warning: there are NaNs in the value column of df3')
+
         if exclude_d2:
             df3 = df3.loc[df3['session'] != 2]
             shuff = shuff.loc[shuff['session'] != 2]
@@ -200,12 +226,12 @@ def plottingpipe(df, value_col, trial_col, state_determinant, exclude_epoch=None
         plt.close('all')
 
 
-proj_dir = '/media/volume/sdb/taste_experience_resorts_copy_forward_hmms'  # directory where the project is
-#proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_backup_w_fwd_hmm/taste_experience_resorts_copy_forward_hmms'
+#proj_dir = '/media/volume/sdb/taste_experience_resorts_copy_forward_hmms'  # directory where the project is
+proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_backup_w_fwd_hmm/taste_experience_resorts_copy_forward_hmms'
 #proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'
 proj = blechpy.load_project(proj_dir)  # load the project
-#proj._change_root(proj_dir)  # change the root directory of the project to the current location
-#proj.save()
+proj._change_root(proj_dir)  # change the root directory of the project to the current location
+proj.save()
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 HA.sort_hmms_by_AIC(overwrite=False) #label hmms in hmm_overview with lowest AIC for each recording, save to sorted hmms
 best_hmms = HA.get_best_hmms(sorting='best_AIC', overwrite=False) #get rows of hmm_overview where sorting column==sorting arugument

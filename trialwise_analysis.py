@@ -4,12 +4,14 @@ from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
 import pandas as pd
 from scipy.stats import sem
+from scipy.stats import gaussian_kde
 import math
 from itertools import product
 import seaborn as sns
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
+from matplotlib.patches import Rectangle
 import random
 import scipy.stats as stats
 import os
@@ -27,7 +29,13 @@ plt.rcParams['ytick.minor.width'] = 0.72
 #set font size to 8
 dfontsize = 8
 plt.rcParams.update({'font.size': dfontsize})
-default_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.1, 'wspace': 0.05, 'hspace': 0.05}
+plt.rcParams['axes.spines.top'] = False
+plt.rcParams['axes.spines.right'] = False
+plt.rcParams['figure.facecolor'] = 'none'
+plt.rcParams['axes.facecolor'] = 'none'
+plt.rcParams['savefig.facecolor'] = 'none'
+plt.rcParams['savefig.transparent'] = True
+default_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.1, 'wspace': 0.01, 'hspace': 0.01}
 summary_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.3, 'wspace': 0.01, 'hspace': 0.01}
 dPanW = 0.8
 dPanH = 0.8
@@ -1254,6 +1262,11 @@ def pval_from_null(null_dist, test_stat):
         pval = np.nanmean(null_dist >= test_stat)
     else:
         pval = np.nanmean(null_dist <= test_stat)
+
+    if pval == 0:
+        #calculate the p-value as 1/n where n is the number of samples in the null distribution
+        pval = 1 / len(null_dist)
+
     return pval
 
 def bootstrap_mean_ci(data, n_bootstrap=10000, ci=95):
@@ -1267,6 +1280,70 @@ def bootstrap_mean_ci(data, n_bootstrap=10000, ci=95):
     lower_bound = np.nanpercentile(bootstrap_means, low)
     upper_bound = np.nanpercentile(bootstrap_means, high)
     return np.nanmean(bootstrap_means), lower_bound, upper_bound
+
+def beeswarm_positions(values, center, width, n_bins=None, ax=None):
+    """Calculate x positions for a beeswarm plot, avoiding overlap.
+
+    Uses a binning approach: values are binned along the y-axis.
+    Within each bin, points are spread symmetrically around the center along x.
+    Fully vectorized for speed.
+
+    Parameters
+    ----------
+    values : array-like
+        The y-values of the data points.
+    center : float
+        The center x position for the swarm.
+    width : float
+        The maximum total width of the swarm.
+    n_bins : int, optional
+        Number of bins along the y-axis for grouping nearby points.
+        If None, uses sqrt(n) bins (minimum 5).
+    ax : matplotlib Axes, optional
+        Not used; kept for API compatibility.
+
+    Returns
+    -------
+    x_positions : np.ndarray
+        The computed x positions for each data point (same order as input).
+    """
+    values = np.asarray(values, dtype=float)
+    n = len(values)
+    if n == 0:
+        return np.array([])
+    if n == 1:
+        return np.array([center])
+
+    half_width = width / 2.0
+
+    if n_bins is None:
+        n_bins = max(5, int(np.ceil(np.sqrt(n))))
+
+    y_min, y_max = np.nanmin(values), np.nanmax(values)
+    y_range = y_max - y_min
+    if y_range == 0:
+        return np.linspace(center - half_width, center + half_width, n)
+
+    bin_edges = np.linspace(y_min - y_range * 0.001, y_max + y_range * 0.001, n_bins + 1)
+    bin_indices = np.clip(np.digitize(values, bin_edges) - 1, 0, n_bins - 1)
+
+    x_positions = np.full(n, center, dtype=float)
+
+    # Get unique bins and their counts
+    unique_bins, counts = np.unique(bin_indices, return_counts=True)
+    for b, count in zip(unique_bins, counts):
+        if count <= 1:
+            continue
+        mask = bin_indices == b
+        spacing = min(width / count, half_width * 0.6)
+        offsets = (np.arange(count) - (count - 1) / 2.0) * spacing
+        # Assign offsets sorted by y-value within the bin
+        bin_idx = np.where(mask)[0]
+        bin_idx_sorted = bin_idx[np.argsort(values[bin_idx])]
+        x_positions[bin_idx_sorted] = center + offsets
+
+    return x_positions
+
 
 def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indices, color, n_comp=1, two_tailed=True, boot_data=True):
     #get the lower 0.025 and upper 0.975 percentiles for the shuff_r2
@@ -1283,9 +1360,11 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
         low_adj = 0
         high_adj = 100 - (5/n_comp)
 
+    shuff_clean = np.asarray(shuff_r2_data, dtype=float)
+    shuff_clean = shuff_clean[~np.isnan(shuff_clean)]
 
-    lower_bound = np.nanpercentile(shuff_r2_data, low_adj)
-    upper_bound = np.nanpercentile(shuff_r2_data, high_adj)
+    lower_bound = np.percentile(shuff_clean, low_adj)
+    upper_bound = np.percentile(shuff_clean, high_adj)
 
     if boot_data:
         # Calculate the mean and confidence interval for the r2 data
@@ -1293,41 +1372,64 @@ def plot_bars(ax, r2_data, shuff_r2_data, label, bar_pos, bar_width, nIter, indi
     else:
         ci_lower = np.nanpercentile(r2_data, pct_low)
         ci_upper = np.nanpercentile(r2_data, pct_high)
-        mean_r2 = np.nanmean(r2_data)
 
-        #set ci_lower, ci_upper, and mean_r2 to the mean of
+    mean_r2 = np.nanmean(r2_data)
 
     # Calculate the p-value for the r2 data
-    p_val = pval_from_null(shuff_r2_data, mean_r2)
+    p_val = pval_from_null(shuff_clean, mean_r2)
     p_val = p_val * n_comp
     if two_tailed: #adjust p-value for two-tailed test
         p_val = p_val * 2
 
     p_val_str = get_pval_stars(p_val)
 
-    # plot the floating bar representing null distribution
-    ax.bar(bar_pos, upper_bound - lower_bound, bar_width, bottom=lower_bound, color='gray',
-                alpha=0.5,
-                label=label if all(idx == 0 for idx in indices) else "")
-    
+    # Plot violin for null distribution using fast manual KDE
+    # Subsample shuffle data if very large to speed up KDE
+    max_kde_pts = 2000
+    if len(shuff_clean) > max_kde_pts:
+        kde_data = np.random.choice(shuff_clean, max_kde_pts, replace=False)
+    else:
+        kde_data = shuff_clean
+
+    try:
+        kde = gaussian_kde(kde_data)
+        y_grid = np.linspace(lower_bound, upper_bound, 100)
+        density = kde(y_grid)
+        # Scale density to fit within bar_width
+        density_scaled = density / density.max() * (bar_width / 2)
+        ax.fill_betweenx(y_grid, bar_pos - density_scaled, bar_pos + density_scaled,
+                         color='gray', alpha=0.75, edgecolor='none',
+                         label=label if all(idx == 0 for idx in indices) else "")
+    except (np.linalg.LinAlgError, ValueError):
+        pass  # Fallback: skip violin if KDE fails
+
+    # Draw a gray outline box around the violin representing the null 95% CI
+    rect = Rectangle((bar_pos - bar_width / 2, lower_bound), bar_width, upper_bound - lower_bound,
+                      linewidth=0.75, edgecolor='gray', facecolor='none', zorder=2)
+    ax.add_patch(rect)
+
     # Plot the mean r2 values
-    ax.hlines(mean_r2, bar_pos - bar_width / 2, bar_pos + bar_width / 2,
-                   color=color, lw=1)
+    hw = bar_width / 2
+    ax.hlines(mean_r2, bar_pos - hw, bar_pos + hw, color='black', lw=1)
     # Plot error bars for the confidence interval of the mean r2 values
     ax.errorbar(bar_pos, mean_r2, yerr=[[mean_r2 - ci_lower], [ci_upper - mean_r2]],
-                     fmt='none', color=color, capsize=2)
+                     fmt='none', color='black', capsize=2)
+
+    # Plot individual r2_data values as a beeswarm
+    r2_clean = np.asarray(r2_data, dtype=float)
+    r2_clean = r2_clean[~np.isnan(r2_clean)]
+    dot_size_pts = 3
+    x_positions = beeswarm_positions(r2_clean, center=bar_pos, width=bar_width * 0.8)
+    ax.scatter(x_positions, r2_clean, color=color, s=dot_size_pts**1.5, alpha=0.5, zorder=3, edgecolors='none')
 
     # print the p-value stars above the bar
     ax.text(bar_pos, ci_upper + 0.05, p_val_str, ha='center', va='bottom',
-                 color=color, fontsize=8)
-    # print the actual p value rounded to 3 decimal places below the star
-    #ax.text(bar_pos + 0.1, ci_upper - 0.01, str(round(p_val, 3)),
-    #        fontsize=8, ha='left', va='bottom', rotation='vertical')
+                 color='black', fontsize=8)
     return mean_r2, p_val
-    #ax.set_aspect('equal', adjustable='box')
-#plots the bar graphs for the value col  
+
+#plots the bar graphs for the value col
 def plot_r2_pval_summary(shuff_r2_df, r2_df, x_col=None, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=8,
-                         nIter=1000, n_comp=1, xticklabs=True):
+                         nIter=1000, n_comp=2, xticklabs=True):
     if stat_col is None:
         stat_col = 'r2'
         two_tailed = False
@@ -1389,7 +1491,7 @@ def plot_r2_pval_summary(shuff_r2_df, r2_df, x_col=None, stat_col=None, save_fla
                 pvals.append(pval)
             # Plot overall percentile bars and mean r2 values
             r2_data = r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == session)]
-            overall_r2 = r2_data.groupby(['exp_name']).mean().reset_index()[stat_col] #average across tastes
+            overall_r2 = r2_data.groupby(['exp_name', 'taste']).mean().reset_index()[stat_col] #average across tastes
             shuff_r2_data = shuff_r2_df[(shuff_r2_df['exp_group'] == exp_group) & (shuff_r2_df['session'] == session)]
             overall_shuff_r2 = shuff_r2_data.groupby(['iternum']).mean().reset_index()[stat_col] #average acros animals and tastes
             bar_pos = len(tastes)
@@ -1447,13 +1549,13 @@ def save_csv(df, save_dir, folder_name, savename, save_flag=None):
     if not os.path.exists(new_save_dir):
         os.makedirs(new_save_dir)
     filename = savename + '.csv'
-    df.to_csv(os.path.join(new_save_dir, filename))
+    df.to_csv(os.path.join(new_save_dir, filename), float_format='%g')
 
 def save_fig(fig, save_dir, folder_name, savename, save_flag=None):
     if save_flag is not None:
         savename = save_flag + '_' + savename
 
-    exts = ['png', 'svg']
+    exts = ['svg']
     for ext in exts:
         new_save_dir = os.path.join(save_dir, ext)
         new_save_dir = os.path.join(new_save_dir, folder_name)
@@ -1465,7 +1567,7 @@ def save_fig(fig, save_dir, folder_name, savename, save_flag=None):
 
 #this function plots just the average value + tests across tastes
 def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, two_tailed=False, textsize=8,
-                     nIter=100, n_comp=1, xticklabs=True):
+                     nIter=1000, n_comp=1, xticklabs=True):
     if stat_col is None:
         stat_col = 'r2'
     sessions = r2_df['session'].unique()
@@ -1504,7 +1606,9 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
     for k, exp_group in enumerate(exp_groups):
         fig, ax = plt.subplots(1, 1, sharey=True)
         for i, session in enumerate(sessions):
-            r2_data = r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == session)][stat_col]
+            r2_data = r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == session)]
+            r2_data = r2_data.groupby(['exp_name', 'taste']).mean().reset_index()
+            r2_data = r2_data[stat_col]
             shuff_r2_data = shuff_r2_df[(shuff_r2_df['exp_group'] == exp_group) & (shuff_r2_df['session'] == session)]
             shuff_r2_data = shuff_r2_data.groupby(['iternum']).mean().reset_index()[stat_col]
             bar_pos = i #+ k * bar_width
@@ -1518,6 +1622,38 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
             means.append(mean)
             pvals.append(pval)
 
+        # Permutation test of session differences and add brackets
+        from itertools import combinations
+        session_pairs = list(combinations(range(n_sessions), 2))
+        perm_results = []
+        for s_i, s_j in session_pairs:
+            s1, s2 = sessions[s_i], sessions[s_j]
+            data_s1 = r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == s1)][stat_col].dropna().values
+            data_s2 = r2_df[(r2_df['exp_group'] == exp_group) & (r2_df['session'] == s2)][stat_col].dropna().values
+            observed_diff = np.nanmean(data_s1) - np.nanmean(data_s2)
+            pooled = np.concatenate([data_s1, data_s2])
+            n1 = len(data_s1)
+            null_diffs = np.zeros(nIter)
+            for it in range(nIter):
+                perm_idx = np.random.permutation(pooled)
+                null_diffs[it] = np.nanmean(perm_idx[:n1]) - np.nanmean(perm_idx[n1:])
+            p_val = np.mean(np.abs(null_diffs) >= np.abs(observed_diff))
+            perm_results.append({
+                'session_1': s1,
+                'session_2': s2,
+                'pos_1': s_i,
+                'pos_2': s_j,
+                'mean_session_1': np.nanmean(data_s1),
+                'mean_session_2': np.nanmean(data_s2),
+                'observed_diff': observed_diff,
+                'p_value': p_val,
+                'n_permutations': nIter
+            })
+
+        # Draw significance brackets for significant comparisons
+        # (deferred until after ylim is set below)
+        sig_results = [pr for pr in perm_results if get_pval_stars(pr['p_value']) != '']
+
         # Only set ylabel for the first subplot
         if stat_col == 'r2':
             ax.set_ylabel('avg. r2 value', size=textsize)
@@ -1527,6 +1663,26 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
 
         if stat_col == 'r2':
             ax.set_ylim(0, 1)
+
+        # Now draw brackets on top of the final ylim
+        if len(sig_results) > 0:
+            y_low, y_high = ax.get_ylim()
+            y_range = y_high - y_low
+            bracket_height = y_range * 0.04
+            bracket_y = y_high + y_range * 0.02  # start just above current ylim
+            for pr in sig_results:
+                stars = get_pval_stars(pr['p_value'])
+                x1, x2 = pr['pos_1'], pr['pos_2']
+                # Draw the bracket line
+                ax.plot([x1, x1, x2, x2],
+                        [bracket_y, bracket_y + bracket_height, bracket_y + bracket_height, bracket_y],
+                        lw=0.75, color='black', clip_on=False)
+                # Draw the stars
+                ax.text((x1 + x2) / 2, bracket_y + bracket_height, stars,
+                        ha='center', va='bottom', fontsize=textsize, color='black', clip_on=False)
+                bracket_y = bracket_y + bracket_height * 3  # offset for next bracket
+            # Expand ylim to make room for all brackets and stars
+            ax.set_ylim(y_low, bracket_y + bracket_height * 2)
 
         ax.set_xticks(np.arange(len(sessions)))
         if xticklabs:
@@ -1555,6 +1711,10 @@ def plot_r2_pval_avg(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir
         savename = exp_group + '_' + stat_col + '_avg_stats.csv'
         save_csv(summary_df, save_dir, 'day_avgs', savename, save_flag=save_flag)
 
+        # Save permutation test results to CSV
+        perm_df = pd.DataFrame(perm_results)
+        savename = exp_group + '_' + stat_col + '_session_permutation_test'
+        save_csv(perm_df, save_dir, 'day_avgs', savename, save_flag=save_flag)
 
 
 difference_index = {'1-2': 0, '2-3': 1, '1-3': 2}
@@ -1802,7 +1962,7 @@ def plot_daywise_avg_diffs(shuff_r2_diffs, r2_diffs, stat_col=None, save_flag=No
 
 #plots difference in value col (normally r2) between groups
 #shuff_r2_df should already be averaged across groups (no individual exp names)
-def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, textsize=8, nIter=100,
+def plot_r2_pval_diffs_summary(shuff_r2_df, r2_df, stat_col=None, save_flag=None, save_dir=None, textsize=8, nIter=1000,
                                n_comp=None, ymin=None, ymax=None, xticklabs=True):
     #shuff r2 df should be averaged across exp_names
     if stat_col is None:
@@ -2093,9 +2253,9 @@ def plot_null_dist(avg_shuff, r2_df_groupmean, save_flag=None, save_dir=None):
     # save the figure as png
     if save_dir is not None:
         if save_flag is None:
-            savename = '/r2_perm_test.png'
+            savename = '/r2_perm_test.svg'
         else:
-            savename = '/' + save_flag + '_r2_perm_test.png'
+            savename = '/' + save_flag + '_r2_perm_test.svg'
         plt.savefig(save_dir + savename)
 
 def preprocess_nonlinear_regression(df, subject_cols, group_cols, trial_col, value_col, ymin=None, ymax=None, step=False, parallel=True, overwrite=False, shuffle=True, nIter=10000, save_dir=None, flag=None):
@@ -2155,7 +2315,7 @@ def preprocess_nonlinear_regression(df, subject_cols, group_cols, trial_col, val
     else:
         return df3, None
 
-def plot_nonlinear_regression_stats(df3, shuff, subject_cols, group_cols, trial_col, value_col, flag=None, nIter=100,
+def plot_nonlinear_regression_stats(df3, shuff, subject_cols, group_cols, trial_col, value_col, flag=None, nIter=1000,
                                     textsize=8, ymin=None, ymax=None, save_dir=None, xticklabs=True):
     if type(subject_cols) is list:
         gr = subject_cols + group_cols
@@ -2239,7 +2399,7 @@ def get_session_differences(df3, shuff, stat_col='r2', group_cols=['exp_group', 
     return r2_diffs, shuff_r2_diffs
 
 def plot_session_differences(df3, shuff, subject_cols, group_cols, trial_col, value_col, stat_col=None, flag=None,
-                             nIter=100, textsize=8, ymin=None, ymax=None, save_dir=None, xticklabs=True):
+                             nIter=1000, textsize=8, ymin=None, ymax=None, save_dir=None, xticklabs=True):
     if stat_col is None:
         stat_col = 'r2'
 
@@ -2298,7 +2458,7 @@ def get_params_df(df3, shuff, subject_cols, group_cols, trial_col):
     shuff['pred. change'] = pred_change_shuff
     return pred_change_df, shuff
 
-def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_col, value_col, flag=None, nIter=100,
+def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_col, value_col, flag=None, nIter=1000,
                           textsize=8, ymin=None, ymax=None, save_dir=None, xticklabs=True):
 
     avg_shuff = pred_change_shuff.groupby(group_cols + ['iternum']).mean().reset_index()
@@ -2313,7 +2473,7 @@ def plot_predicted_change(pred_change_df, pred_change_shuff, group_cols, trial_c
                      textsize=textsize, two_tailed=True, nIter=nIter, xticklabs=xticklabs)
 
 def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, value_col, save_dir=None, flag=None,
-                               nIter=100, parallel=True, ymin=None, ymax=None, textsize=8, xticklabs=True):
+                               nIter=1000, parallel=True, ymin=None, ymax=None, textsize=8, xticklabs=True):
     groups = [subject_cols] + group_cols
     if ymin is None and ymax is None:
         ymin = min(df3[value_col])
@@ -2335,7 +2495,7 @@ def plot_nonlinear_line_graphs(df3, shuff, subject_cols, group_cols, trial_col, 
         #plot_fits_summary(group, trial_col=trial_col, dat_col=value_col, save_dir=save_dir, use_alpha_pos=False, time_col='session', flag=save_flag)
 
 def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_cols, group_cols, trial_col, value_col,
-                                         save_dir=None, flag=None, nIter=100, ymin=None, ymax=None, textsize=8,
+                                         save_dir=None, flag=None, nIter=1000, ymin=None, ymax=None, textsize=8,
                                          xticklabs=True):
     if type(subject_cols) is list:
         groups = subject_cols + group_cols
@@ -2355,7 +2515,7 @@ def plot_nonlinear_regression_comparison(df3, shuff, stat_col, subject_cols, gro
                                nIter=nIter, ymin=ymin, ymax=ymax, xticklabs=True)#re-run and replot with nIter=nIter
 
 
-def plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, subject_cols, ymin=None, ymax=None, nIter=10000,
+def plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, subject_cols, ymin=None, ymax=None, nIter=1000,
                       save_dir=None, flag=None, xticklabs=True):
     if subject_cols is None:
         subject_cols = ['exp_name']
@@ -2367,26 +2527,29 @@ def plotting_pipeline(df3, shuff, trial_col, value_col, group_cols, subject_cols
 
     plot_nonlinear_line_graphs(df3, shuff, **args)
     #plot the stats quantificaiton of the r2 values
-    #plot_nonlinear_regression_stats(df3, shuff, **args)
+    plot_nonlinear_regression_stats(df3, shuff, **args)
+
     #plot the stats quantification of the r2 values with head to head of naive vs sucrose preexposed
     #plot_nonlinear_regression_comparison(df3, shuff, stat_col='r2', **args)
+
     #plot the sessionwise differences in the r2 values
-    #plot_session_differences(df3, shuff, **args)
+    plot_session_differences(df3, shuff, **args)
+
     plt.close('all')
-    #r2_pred_change, shuff_r2_pred_change = get_pred_change(df3, shuff, subject_cols=subject_cols, group_cols=group_cols, trial_col=trial_col)
+    r2_pred_change, shuff_r2_pred_change = get_pred_change(df3, shuff, subject_cols=subject_cols, group_cols=group_cols, trial_col=trial_col)
 
     # plot the within session difference between naive and preexp for pred. change
     #ymin = min(r2_pred_change['pred. change'].min(), shuff_r2_pred_change['pred. change'].min())
     #ymax = max(r2_pred_change['pred. change'].max(), shuff_r2_pred_change['pred. change'].max())
 
-    #args2 = args
+    args2 = args
     #remove 'subject cols' from args2
-    #args2.pop('subject_cols')
+    args2.pop('subject_cols')
     # plot the predicted change in value col over the course of the session, with stats
-    #plot_predicted_change(r2_pred_change, shuff_r2_pred_change, **args2)
+    plot_predicted_change(r2_pred_change, shuff_r2_pred_change, **args2)
 
     # plot the session differences in the predicted change of value col
-    #args3 = {'subject_cols':subject_cols, 'group_cols':group_cols, 'trial_col':trial_col, 'value_col':value_col,
-    #        'nIter':nIter, 'save_dir':save_dir, 'textsize':8, 'flag':flag}
-    #plot_session_differences(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', **args3)
-    #plt.close('all')
+    args3 = {'subject_cols':subject_cols, 'group_cols':group_cols, 'trial_col':trial_col, 'value_col':value_col,
+             'nIter':nIter, 'save_dir':save_dir, 'textsize':8, 'flag':flag}
+    plot_session_differences(r2_pred_change, shuff_r2_pred_change, stat_col='pred. change', **args3)
+    plt.close('all')

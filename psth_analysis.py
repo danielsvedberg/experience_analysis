@@ -518,3 +518,366 @@ for name, group in target_df.groupby('held_unit_name'):
     plt.savefig(save_dir + '/' + 'unit_' + str(name) + '.svg')
     plt.close()
 
+
+#%% Trial-group firing rate analysis with shuffle test
+from scipy.stats import zscore
+
+taste_map_fwd = {'Suc': 0, 'NaCl': 1, 'CA': 2, 'QHCl': 3}
+taste_map_rev = {0: 'Suc', 1: 'NaCl', 2: 'CA', 3: 'QHCl'}
+dins = ["dig_in_0", "dig_in_1", "dig_in_2", "dig_in_3"]
+tastes_list = ['Suc', 'NaCl', 'CA', 'QHCl']
+
+def get_naive_rec_dirs(proj, sessions=(1, 3)):
+    """Return rec_info rows for naive animals in the requested sessions."""
+    ri = proj.rec_info.copy()
+    ri = ri[ri['exp_group'] == 'naive']
+    ri = ri[ri['rec_num'].isin(sessions)]
+    return ri
+
+
+def get_spike_counts_for_recording(rec_dir):
+    """Query spike data for every unit × taste × trial in one recording.
+
+    Returns a DataFrame with columns:
+        rec_dir, unit, taste, trial, spike_count
+    where spike_count is the number of spikes between 100-2000 ms post-stimulus
+    (time-bin indices 2100-4000 in the 1-ms-binned spike array).
+    """
+    time_array, spike_dict = h5io.get_spike_data(rec_dir)
+    rows = []
+    for ch, din in enumerate(dins):
+        taste = taste_map_rev[ch]
+        spikes = spike_dict[din]  # shape: (n_trials, n_units, n_timebins)
+        # sum spikes in the 100–2000 ms post-stimulus window (indices 2100:4000)
+        counts = spikes[:, :, 2100:4000].sum(axis=2)  # (n_trials, n_units)
+        n_trials, n_units = counts.shape
+        for u in range(n_units):
+            for t in range(n_trials):
+                rows.append({
+                    'rec_dir': rec_dir,
+                    'unit': u,
+                    'taste': taste,
+                    'trial': t + 1,  # 1-indexed
+                    'spike_count': counts[t, u],
+                })
+    return pd.DataFrame(rows)
+
+
+def collect_all_spike_counts(proj, sessions=(1, 3)):
+    """Collect spike counts for all naive recordings in the given sessions.
+
+    Returns a DataFrame with columns:
+        rec_dir, exp_name, exp_group, session, unit, taste, trial, spike_count
+    """
+    ri = get_naive_rec_dirs(proj, sessions)
+    dfs = []
+    for _, row in ri.iterrows():
+        rec_dir = row['rec_dir']
+        print(f"Processing {rec_dir} ...")
+        df = get_spike_counts_for_recording(rec_dir)
+        df['exp_name'] = row['exp_name']
+        df['exp_group'] = row['exp_group']
+        df['session'] = row['rec_num']
+        dfs.append(df)
+    return pd.concat(dfs, ignore_index=True)
+
+
+def zscore_spike_counts(df):
+    """Z-score spike_count within each (exp_name, session, rec_dir) group.
+
+    Adds a 'z_spike_count' column.
+    """
+    df = df.copy()
+    df['z_spike_count'] = df.groupby(['exp_name', 'session', 'rec_dir'])[
+        'spike_count'
+    ].transform(lambda x: zscore(x, ddof=1))
+    return df
+
+
+def assign_trial_groups(df):
+    """Assign each trial to a trial group: 'T1-10', 'T11-20', or 'T21-30'.
+
+    Adds a 'trial_group' column.
+    """
+    df = df.copy()
+    conditions = [
+        df['trial'].between(1, 10),
+        df['trial'].between(11, 20),
+        df['trial'].between(21, 30),
+    ]
+    choices = ['T1-10', 'T11-20', 'T21-30']
+    df['trial_group'] = np.select(conditions, choices, default='other')
+    # drop trials beyond 30 if any
+    df = df[df['trial_group'] != 'other'].reset_index(drop=True)
+    return df
+
+
+def average_by_trial_group(df):
+    """Average z-scored firing rate across trials within each trial group.
+
+    Groups by rec_dir, unit, taste, session, exp_name, exp_group, trial_group.
+    Returns a DataFrame with a 'mean_z' column.
+    """
+    grouped = df.groupby(
+        ['rec_dir', 'exp_name', 'exp_group', 'session', 'unit', 'taste', 'trial_group']
+    )['z_spike_count'].mean().reset_index()
+    grouped.rename(columns={'z_spike_count': 'mean_z'}, inplace=True)
+    return grouped
+
+
+def shuffle_test_pair(group1_trials, group2_trials, n_iter=10000):
+    """Trial-shuffle test for the difference in means between two trial groups.
+
+    Parameters
+    ----------
+    group1_trials : array-like
+        Z-scored spike counts for individual trials in trial-group 1.
+    group2_trials : array-like
+        Z-scored spike counts for individual trials in trial-group 2.
+    n_iter : int
+        Number of shuffle iterations.
+
+    Returns
+    -------
+    observed_diff : float
+        Actual difference in means (group1 - group2).
+    p_value : float
+        Two-sided p-value from the shuffle distribution.
+    """
+    g1 = np.asarray(group1_trials, dtype=float)
+    g2 = np.asarray(group2_trials, dtype=float)
+    observed_diff = g1.mean() - g2.mean()
+
+    pooled = np.concatenate([g1, g2])
+    n1 = len(g1)
+    null_diffs = np.empty(n_iter)
+    for i in range(n_iter):
+        np.random.shuffle(pooled)
+        null_diffs[i] = pooled[:n1].mean() - pooled[n1:].mean()
+
+    # two-sided p-value: proportion of null diffs at least as extreme
+    p_value = np.mean(np.abs(null_diffs) >= np.abs(observed_diff))
+    return observed_diff, p_value
+
+
+def run_shuffle_tests(df_trials, n_iter=10000):
+    """Run pairwise shuffle tests between all three trial groups for each
+    unit × taste × recording combination.
+
+    Parameters
+    ----------
+    df_trials : DataFrame
+        Must contain columns: rec_dir, exp_name, exp_group, session, unit,
+        taste, trial_group, z_spike_count (per-trial values).
+    n_iter : int
+        Number of shuffle iterations per test.
+
+    Returns
+    -------
+    results : DataFrame
+        One row per comparison with columns:
+        rec_dir, exp_name, exp_group, session, unit, taste,
+        group_A, group_B, observed_diff, p_value
+    """
+    trial_groups = ['T1-10', 'T11-20', 'T21-30']
+    pairs = [
+        ('T1-10', 'T11-20'),
+        ('T1-10', 'T21-30'),
+        ('T11-20', 'T21-30'),
+    ]
+    results = []
+    group_cols = ['rec_dir', 'exp_name', 'exp_group', 'session', 'unit', 'taste']
+    for keys, grp in df_trials.groupby(group_cols):
+        rec_dir, exp_name, exp_group, session, unit, taste = keys
+        for gA, gB in pairs:
+            trials_A = grp.loc[grp['trial_group'] == gA, 'z_spike_count'].values
+            trials_B = grp.loc[grp['trial_group'] == gB, 'z_spike_count'].values
+            if len(trials_A) == 0 or len(trials_B) == 0:
+                continue
+            obs_diff, pval = shuffle_test_pair(trials_A, trials_B, n_iter=n_iter)
+            results.append({
+                'rec_dir': rec_dir,
+                'exp_name': exp_name,
+                'exp_group': exp_group,
+                'session': session,
+                'unit': unit,
+                'taste': taste,
+                'group_A': gA,
+                'group_B': gB,
+                'observed_diff': obs_diff,
+                'p_value': pval,
+            })
+    return pd.DataFrame(results)
+
+
+def run_trial_group_analysis(proj, sessions=(1, 3), n_iter=10000):
+    """Full pipeline: collect spikes → z-score → assign trial groups →
+    average by group → shuffle tests.
+
+    Returns
+    -------
+    df_avg : DataFrame
+        Mean z-scored firing rate per unit/taste/trial-group.
+    df_shuffle : DataFrame
+        Pairwise shuffle-test results.
+    """
+    # Step 1 & 2: query spikes and count in 100-2000 ms window
+    df_counts = collect_all_spike_counts(proj, sessions=sessions)
+
+    # Step 3: z-score within (exp_name, session, rec_dir)
+    df_z = zscore_spike_counts(df_counts)
+
+    # Step 4: assign trial groups and compute group averages
+    df_z = assign_trial_groups(df_z)
+    df_avg = average_by_trial_group(df_z)
+
+    # Step 5: pairwise shuffle tests (on per-trial z-scored values)
+    df_shuffle = run_shuffle_tests(df_z, n_iter=n_iter)
+
+    return df_avg, df_shuffle
+
+
+# ---- Run the analysis ----
+save_dir_tga = PA.save_dir + '/trial_group_analysis'
+if not os.path.exists(save_dir_tga):
+    os.makedirs(save_dir_tga)
+
+avg_path = os.path.join(save_dir_tga, 'df_avg.pkl')
+shuffle_path = os.path.join(save_dir_tga, 'df_shuffle.pkl')
+
+if os.path.exists(avg_path) and os.path.exists(shuffle_path):
+    print("Loading cached trial-group analysis results ...")
+    df_avg = pd.read_pickle(avg_path)
+    df_shuffle = pd.read_pickle(shuffle_path)
+else:
+    print("Running trial-group analysis ...")
+    df_avg, df_shuffle = run_trial_group_analysis(proj, sessions=(1, 3), n_iter=10000)
+    df_avg.to_pickle(avg_path)
+    df_shuffle.to_pickle(shuffle_path)
+    print(f"Saved df_avg to {avg_path}")
+    print(f"Saved df_shuffle to {shuffle_path}")
+
+
+def plot_abs_z_by_taste_session(df_avg, df_shuffle, session=1, save_dir=None):
+    """Plot average |z-scored firing rate| per trial group for each taste in a
+    given session, averaged across all neurons.  Significant pairwise
+    differences (from df_shuffle, p < 0.05) are annotated with brackets and
+    stars.
+
+    Parameters
+    ----------
+    df_avg : DataFrame
+        Output of average_by_trial_group(); must have columns:
+        session, taste, trial_group, mean_z, rec_dir, unit.
+    df_shuffle : DataFrame
+        Output of run_shuffle_tests(); must have columns:
+        session, taste, group_A, group_B, p_value, rec_dir, unit.
+    session : int
+        Which session to plot (default 1).
+    save_dir : str or None
+        Directory in which to save the figure.  If None the figure is shown.
+    """
+    trial_groups = ['T1-10', 'T11-20', 'T21-30']
+    tastes = ['Suc', 'NaCl', 'CA', 'QHCl']
+    taste_colors = {'Suc': 'tab:blue', 'NaCl': 'tab:orange',
+                    'CA': 'tab:green', 'QHCl': 'tab:red'}
+
+    # ---- prepare per-neuron absolute mean_z, then average across neurons ----
+    sub = df_avg[df_avg['session'] == session].copy()
+    sub['abs_mean_z'] = sub['mean_z'].abs()
+
+    # average across neurons (unit × rec_dir) within each taste × trial_group
+    bar_data = (
+        sub.groupby(['taste', 'trial_group'])['abs_mean_z']
+        .agg(['mean', 'sem'])
+        .reset_index()
+    )
+
+    # ---- aggregate shuffle p-values across neurons (Fisher's method) ----
+    from scipy.stats import combine_pvalues
+    shuf_sub = df_shuffle[df_shuffle['session'] == session].copy()
+    pairs = [('T1-10', 'T11-20'), ('T1-10', 'T21-30'), ('T11-20', 'T21-30')]
+    sig_map = {}  # (taste, gA, gB) -> combined p-value
+    for taste in tastes:
+        for gA, gB in pairs:
+            pvals = shuf_sub[
+                (shuf_sub['taste'] == taste)
+                & (shuf_sub['group_A'] == gA)
+                & (shuf_sub['group_B'] == gB)
+            ]['p_value'].values
+            if len(pvals) == 0:
+                continue
+            # Replace exact zeros with a small number to avoid log(0)
+            pvals = np.where(pvals == 0, 1e-10, pvals)
+            _, combined_p = combine_pvalues(pvals, method='fisher')
+            sig_map[(taste, gA, gB)] = combined_p
+
+    # ---- plot ----
+    fig, axes = plt.subplots(1, len(tastes), figsize=(3.2 * len(tastes), 4.5),
+                             sharey=True)
+    fig.patch.set_alpha(0.0)
+
+    bar_width = 0.55
+    x_positions = np.arange(len(trial_groups))
+
+    for ax_idx, taste in enumerate(tastes):
+        ax = axes[ax_idx]
+        taste_data = bar_data[bar_data['taste'] == taste]
+        means = []
+        sems = []
+        for tg in trial_groups:
+            row = taste_data[taste_data['trial_group'] == tg]
+            means.append(row['mean'].values[0] if len(row) else 0)
+            sems.append(row['sem'].values[0] if len(row) else 0)
+
+        bars = ax.bar(x_positions, means, width=bar_width, yerr=sems,
+                      capsize=4, color=taste_colors[taste], alpha=0.6,
+                      edgecolor='black', linewidth=0.8,
+                      error_kw={'linewidth': 1.0})
+        # make error-bar cap width match bar width
+        for cap_line in ax.lines:
+            cap_line.set_markeredgewidth(0.8)
+
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(trial_groups, fontsize=9)
+        ax.set_title(taste, fontsize=13)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        if ax_idx == 0:
+            ax.set_ylabel('Mean |z-scored FR|', fontsize=12)
+
+        # ---- add significance brackets ----
+        y_max = max(m + s for m, s in zip(means, sems))
+        bracket_gap = y_max * 0.06
+        bracket_h = y_max * 0.03
+        level = 0
+        for gA, gB in pairs:
+            p = sig_map.get((taste, gA, gB), 1.0)
+            if p >= 0.05:
+                continue
+            idx_a = trial_groups.index(gA)
+            idx_b = trial_groups.index(gB)
+            y_bar = y_max + bracket_gap + level * (bracket_h + bracket_gap)
+            ax.plot([idx_a, idx_a, idx_b, idx_b],
+                    [y_bar - bracket_h, y_bar, y_bar, y_bar - bracket_h],
+                    lw=1.0, color='black')
+            star = '***' if p < 0.001 else ('**' if p < 0.01 else '*')
+            ax.text((idx_a + idx_b) / 2, y_bar, star,
+                    ha='center', va='bottom', fontsize=11)
+            level += 1
+
+    plt.tight_layout()
+    if save_dir is not None:
+        save_path = os.path.join(save_dir,
+                                 f'abs_z_bar_by_taste_session{session}')
+        plt.savefig(save_path + '.png', dpi=200, transparent=True)
+        plt.savefig(save_path + '.svg', transparent=True)
+        print(f"Saved figure to {save_path}")
+    else:
+        plt.show()
+    plt.close()
+
+
+# ---- Plot session-1 bar graph ----
+plot_abs_z_by_taste_session(df_avg, df_shuffle, session=1, save_dir=save_dir_tga)
+

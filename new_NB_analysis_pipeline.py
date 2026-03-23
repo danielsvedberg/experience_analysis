@@ -106,7 +106,7 @@ def get_relevant_states(df, state_determinant, exclude_epoch=None):
 
     return df
 
-def prepipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None, nIter=1000):
+def prepipeline(df, value_col, trial_col, state_determinant, exclude_epoch=None, nIter=10000):
     print('running pipeline for ' + value_col + ' and ' + trial_col + ' and ' + state_determinant)
     analysis_folder = value_col + '_' + trial_col + '_' + state_determinant + '_nonlinear_regression'
     #check if dir exists, if not, make it
@@ -163,7 +163,7 @@ proj_dir = '/media/dsvedberg/Ubuntu Disk/taste_experience_resorts_copy'  # direc
 proj = blechpy.load_project(proj_dir)  # load the project
 HA = ana.HmmAnalysis(proj)  # create a hmm analysis object
 
-NB_df = HA.analyze_NB_ID2(overwrite=True)
+NB_df = HA.analyze_NB_ID2(overwrite=False)
 
 NB_df = preprocess_NB(NB_df)
 

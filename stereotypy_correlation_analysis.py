@@ -28,7 +28,7 @@ plt.rcParams['ytick.minor.width'] = 0.72
 #set font size to 8
 dfontsize = 8
 plt.rcParams.update({'font.size': dfontsize})
-default_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.1, 'wspace': 0.05, 'hspace': 0.05}
+default_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.1, 'wspace': 0.01, 'hspace': 0.01}
 summary_margins = {'left': 0.1, 'right': 0.95, 'top': 0.9, 'bottom': 0.3, 'wspace': 0.01, 'hspace': 0.01}
 dPanW = 1.2
 dPanH = 0.8
@@ -240,7 +240,9 @@ df = pd.concat(dflist, axis=0)
 rec_info = rec_info[['rec_dir', 'exp_group', 'exp_name', 'rec_num']]
 df = pd.merge(df, rec_info, on='rec_dir')
 df['session'] = df['rec_num']
-df['an_neuron'] = str(df['neuron']) + '_' + df['exp_name']
+df['an_neuron'] = df['neuron'].astype(str) + '_' + df['exp_name']
+df['an_neuron_taste'] = df['an_neuron'] + '_' + df['taste']
+
 
 df['trial_group_comp'] = df['trial_group'] + ' vs ' + df['comp_trial_group']
 #replace spaces in the column trial group comp with \n
@@ -251,40 +253,63 @@ df = df.query('exp_name != "DS33" and exp_name != "DS41"')
 #filter only rows where exp group is 'naive'
 naive = df[df['exp_group'] == 'naive']
 naiveS1 = naive[naive['session'] == 1]
+#replace nans with 0s in correlation column
+naiveS1['correlation'] = naiveS1['correlation'].fillna(0)
+
+
+#print the number of unique neurons in naiveS1
+unique_neurons = naiveS1['an_neuron'].nunique()
+unique_animals = naiveS1['rec_dir'].nunique()
+#make a little table with the number of unique neurons and animals in naiveS1 and save it as a csv
+summary_df = pd.DataFrame({'unique_neurons': [unique_neurons], 'unique_animals': [unique_animals]})
+PA = ana.ProjectAnalysis(proj)
+save_dir = PA.save_dir + os.sep + 'trial_group_correlations'
+summary_df.to_csv(save_dir + os.sep + 'summary_table.csv', index=False)
 
 #perform an anova on the correlation values for each trial_group_comp
 import pingouin as pg
-aov = pg.rm_anova(data=naiveS1, dv='correlation', within='trial_group_comp', subject='an_neuron')
-pw = pg.pairwise_ttests(data=naiveS1, dv='correlation', within='trial_group_comp', subject='an_neuron', padjust='bonf')
-#use the p values from p-corr column in pw to add significance bars and stars
-sig_comps = pw[pw['p-corr'] < 0.05]
+aov = pg.rm_anova(data=naiveS1, dv='correlation', within='trial_group_comp', subject='an_neuron_taste')
+unique_tastes = naiveS1['taste'].unique()
+tts = []
+for taste in unique_tastes:
+    subset = naiveS1[naiveS1['taste'] == taste]
+    tt_taste = pg.pairwise_ttests(data=subset, dv='correlation', within='trial_group_comp', subject='an_neuron', padjust='bonf')
+    tt_taste['taste'] = taste
+    tts.append(tt_taste)
+#naiveS1avg = naiveS1.groupby(['an_neuron', 'trial_group_comp']).mean().reset_index()
+tt_all = pg.pairwise_ttests(data=naiveS1, dv='correlation', within='trial_group_comp', subject='an_neuron_taste', padjust='bonf')
+tt_all['taste'] = 'combined'
+tts.append(tt_all)
+pw = pd.concat(tts, axis=0)
 
-import matplotlib.pyplot as plt
-fig, ax = plt.subplots()
-fig.set_size_inches(2,1.5)
+#save the tt results to a csv
+PA = ana.ProjectAnalysis(proj)
+save_dir = PA.save_dir + os.sep + 'trial_group_correlations'
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+pw.to_csv(save_dir + os.sep + 'pairwise_results.csv', index=False)
 
-sns.barplot(x='trial_group_comp', y='correlation',
-                 data=naiveS1, facecolor=(0,0,0,0), edgecolor='black', capsize=0.05, linewidth=0.5, errcolor='black',
-            ax=ax)
-#make the x axis label "trials"
-ax.set_xlabel('Trials', fontsize=8)
-#make the y axis label "correlation (Pearson's R)
-ax.set_ylabel('Mean Correlation', fontsize=8)
-#increase the y max to 0.5
-ax.set_ylim(0, 0.5)
-#increase the axis tick font size to 18
-ax.tick_params(axis='both', which='major', labelsize=8)
 
-comparisons = [('1-10\nvs\n11-20', '11-20\nvs\n21-30', 0.047152),  # (group A, group B, corrected p-value)
-               ('1-10\nvs\n21-30', '11-20\nvs\n21-30', 0.003134)]
-# Add significance bars
-def add_sig_bars(ax, comparisons, y_offset=0.01, height_increase_per_group=0.05, min_height=0.1):
+
+def add_sig_bars(ax, comparisons, y_offset=0.01, height_increase_per_group=0.06, min_height=0.1):
     used_heights = {}
 
+    # get category order from the axis tick labels (this matches the plotting order)
+    x_labels = [t.get_text() for t in ax.get_xticklabels()]
+
     for i, (group_A, group_B, p_val) in enumerate(comparisons):
-        # Define the position for each group on the x-axis
-        group_A_pos = list(naiveS1['trial_group_comp']).index(group_A)
-        group_B_pos = list(naiveS1['trial_group_comp']).index(group_B)
+        # Only plot significant comparisons
+        if p_val >= 0.05:
+            continue
+
+        # Define the position for each group on the x-axis using tick labels
+        try:
+            group_A_pos = x_labels.index(group_A)
+            group_B_pos = x_labels.index(group_B)
+        except ValueError:
+            # If label not found, skip this comparison
+            # (this can happen if pw lists comparisons that aren't present in the plotted data)
+            continue
 
         # Get the max y-value between the two bars
         y_max = max(ax.patches[group_A_pos].get_height(), ax.patches[group_B_pos].get_height())
@@ -314,28 +339,179 @@ def add_sig_bars(ax, comparisons, y_offset=0.01, height_increase_per_group=0.05,
             sig_text = '***'
         elif p_val < 0.01:
             sig_text = '**'
-        elif p_val < 0.05:
-            sig_text = '*'
         else:
-            sig_text = 'ns'  # not significant
+            sig_text = '*'
 
         # Add the significance stars
-        ax.text((group_A_pos + group_B_pos) * 0.5, bar_height, sig_text, ha='center', size=8)
-        # print the p value in clear text above the significance stars
-        ax.text((group_A_pos + group_B_pos) * 0.5 + 0.5, bar_height + 0.005, f'p={p_val:.3f}', ha='right', size=8)
+        ax.text((group_A_pos + group_B_pos) * 0.5, bar_height-0.015, sig_text, ha='center', size=8)
 
-# Apply the function to add significance bars to the plot
-add_sig_bars(ax, comparisons)
-# Adjust the figure to fit the panel size
-fig = adjust_figure_for_panel_size_auto(fig, panel_width=dPanW, panel_height=dPanH, do_second_tight=True)
+def plot_trial_correl_comps(naiveS1, pw):
+#use the p values from p-corr column in pw to add significance bars and stars
+    sig_comps = pw[pw['p-corr'] < 0.05]
 
-#save the plot to svg
-PA = ana.ProjectAnalysis(proj)
-save_dir = PA.save_dir + os.sep + 'trial_group_correlations'
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir)
-save_path = save_dir + os.sep + 'trial_group_correlations.svg'
-plt.savefig(save_path)
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    fig.set_size_inches(2,1.5)
+
+    #get rows from pw where taste is 'combined'
+    pw = pw[pw['taste'] == 'combined']
+
+    sns.barplot(x='trial_group_comp', y='correlation',
+                     data=naiveS1, facecolor=(0,0,0,0), edgecolor='black', capsize=0.05, linewidth=0.5, errcolor='black',
+                ax=ax)
+
+    # Add per-animal average as swarmplot
+    animal_avg = naiveS1.groupby(['exp_name', 'taste', 'trial_group_comp'])['correlation'].mean().reset_index()
+    sns.swarmplot(x='trial_group_comp', y='correlation',
+                  data=animal_avg, color=sns.color_palette()[0], size=2, alpha=0.75, ax=ax)
+
+    # Match error-bar whisker linewidth to bar outline linewidth
+    for line in ax.lines:
+        line.set_linewidth(0.5)
+
+    # Make subplot background transparent
+    ax.set_facecolor('none')
+
+    # Remove upper and right spine (keep only x and y axes)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    #make the x axis label "trials"
+    ax.set_xlabel('Trials', fontsize=8)
+    #make the y axis label R^2
+    ax.set_ylabel('R$^{2}$', fontsize=8)
+    #increase the y max to 0.5
+    ax.set_ylim(0, 0.5)
+    #increase the axis tick font size to 18
+    ax.tick_params(axis='both', which='major', labelsize=8)
+
+    # Build comparisons list from pw DataFrame (use corrected p-values from 'p-corr')
+    # Ensure labels match plotting labels by replacing spaces with newlines (same transformation applied to the data)
+    comparisons = [
+        (str(row['A']).replace(' ', '\n'), str(row['B']).replace(' ', '\n'), float(row['p-corr']))
+        for _, row in pw.iterrows()
+    ]
+
+    # Apply the function to add significance bars to the plot
+    add_sig_bars(ax, comparisons)
+    # Adjust the figure to fit the panel size
+    fig = adjust_figure_for_panel_size_auto(fig, panel_width=0.8, panel_height=0.8, do_second_tight=True)
+
+    # Make figure background transparent
+    fig.patch.set_alpha(0.0)
+
+    #save the plot to svg
+    save_dir = PA.save_dir + os.sep + 'trial_group_correlations'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    save_path = save_dir + os.sep + 'trial_group_correlations_new.svg'
+    plt.savefig(save_path, transparent=True)
+plot_trial_correl_comps(naiveS1, pw)
+
+def plot_trial_correl_comps_by_taste(naiveS1, pw):
+    """Plot a 1x5 figure: one subplot per taste + a 'combined' (across-taste average) subplot.
+
+    Each subplot mirrors plot_trial_correl_comps but uses the taste-specific
+    subset of naiveS1 and the matching rows from pw (which has a 'taste' column
+    with individual taste names and 'combined').
+    """
+    # Taste-specific fill colors (alpha applied below)
+
+    #sns color palette 'tab10' colors for the 4 tastes, in the order of suc, nacl, ca, qhcl
+    colors4 = sns.color_palette('tab10', n_colors=4)
+
+    taste_colors = {
+        'Suc': colors4[0],   # blue
+        'NaCl':  colors4[1],                # orange
+        'CA':  colors4[2],    # green
+        'QHCl':  colors4[3],   # red
+    }
+    taste_alpha = 0.5
+
+    unique_tastes = list(naiveS1['taste'].unique())
+    panel_labels = unique_tastes + ['combined']  # 4 tastes + combined = 5 panels
+
+    fig, axes = plt.subplots(1, len(panel_labels), sharey=True)
+
+    for idx, taste_label in enumerate(panel_labels):
+        ax = axes[idx]
+
+        # Select data for this panel
+        if taste_label == 'combined':
+            plot_data = naiveS1
+        else:
+            plot_data = naiveS1[naiveS1['taste'] == taste_label]
+
+        # Select the matching pairwise comparisons from pw
+        pw_taste = pw[pw['taste'] == taste_label]
+
+        # Determine face color for this taste
+        if taste_label in taste_colors:
+            fc = taste_colors[taste_label] + (taste_alpha,)  # RGBA tuple
+        else:
+            fc = (0, 0, 0, 0)  # transparent for 'combined'
+
+        # Bar plot
+        sns.barplot(x='trial_group_comp', y='correlation',
+                    data=plot_data, facecolor=fc, edgecolor='black',
+                    capsize=0.05, linewidth=0.5, errcolor='black', ax=ax)
+
+        # Add per-animal average as swarmplot
+        animal_avg = plot_data.groupby(['exp_name', 'trial_group_comp'])['correlation'].mean().reset_index()
+        sns.swarmplot(x='trial_group_comp', y='correlation',
+                      data=animal_avg, color=sns.color_palette()[0], size=3, alpha=0.5, ax=ax)
+
+        # Match error-bar whisker linewidth to bar outline linewidth
+        for line in ax.lines:
+            line.set_linewidth(0.5)
+
+        # Subplot title = taste name
+        ax.set_title(taste_label, fontsize=8)
+
+        # X axis
+        ax.set_xlabel('Trials', fontsize=8)
+        ax.tick_params(axis='both', which='major', labelsize=8)
+
+        # Remove upper and right spine (keep only x and y axes)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        # Transparent subplot background
+        ax.set_facecolor('none')
+
+        # Y axis – only label the leftmost panel
+        if idx == 0:
+            ax.set_ylabel('R$^{2}$', fontsize=8)
+        else:
+            ax.set_ylabel('')
+
+        ax.set_ylim(0, 0.5)
+
+        # Build comparisons list from the taste-specific pw rows
+        comparisons = [
+            (str(row['A']).replace(' ', '\n'),
+             str(row['B']).replace(' ', '\n'),
+             float(row['p-corr']))
+            for _, row in pw_taste.iterrows()
+        ]
+
+        # Draw significance bars (only significant ones are drawn by add_sig_bars)
+        add_sig_bars(ax, comparisons)
+
+    # Adjust the figure to fit the panel size (1 row x 5 cols), narrower panels
+    fig = adjust_figure_for_panel_size_auto(fig, panel_width=1.0, panel_height=dPanH)
+
+    # Transparent figure background
+    fig.patch.set_alpha(0.0)
+
+    # Save the plot
+    save_dir = PA.save_dir + os.sep + 'trial_group_correlations'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    save_path = save_dir + os.sep + 'trial_group_correlations_by_taste.svg'
+    plt.savefig(save_path, transparent=True)
+    return fig
+plot_trial_correl_comps_by_taste(naiveS1, pw)
 
 HA = ana.HmmAnalysis(proj)
 ov = HA.get_hmm_overview(overwrite=False)
